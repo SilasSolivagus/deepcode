@@ -5,10 +5,10 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@silassolivagus/deepcode"><img src="https://img.shields.io/npm/v/@silassolivagus/deepcode?color=5b7cfa&label=npm" alt="npm"></a>
   <img src="https://img.shields.io/node/v/@silassolivagus/deepcode?color=5b7cfa" alt="node">
-  <img src="https://img.shields.io/badge/models-DeepSeek%20%C2%B7%20GLM-5b7cfa" alt="models">
+  <img src="https://img.shields.io/badge/models-DeepSeek%20%C2%B7%20GLM%20%C2%B7%20Kimi-5b7cfa" alt="models">
 </p>
 
-**为 DeepSeek 与 GLM 打造的终端编码 agent。** 多 provider、自带记忆系统，低成本高可靠。默认 `deepseek-v4-pro`，一条命令切换 DeepSeek / GLM/智谱 / 任意 OpenAI 兼容后端。
+**为 DeepSeek 与 GLM 打造的终端编码 agent。** 多 provider、自带记忆系统，低成本高可靠。默认 `deepseek-v4-pro`，一条命令切换 DeepSeek / GLM·智谱 / Kimi·Moonshot / 任意 OpenAI 兼容后端。
 
 ```
 ❯ deepcode
@@ -33,7 +33,7 @@
 
 ## 独创 · deepcode 的差异化
 
-- **原生多 provider，运行时切换。** 一套 harness 通吃 DeepSeek / GLM / 自建 OpenAI 兼容后端；方言 adapter 把不同厂商的 usage、缓存命中、thinking 三态字段统一归一，切厂无感。
+- **原生多 provider，运行时切换。** 一套 harness 通吃 DeepSeek / GLM / Kimi / 自建 OpenAI 兼容后端；方言 adapter 把不同厂商的 usage、缓存命中、thinking 三态字段统一归一，切厂无感（含 Kimi 仅思考模式的 k2.7-code/k3，自动规避 disabled 报错）。
 - **国产 thinking 模型的成本控制。** 显式 `thinking:{type:"disabled"}` 默认关，实测省 ~39× 输出 token；并专门解决了国产 thinking 模型在短回答/门控场景 content 被 reasoning 击穿的坑（`buildThinkingParams` 统一处理）——这是直连闭源 agent 遇不到的问题。
 - **自带记忆系统。** per-project + 跨项目全局抽屉 + dream 后台归纳 + `SearchMemory` 全文检索（node:sqlite FTS5，零依赖），信号门控只在真有持久信息时才提取。目标是无感主动召回 + 跨项目连续记忆。
 - **可复现 eval harness。** 防污染自建场景 × 多模型 × N seeds × 程序化判分，出 **pass^N 可靠性 + 成本-Pareto**，一键回归（`eval/`）。把「便宜模型上的可靠性/元」做成一等指标。
@@ -54,14 +54,14 @@ npm i -g @silassolivagus/deepcode
 - 或 `export DEEPSEEK_API_KEY=sk-...`
 - 或手写 `~/.deepcode/settings.json`
 
-**切 provider**（DeepSeek / GLM / 自建）：
+**切 provider**（DeepSeek / GLM / Kimi / 自建）：
 ```jsonc
 {
-  "provider": "glm",                        // deepseek(默认) | glm | custom
-  "providers": { "glm": { "apiKey": "..." } }
+  "provider": "kimi",                       // deepseek(默认) | glm | kimi | custom
+  "providers": { "kimi": { "apiKey": "..." } }
 }
 ```
-`custom` 可接任意 OpenAI 兼容后端（填 `baseURL`/`models`/`apiKeyEnv`）。网络需代理时设 `https_proxy`，deepcode 自动经它请求。
+Kimi（Moonshot）内置 `kimi-k3` / `kimi-k2.7-code` / `k2.6` / `k2.5`，默认 smart=`kimi-k2.7-code`（代码专用）、fast=`kimi-k2.5`；env `MOONSHOT_API_KEY` 亦可。`custom` 可接任意 OpenAI 兼容后端（填 `baseURL`/`models`/`apiKeyEnv`）。网络需代理时设 `https_proxy`，deepcode 自动经它请求。
 
 ## 用法
 

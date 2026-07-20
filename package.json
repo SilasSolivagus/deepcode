@@ -1,9 +1,12 @@
 {
   "name": "@silassolivagus/deepcode",
-  "version": "0.9.0",
-  "description": "Terminal coding agent for DeepSeek & GLM — multi-provider, built-in memory, reliable at a fraction of the cost (command: deepcode)",
+  "version": "0.9.1",
+  "description": "Terminal coding agent for DeepSeek, GLM & Kimi — multi-provider, built-in memory, reliable at a fraction of the cost (command: deepcode)",
   "license": "MIT",
-  "repository": { "type": "git", "url": "git+https://github.com/SilasSolivagus/deepcode.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SilasSolivagus/deepcode.git"
+  },
   "homepage": "https://github.com/SilasSolivagus/deepcode#readme",
   "bugs": "https://github.com/SilasSolivagus/deepcode/issues",
   "type": "module",
