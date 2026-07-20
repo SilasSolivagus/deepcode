@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+docs/
+loop/
+bench/
+.superpowers/
+.deepcode/

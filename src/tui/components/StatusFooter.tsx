@@ -1,0 +1,108 @@
+// src/tui/components/StatusFooter.tsx
+// 状态页脚（输入框下方多行）：模型/模式/git、上下文条、记忆与工具计数、快捷键提示。
+// 纯展示组件，所有数据由 App 传入。克制配色：仅模型名与上下文条填充用 accent，其余 dim。
+// 不展示云端配额专属信息（5h 配额窗口、hooks、auto-mode 循环）——deepcode 是按 token 计费的 DeepSeek。
+import React from 'react'
+import { Box, Text } from 'ink'
+import { useTheme, DEFAULT_THEME } from '../theme.js'
+
+export function contextBarColor(pct: number, theme: typeof DEFAULT_THEME = DEFAULT_THEME): string {
+  if (pct >= 95) return theme.err
+  if (pct >= 80) return theme.warn
+  return theme.accent
+}
+
+function fmtK(n: number): string {
+  return n >= 1000 ? Math.round(n / 1000) + 'k' : String(n)
+}
+
+/** 迷你进度条：width 格，非零用量至少填 1 格，越界钳到 [0,100]。 */
+export function contextBar(pct: number, width = 10): string {
+  const clamped = Math.max(0, Math.min(100, pct))
+  const filled = clamped > 0 ? Math.max(1, Math.round((clamped / 100) * width)) : 0
+  return '█'.repeat(filled) + '░'.repeat(width - filled)
+}
+
+export function StatusFooter(props: {
+  model: string
+  mode: string
+  cwdBase: string
+  branch: string | null
+  memoryCount: number
+  contextUsed: number
+  contextWindow: number
+  cost: number
+  hitRate: number
+  cacheSavings: number
+  tokenBudget?: number | null  // 2.1 sticky 预算目标（null/undefined=未设，不显示该段）
+  budgetUsed?: number          // 2.1 本次 send 累计输出 token
+  thinking: boolean
+  effortLevel: 'low' | 'medium' | 'high'
+  toolCounts: Array<{ name: string; n: number }>
+  statusLineOutput?: string | null // 5.7 自定义状态栏命令输出（null/undefined=不显示）
+  focus?: boolean // Task6：focus 视图徽标（仅全屏 + focusMode 时由父层置 true）
+}) {
+  const T = useTheme()
+  const usedPct = props.contextWindow > 0 ? (props.contextUsed / props.contextWindow) * 100 : 0
+
+  // 样式：`[模型 | 模式] | cwd git:(分支)` / `Context used/window · $花费`
+  // / `N DEEPCODE.md`（独立行，仅有时显示）/ `✓ Bash ×8 | ✓ Read ×4`（独立行，| 分隔、× 前留空）/ `/ 看命令…`。
+  // 注意：记忆行/工具行按需出现 → 行数可变，App 的 IME 光标偏移须同步动态计算（footerExtraRows）。
+  return (
+    <Box flexDirection="column">
+      {/* 簇 1：Row 1（模型/模式/git） */}
+      <Box flexDirection="column">
+        <Text>
+          <Text dimColor>[</Text>
+          <Text color={T.accent}>{props.model}</Text>
+          <Text dimColor>{' | '}</Text>
+          {props.mode === 'default'
+            ? <Text dimColor>{props.mode}</Text>
+            : <Text bold color={props.mode === 'yolo' ? T.err : props.mode === 'plan' ? T.warn : T.ok}>{props.mode}</Text>}
+          {props.thinking && <Text dimColor>{` | think:${props.effortLevel}`}</Text>}
+          <Text dimColor>{`]`}</Text>
+          <Text dimColor>{` | ${props.cwdBase}`}</Text>
+          {props.branch && <Text dimColor>{` git:(${props.branch})`}</Text>}
+          {props.focus && <Text bold color={T.accent}>{' · focus'}</Text>}
+        </Text>
+      </Box>
+
+      {/* 簇 2：Row 2（context/缓存/budget/花费）+ Row 2.5（statusLineOutput 若有） */}
+      <Box flexDirection="column">
+        <Text>
+          <Text dimColor>Context </Text>
+          <Text color={contextBarColor(usedPct, T)}>{fmtK(props.contextUsed)} / {fmtK(props.contextWindow)}</Text>
+          <Text dimColor>{` [`}</Text>
+          <Text color={contextBarColor(usedPct, T)}>{contextBar(usedPct)}</Text>
+          <Text dimColor>{`]`}</Text>
+          {props.hitRate > 0 && (
+            <Text dimColor>{` · cache ${Math.round(props.hitRate * 100)}% (−¥${props.cacheSavings.toFixed(4)})`}</Text>
+          )}
+          {props.tokenBudget ? (
+            <Text dimColor>{` · budget ${fmtK(props.budgetUsed ?? 0)}/${fmtK(props.tokenBudget)}`}</Text>
+          ) : null}
+          <Text dimColor>{` · ¥${props.cost.toFixed(4)}`}</Text>
+        </Text>
+        {props.statusLineOutput && <Text dimColor>{props.statusLineOutput}</Text>}
+      </Box>
+
+      {/* 簇 3：Row 3（记忆，若有）+ Row 4（工具计数，若有）+ Row 5（命令提示，恒有）
+          簇 3 命令提示恒在故不会空簇；记忆/工具缺失时不留空行。 */}
+      <Box flexDirection="column">
+        {props.memoryCount > 0 && <Text dimColor>{`${props.memoryCount} DEEPCODE.md`}</Text>}
+        {props.toolCounts.length > 0 && (
+          <Text>
+            {props.toolCounts.map((t, i) => (
+              <Text key={t.name}>
+                {i > 0 && <Text dimColor> | </Text>}
+                <Text color={T.ok}>✓ </Text>
+                <Text dimColor>{`${t.name} ×${t.n}`}</Text>
+              </Text>
+            ))}
+          </Text>
+        )}
+        <Text dimColor>/ 看命令 · @ 引用文件 · ! 跑 shell</Text>
+      </Box>
+    </Box>
+  )
+}

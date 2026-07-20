@@ -1,0 +1,21 @@
+#!/bin/bash
+apt-get update
+apt-get install -y curl
+
+# node 22（≥22.5，deepcode 的 node:sqlite 需要）——照 qwen/claude 的 nvm 模式
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash
+source "$HOME/.nvm/nvm.sh"
+nvm install 22
+npm -v
+
+# 装本地当前构建的 deepcode（经 host http 提供的 tarball）
+curl -fsSL "{{ tarball_url }}" -o /tmp/deepcode.tgz
+npm install -g /tmp/deepcode.tgz
+
+# 写 deepcode 配置（provider/model/key，关记忆）
+mkdir -p "$HOME/.deepcode"
+cat > "$HOME/.deepcode/settings.json" <<'DC_SETTINGS_EOF'
+{{ settings_json }}
+DC_SETTINGS_EOF
+
+command -v deepcode && echo "deepcode installed OK"

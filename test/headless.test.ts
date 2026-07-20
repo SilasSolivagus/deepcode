@@ -1,0 +1,233 @@
+// test/headless.test.ts
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs'
+import path from 'node:path'
+
+const script: Array<{ deltas?: any[]; result: any }> = []
+vi.mock('../src/api.js', () => ({
+  chatStream: vi.fn(() =>
+    (async function* () {
+      const scene = script.shift()
+      if (!scene) throw new Error('script exhausted')
+      for (const d of scene.deltas ?? []) yield typeof d === 'string' ? { type: 'text', delta: d } : d
+      return scene.result
+    })(),
+  ),
+}))
+
+const hookCalls: Array<{ event: string; payload: any }> = []
+vi.mock('../src/hooks.js', async (orig) => {
+  const actual = await orig<typeof import('../src/hooks.js')>()
+  return {
+    ...actual,
+    runHooks: vi.fn(async (event: any, payload: any) => {
+      hookCalls.push({ event, payload })
+      return { block: false, preventContinuation: false, stop: false, results: [] }
+    }),
+  }
+})
+
+const mockSettings = {
+  permissions: { allow: [] },
+  compactTokens: 200_000,
+  costWarnCNY: 15,
+  hooks: {
+    SessionStart: [{ matcher: '*', hooks: [] }],
+    InstructionsLoaded: [{ matcher: '*', hooks: [] }],
+    UserPromptSubmit: [{ matcher: '*', hooks: [] }],
+  },
+}
+
+vi.mock('../src/config.js', async (orig) => {
+  const actual = await orig<typeof import('../src/config.js')>()
+  return {
+    ...actual,
+    loadSettings: vi.fn(() => mockSettings),
+  }
+})
+
+vi.mock('../src/settingsLayers.js', async (orig) => {
+  const actual = await orig<typeof import('../src/settingsLayers.js')>()
+  return {
+    ...actual,
+    loadLayeredSettings: vi.fn(() => ({
+      settings: mockSettings,
+      provenance: {},
+      permissionSources: { allow: {}, deny: {} },
+      scopes: [],
+    })),
+  }
+})
+
+import { runHeadless } from '../src/headless.js'
+import { chatStream } from '../src/api.js'
+import { runHooks } from '../src/hooks.js'
+
+const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 10 }
+beforeEach(() => { script.length = 0; hookCalls.length = 0; vi.mocked(chatStream).mockClear() })
+
+describe('runHeadless', () => {
+  it('跑完单 prompt 返回最终文本与累计 usage/cost/轮数', async () => {
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'h1', name: 'Glob', args: '{"pattern":"*.md"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: '找到 1 个 md 文件', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '有几个 md？', yolo: true })
+    expect(r.text).toContain('1 个')
+    expect(r.usage.prompt_tokens).toBe(100) // 两轮累计
+    expect(r.usage.completion_tokens).toBe(40)
+    expect(r.costCNY).toBeGreaterThan(0)
+    expect(r.turns).toBe(2)
+    expect(r.status).toBe('done')
+  })
+
+  it('非 yolo 时权限询问自动拒绝（headless 无人值守）', async () => {
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'h2', name: 'Bash', args: '{"command":"touch /tmp/x"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: '被拒了', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '建个文件', yolo: false })
+    expect(r.status).toBe('done') // 不挂起、不抛错，拒绝理由按正常机制喂回模型
+  })
+
+  it('todo 过期时在工具消息中注入 system-reminder', async () => {
+    // Turn 1: TaskCreate 建任务（pending 条目），lastUpdateTurn=0，tick→currentTurn=1，delta=1
+    // Turn 2: Glob，tick→currentTurn=2，delta=2，无提醒
+    // Turn 3: Glob，tick→currentTurn=3，delta=3，提醒触发
+    // Turn 4: Glob，tick→currentTurn=4，delta=4（4%3≠0），无提醒
+    // Turn 5: stop
+    script.push(
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'tc1', name: 'TaskCreate', args: JSON.stringify({ subject: '修 bug', description: '修复登录问题' }) }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'g1', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'g2', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      {
+        result: {
+          content: '',
+          toolCalls: [{ id: 'g3', name: 'Glob', args: '{"pattern":"*"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    await runHeadless({ client: {} as any, prompt: '做任务', yolo: true })
+    // 找到最终一次 chatStream 调用，检查其 messages 参数中是否有包含 <system-reminder> + '修 bug' 的 tool 消息
+    const allCalls = vi.mocked(chatStream).mock.calls
+    const allMessages: any[] = allCalls.flatMap(([_client, opts]) => opts.messages ?? [])
+    const reminderMsg = allMessages.find(
+      m => m.role === 'tool' && typeof m.content === 'string' && m.content.includes('<system-reminder>') && m.content.includes('修 bug'),
+    )
+    expect(reminderMsg).toBeDefined()
+  })
+
+  it('headless 工具表不注册 AskUserQuestion（无人可答）', () => {
+    const src = readFileSync(new URL('../src/headless.ts', import.meta.url), 'utf8')
+    expect(src.includes('makeAskUserQuestionTool')).toBe(false)
+  })
+
+  it('UserPromptSubmit block 时拦截文本同时带上 blockReason 与 additionalContext', async () => {
+    vi.mocked(runHooks).mockImplementation(async (event: any, payload: any) => {
+      hookCalls.push({ event, payload })
+      // 仅 UserPromptSubmit 返回 block + additionalContext，其余事件走默认放行
+      if (event === 'UserPromptSubmit') {
+        return { block: true, preventContinuation: false, stop: false, blockReason: '拒', additionalContext: '附加上下文', results: [] } as any
+      }
+      return { block: false, preventContinuation: false, stop: false, results: [] } as any
+    })
+    try {
+      const r = await runHeadless({ client: {} as any, prompt: '坏输入', yolo: true })
+      expect(r.status).toBe('aborted')
+      expect(r.text).toContain('拒')
+      expect(r.text).toContain('附加上下文')
+    } finally {
+      // mockImplementation 持久，恢复默认放行实现避免污染后续用例
+      vi.mocked(runHooks).mockImplementation(async (event: any, payload: any) => {
+        hookCalls.push({ event, payload })
+        return { block: false, preventContinuation: false, stop: false, results: [] } as any
+      })
+    }
+  })
+
+  it('启动派发 SessionStart(startup) 与 InstructionsLoaded', async () => {
+    hookCalls.length = 0
+    const memPath = path.join(process.cwd(), 'DEEPCODE.md')
+    const createdMem = !existsSync(memPath)
+    if (createdMem) writeFileSync(memPath, '# headless 测试记忆')
+    try {
+      script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+      await runHeadless({ client: {} as any, prompt: '你好', yolo: true })
+      const ss = hookCalls.find(c => c.event === 'SessionStart')
+      expect(ss?.payload.source).toBe('startup')
+      expect(ss?.payload.session_id).toMatch(/^headless-/)
+      const il = hookCalls.find(c => c.event === 'InstructionsLoaded' && c.payload.load_reason === 'startup')
+      expect(il).toBeTruthy()
+      expect(il!.payload.file_path).toContain('DEEPCODE.md')
+    } finally {
+      if (createdMem) rmSync(memPath, { force: true })
+    }
+  })
+})
+
+describe('headless ask 桶·路径维度接线（不变量：绝不静默失效）', () => {
+  afterEach(() => { delete (mockSettings.permissions as any).ask })
+  it('permissions.ask 命中路径在 headless（含 yolo）下仍被拦截，不被只读短路静默放行', async () => {
+    ;(mockSettings.permissions as any).ask = ['**/.env']
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'ra1', name: 'Read', args: JSON.stringify({ file_path: '.env' }) }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '读一下 .env', yolo: true })
+    expect(r.status).toBe('done')
+    const allCalls = vi.mocked(chatStream).mock.calls
+    const allMessages: any[] = allCalls.flatMap(([_client, opts]) => opts.messages ?? [])
+    const toolMsg = allMessages.find(m => m.role === 'tool' && m.tool_call_id === 'ra1')
+    expect(toolMsg?.content).toContain('ask 规则')
+  })
+})
+
+import { checkPermission } from '../src/permissions.js'
+import { buildDenySourceMap, resolveDenyList } from '../src/deny.js'
+
+describe('headless deny 文本含来源', () => {
+  it('内置私钥路径硬拒绝文本带 来自 内置规则', async () => {
+    const tool: any = { name: 'Read', isReadOnly: false, needsPermission: () => 'x', deniablePaths: () => ['/h/.ssh/id_rsa'] }
+    const r = await checkPermission(tool, {}, {
+      mode: 'default', rules: [], saveRule: () => {}, ask: async () => 'no',
+      deny: resolveDenyList(), denySources: buildDenySourceMap(),
+    })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toContain('来自 内置规则')
+  })
+})
