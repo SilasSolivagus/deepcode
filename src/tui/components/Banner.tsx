@@ -53,6 +53,7 @@ export function Banner(p: { cwd: string; model: string; provider: string }) {
     { text: '' },
     { text: `${p.model} · ${p.provider}`, dim: true },
     { text: tildify(p.cwd), dim: true },
+    { text: '© Silas', dim: true },
   ]
   const right: Seg[] = [
     { text: '上手', color: T.accent, bold: true },

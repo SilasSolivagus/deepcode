@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Silas <dirctable@gmail.com>
+// deepcode — https://github.com/SilasSolivagus/deepcode
 // src/index.ts
 import { createClient } from './api.js'
 import { hasApiKey } from './config.js'

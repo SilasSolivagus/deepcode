@@ -1,0 +1,41 @@
+# 署名回归守卫（非防篡改）
+#
+# 诚实标注：本 workflow 只在本仓库生效。fork 者可在同一个 commit 里连同 .github/
+# 与 scripts/ 一起删掉，CI 变红只有维护者看得到。它的真实作用是防止本仓库/贡献者
+# 【误删】署名，以及给 HEAD 的签名做一次可见性检查。真正的防抄袭靠版权法 + GitHub
+# 公开时间戳历史 + LICENSE；真正的防伪造靠私钥保密 + GitHub Verified 徽章。
+
+name: ownership
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 署名存在性校验（LICENSE / package.json / SPDX 锚点 / Banner）
+        run: node scripts/verify-ownership.mjs
+
+      - name: HEAD commit 签名验证（尽力而为，不阻断历史遗留 commit）
+        run: |
+          if [ -f .github/allowed_signers ]; then
+            git config gpg.ssh.allowedSignersFile .github/allowed_signers
+            if git verify-commit HEAD 2>/dev/null; then
+              echo "HEAD commit 签名验证通过"
+            else
+              echo "HEAD commit 未签名或无法验证（历史遗留 commit 属正常，仅提示不阻断）"
+            fi
+          else
+            echo "未找到 .github/allowed_signers，跳过签名验证"
+          fi

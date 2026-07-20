@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Silas <dirctable@gmail.com>
+// deepcode — https://github.com/SilasSolivagus/deepcode
 // src/loop.ts
 import type OpenAI from 'openai'
 import { chatStream, type ChatResult, type ToolCall } from './api.js'

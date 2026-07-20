@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Silas <dirctable@gmail.com>
+// deepcode — https://github.com/SilasSolivagus/deepcode
 import OpenAI from 'openai'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import { loadSettings } from './config.js'

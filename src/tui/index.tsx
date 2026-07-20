@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 Silas <dirctable@gmail.com>
+// deepcode — https://github.com/SilasSolivagus/deepcode
 // src/tui/index.tsx
 // TUI 入口：按逃生开关路由——内联 App vs 全屏 FullscreenApp（仅 TTY）。
 // exitOnCtrlC: false 让根组件自管双击退出语义。
