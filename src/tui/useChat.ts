@@ -275,7 +275,7 @@ export function expandTextAttachments(text: string, attachments?: Attachment[]):
 export async function resolveAttachments(
   text: string,
   attachments?: Attachment[],
-  deps: { describe?: typeof describeImage; onStep?: (id: number) => void; onError?: (msg: string) => void } = {},
+  deps: { describe?: typeof describeImage; onStep?: (id: number) => void; onError?: (msg: string) => void; onUsage?: (u: UsageRecord['usage'], model: string) => void } = {},
 ): Promise<string> {
   if (!attachments?.length) return text
   // 1) 展开文本占位符
@@ -292,7 +292,7 @@ export async function resolveAttachments(
     deps.onStep?.(img.id)
     let injected: string
     try {
-      const desc = await describe({ base64: img.base64, mime: img.mime }, userText)
+      const desc = await describe({ base64: img.base64, mime: img.mime }, userText, { onUsage: deps.onUsage })
       injected = `<图片#${img.id} 识别(glm-4.6v)>${desc}</图片#${img.id}>`
     } catch (e) {
       const reason = e instanceof GlmKeyMissingError ? '未配置 GLM key' : '识别失败'
@@ -592,13 +592,18 @@ export function createChatCore(opts: {
   const memoryOnUsage = (u: UsageRecord['usage'], m: string) => {
     usageLog.push({ usage: u, model: m, kind: 'memory' })
   }
+  // 操作性开销（权限分类器、图片识别）：计入 sessionCost 总额，但排除在主对话缓存/token 指标外。
+  // 与 memoryOnUsage 一样仅驻内存不落盘（appendUsage 无 kind 字段，resume 读回会丢标签污染主指标）。
+  const auxOnUsage = (u: UsageRecord['usage'], m: string) => {
+    usageLog.push({ usage: u, model: m, kind: 'aux' })
+  }
   const cacheHitRate = () => {
-    const main = usageLog.filter(u => u.kind !== 'memory')
+    const main = usageLog.filter(u => !u.kind)
     const prompt = main.reduce((s, u) => s + u.usage.prompt_tokens, 0)
     return prompt ? main.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0) / prompt : 0
   }
   const cacheSavings = () =>
-    usageLog.filter(u => u.kind !== 'memory').reduce((s, u) => s + cacheSavingsCNY(u.model, u.usage.prompt_cache_hit_tokens), 0)
+    usageLog.filter(u => !u.kind).reduce((s, u) => s + cacheSavingsCNY(u.model, u.usage.prompt_cache_hit_tokens), 0)
   const contextPct = () => {
     const thr = effectiveThreshold(model, settings.compactTokens)
     return thr ? Math.min(100, Math.round((lastPromptTokens / thr) * 100)) : 0
@@ -1093,7 +1098,7 @@ export function createChatCore(opts: {
           askRules: settings.permissions.ask ?? [],
           askSources,
           denySources,
-          classify: (t: string, d: string, s: string) => classify(t, d, s),
+          classify: (t: string, d: string, s: string) => classify(t, d, s, { onUsage: auxOnUsage }),
           autoDenials: { consecutive: 0, total: 0 }, // S1 熔断器计数（会话级）
           setSkipWorkflowWarning: () => {
             try { const raw = loadRawUserSettings(); raw.skipWorkflowUsageWarning = true; saveRawUserSettings(raw); settings.skipWorkflowUsageWarning = true } catch { /* 持久化失败不阻断 */ }
@@ -1196,8 +1201,8 @@ export function createChatCore(opts: {
             lastTokPerSec = ev.usage.completion_tokens / Math.max((Date.now() - firstDeltaAt) / 1000, 0.001)
             firstDeltaAt = null
           }
-          const totIn = usageLog.filter(u => u.kind !== 'memory').reduce((s, u) => s + u.usage.prompt_tokens, 0)
-          const totOut = usageLog.filter(u => u.kind !== 'memory').reduce((s, u) => s + u.usage.completion_tokens, 0)
+          const totIn = usageLog.filter(u => !u.kind).reduce((s, u) => s + u.usage.prompt_tokens, 0)
+          const totOut = usageLog.filter(u => !u.kind).reduce((s, u) => s + u.usage.completion_tokens, 0)
           dispatch({ type: 'turn_end', usage: ev.usage, totals: { in: totIn, out: totOut, cost: sessionCost() } })
           if (!costWarned && sessionCost() > settings.costWarnCNY) {
             costWarned = true
@@ -1526,6 +1531,7 @@ export function createChatCore(opts: {
         ? await resolveAttachments(line, attachments, {
             onStep: (id) => dispatch({ type: 'push', item: { kind: 'tool', id: `img-${id}`, name: '识别图片', desc: `#${id} · glm-4.6v`, running: false, ok: true } }),
             onError: (msg) => notice('warn', msg),
+            onUsage: auxOnUsage,
           })
         : expandTextAttachments(line, attachments)
     }
@@ -1684,14 +1690,20 @@ export function createChatCore(opts: {
       return
     }
     if (line === '/cost') {
-      const mainLog = usageLog.filter(u => u.kind !== 'memory')
+      const mainLog = usageLog.filter(u => !u.kind)
       const inTok = mainLog.reduce((s, u) => s + u.usage.prompt_tokens, 0)
       const hitTok = mainLog.reduce((s, u) => s + u.usage.prompt_cache_hit_tokens, 0)
       const outTok = mainLog.reduce((s, u) => s + u.usage.completion_tokens, 0)
       const totalCost = sessionCost()
-      const memCost = usageLog.filter(u => u.kind === 'memory').reduce(
+      const costOf = (kind: 'memory' | 'aux') => usageLog.filter(u => u.kind === kind).reduce(
         (s, u) => s + costCNY(u.model, u.usage.prompt_tokens, u.usage.prompt_cache_hit_tokens, u.usage.completion_tokens), 0)
-      const memLine = memCost > 0 ? `（其中记忆 fork：¥${memCost.toFixed(6)}）` : ''
+      const memCost = costOf('memory')
+      const auxCost = costOf('aux')
+      const parts = [
+        memCost > 0 ? `记忆 fork ¥${memCost.toFixed(6)}` : '',
+        auxCost > 0 ? `辅助(分类器/识图) ¥${auxCost.toFixed(6)}` : '',
+      ].filter(Boolean)
+      const memLine = parts.length ? `（其中 ${parts.join('，')}）` : ''
       notice('info', `本会话：输入 ${inTok}（缓存命中 ${hitTok}）出 ${outTok} | 估算花费 ¥${totalCost.toFixed(6)} ${memLine}`.trimEnd())
       return
     }

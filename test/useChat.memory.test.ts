@@ -113,6 +113,26 @@ describe('usageLog kind:memory 计费与过滤', () => {
     core.dispose()
   })
 
+  it('aux 记录（分类器/识图开销）同 memory：计入 sessionCost，不计入缓存/token 指标', async () => {
+    script.push({
+      deltas: ['ok'],
+      result: { content: 'ok', toolCalls: [], usage, finishReason: 'stop' },
+    })
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, home, onState: () => {} })
+    await core.send('test')
+    const log = core.state.usageLog
+    const mainCost = core.state.sessionCost()
+    const mainCacheHit = core.state.cacheHitRate()
+    const mainSavings = core.state.cacheSavings()
+
+    log.push({ usage: { prompt_tokens: 100, completion_tokens: 50, prompt_cache_hit_tokens: 80 }, model: 'deepseek-v4-flash', kind: 'aux' })
+
+    expect(core.state.sessionCost()).toBeGreaterThan(mainCost)       // 成本可见
+    expect(core.state.cacheHitRate()).toBeCloseTo(mainCacheHit)       // 主指标不被污染
+    expect(core.state.cacheSavings()).toBeCloseTo(mainSavings)
+    core.dispose()
+  })
+
   it('只有 memory 记录时 cacheHitRate 返回 0（无主对话 prompt_tokens）', () => {
     const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, home, onState: () => {} })
     const log = core.state.usageLog

@@ -1,6 +1,6 @@
 import type { Settings } from './config.js'
-import { resolveActiveProvider } from './providers.js'
-import { createClient, withRetry } from './api.js'
+import { resolveActiveProvider, activeProvider } from './providers.js'
+import { createClient, withRetry, normalizeUsage, type Usage } from './api.js'
 import type OpenAI from 'openai'
 
 let _classifierClient: OpenAI | undefined
@@ -88,14 +88,20 @@ export function buildClassifierMessages(toolName: string, desc: string, siblingC
 export interface ClassifyDeps {
   call?: (model: string, messages: any[], thinking: boolean) => Promise<string>
   loadSettings?: () => Settings
+  /** 分类器用量上报（计入成本，作辅助开销）。 */
+  onUsage?: (u: Usage, model: string) => void
 }
 
-async function defaultCall(model: string, messages: any[], thinking: boolean): Promise<string> {
+async function defaultCall(
+  model: string, messages: any[], thinking: boolean, onUsage?: (u: Usage, model: string) => void,
+): Promise<string> {
   const client = getClassifierClient()
   const resp = await withRetry(() => client.chat.completions.create({
     model, messages, temperature: 0.2,
     thinking: thinking ? { type: 'enabled' } : { type: 'disabled' },
   } as any), 1)
+  const u = (resp as any).usage
+  if (u && onUsage) onUsage(normalizeUsage(u, activeProvider().dialect), model)
   return (resp as any).choices?.[0]?.message?.content ?? ''
 }
 
@@ -107,7 +113,7 @@ export async function classify(
     const settings = loadSettings()
     const model = resolveClassifierModel(settings)
     const thinking = settings.autoModeThinking === true
-    const call = deps.call ?? defaultCall
+    const call = deps.call ?? ((m: string, msgs: any[], th: boolean) => defaultCall(m, msgs, th, deps.onUsage))
     const raw = await call(model, buildClassifierMessages(toolName, desc, siblingContext), thinking)
     return mapDecision(parseDecision(raw))
   } catch {

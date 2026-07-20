@@ -3,8 +3,8 @@ import path from 'node:path'
 import type OpenAI from 'openai'
 import { scanMemoryFiles, formatMemoryManifest, type MemoryScope } from '../../memdir/memoryScan.js'
 import { parseFrontmatter } from '../../agentsLoader.js'
-import { buildThinkingParams } from '../../api.js'
-import { activeModelMeta } from '../../providers.js'
+import { buildThinkingParams, normalizeUsage, type Usage } from '../../api.js'
+import { activeModelMeta, activeProvider } from '../../providers.js'
 
 export interface IndexConsolidateDeps {
   client: OpenAI
@@ -14,6 +14,8 @@ export interface IndexConsolidateDeps {
   signal: AbortSignal
   /** 可注入的生成函数（测试用）。默认走 client。 */
   generate?: (prompt: string) => Promise<string>
+  /** 索引归纳用量上报（计入成本，作记忆开销）。 */
+  onUsage?: (u: Usage, model: string) => void
 }
 
 const SYS = '你把一批记忆归纳成一份精简、按主题分组、每条一行的索引，供快速扫读。只输出 Markdown 索引正文：以 `## 主题名` 分组，组下每条形如 `- scope:文件名: 浓缩描述`。不要编造、不要漏条、不要输出别的话。'
@@ -31,10 +33,13 @@ export function buildIndexPrompt(manifest: string, bodies: string): string {
 async function defaultGenerate(deps: IndexConsolidateDeps, prompt: string): Promise<string> {
   const res = await deps.client.chat.completions.create({
     model: deps.model, max_tokens: 2048,
-    // thinking 模型（glm）绕过 buildThinkingParams 会击穿 content（第一层血的教训）
-    ...buildThinkingParams(activeModelMeta(deps.model).supportsThinking, false, undefined),
+    // thinking 模型（glm/kimi）绕过 buildThinkingParams 会击穿 content（第一层血的教训）；
+    // thinkingOnly 模型（kimi-k2.7-code/k3）关思考不发 disabled，否则端点 400。
+    ...buildThinkingParams(activeModelMeta(deps.model).supportsThinking, false, undefined, activeModelMeta(deps.model).thinkingOnly ?? false),
     messages: [{ role: 'system', content: SYS }, { role: 'user', content: prompt }],
   } as any, { signal: deps.signal })
+  const u = (res as any).usage
+  if (u && deps.onUsage) deps.onUsage(normalizeUsage(u, activeProvider().dialect), deps.model)
   return (res as any).choices?.[0]?.message?.content ?? ''
 }
 

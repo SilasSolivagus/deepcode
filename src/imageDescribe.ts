@@ -2,6 +2,7 @@
 import OpenAI from 'openai'
 import { loadSettings } from './config.js'
 import { BUILTIN_PROVIDERS } from './providers.js'
+import { normalizeUsage, type Usage } from './api.js'
 
 export interface ImageInput { base64: string; mime: string }
 export class GlmKeyMissingError extends Error {
@@ -19,7 +20,8 @@ function glmClient(): OpenAI {
 }
 
 export async function describeImage(
-  img: ImageInput, userText: string, deps: { client?: any; model?: string } = {},
+  img: ImageInput, userText: string,
+  deps: { client?: any; model?: string; onUsage?: (u: Usage, model: string) => void } = {},
 ): Promise<string> {
   const client = deps.client ?? glmClient()
   const model = deps.model ?? 'glm-4.6v'
@@ -34,5 +36,7 @@ export async function describeImage(
     }],
     stream: false,
   })
+  // 识图始终走 glm-4.6v（与 active provider 解耦），用量按 glm 方言归一后上报，计入成本。
+  if (res.usage && deps.onUsage) deps.onUsage(normalizeUsage(res.usage, 'glm'), model)
   return res.choices?.[0]?.message?.content ?? ''
 }

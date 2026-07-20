@@ -57,6 +57,20 @@ describe('runIndexConsolidation', () => {
     expect(fs.existsSync(path.join(dir, '.index.md'))).toBe(false)
   })
 
+  it('走 client 时上报归一后用量（计入成本）', async () => {
+    write(dir, 'a.md', 'alpha')
+    const client = { chat: { completions: { create: async () => ({
+      choices: [{ message: { content: '## 主题\n- project:a.md: alpha' } }],
+      usage: { prompt_tokens: 800, completion_tokens: 120, prompt_cache_hit_tokens: 200 },
+    }) } } }
+    const seen: any[] = []
+    // 不传 generate → 走 defaultGenerate 的真实 client 路径
+    await runIndexConsolidation(deps({ memdir: dir, client, onUsage: (u: any, m: any) => seen.push({ u, m }) }))
+    expect(seen).toHaveLength(1)
+    expect(seen[0].m).toBe('m')
+    expect(seen[0].u).toEqual({ prompt_tokens: 800, completion_tokens: 120, prompt_cache_hit_tokens: 200 })
+  })
+
   it('大 memdir 下拼给 generate 的 prompt 有界，不会随正文总量线性膨胀', async () => {
     // 30 个文件、每个正文 5000 字符 → 原始正文总量 150000 字符，远超 TOTAL_BODIES_MAX(40000)
     const FILE_COUNT = 30

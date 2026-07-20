@@ -11,3 +11,25 @@ it('拼多模态请求并返回识别文字', async () => {
   expect(content.find((p: any) => p.type === 'image_url').image_url.url).toBe('data:image/png;base64,AAAA')
   expect(content.find((p: any) => p.type === 'text').text).toContain('这报错怎么解决')
 })
+
+it('上报识图用量（glm 方言归一，计入成本）', async () => {
+  const fakeClient = { chat: { completions: { create: async () => ({
+    choices: [{ message: { content: 'x' } }],
+    usage: { prompt_tokens: 500, completion_tokens: 30, prompt_tokens_details: { cached_tokens: 40 } },
+  }) } } }
+  const seen: any[] = []
+  await describeImage({ base64: 'A', mime: 'image/png' }, 'q', {
+    client: fakeClient, model: 'glm-4.6v', onUsage: (u, m) => seen.push({ u, m }),
+  })
+  expect(seen).toHaveLength(1)
+  expect(seen[0].m).toBe('glm-4.6v')
+  // glm 方言：缓存命中从 prompt_tokens_details.cached_tokens 归一到顶层
+  expect(seen[0].u).toEqual({ prompt_tokens: 500, completion_tokens: 30, prompt_cache_hit_tokens: 40 })
+})
+
+it('无 usage 时不上报（不崩）', async () => {
+  const fakeClient = { chat: { completions: { create: async () => ({ choices: [{ message: { content: 'x' } }] }) } } }
+  const seen: any[] = []
+  await describeImage({ base64: 'A', mime: 'image/png' }, 'q', { client: fakeClient, onUsage: (u, m) => seen.push({ u, m }) })
+  expect(seen).toHaveLength(0)
+})

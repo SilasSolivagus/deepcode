@@ -21,7 +21,9 @@ export interface SessionMeta {
 export interface UsageRecord {
   usage: { prompt_tokens: number; completion_tokens: number; prompt_cache_hit_tokens: number }
   model: string
-  kind?: 'memory'
+  /** 辅助用量标签：'memory'=记忆/dream fork；'aux'=权限分类器/图片识别等操作性开销。
+   *  两者都计入 sessionCost 总额，但排除在主对话的缓存/token 指标之外（主对话=无 kind）。 */
+  kind?: 'memory' | 'aux'
 }
 
 export interface SessionHandle {

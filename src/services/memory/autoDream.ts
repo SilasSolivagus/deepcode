@@ -149,7 +149,7 @@ export async function runAutoDream(deps: AutoDreamDeps): Promise<void> {
       if (deps.indexConsolidation) {
         await runIndexConsolidation({
           client: deps.client, model: deps.model, memdir: deps.memdir,
-          globalMemdir: deps.globalMemdir, signal: deps.ctx.signal,
+          globalMemdir: deps.globalMemdir, signal: deps.ctx.signal, onUsage: deps.onUsage,
         })
       }
       deps.onDone?.(true)

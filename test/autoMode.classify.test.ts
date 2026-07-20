@@ -33,6 +33,26 @@ describe('classify', () => {
   })
 })
 
+describe('classify 用量上报（默认 client 路径）', () => {
+  beforeEach(() => { vi.resetModules() })
+  it('无注入 call 时经 defaultCall 上报归一用量', async () => {
+    // 各缓存字段都填 10 → 无论 active 方言(deepseek/glm/kimi)归一结果都是 10，测试不受真实 settings 影响
+    const fakeClient = { chat: { completions: { create: async () => ({
+      choices: [{ message: { content: '{"reasoning":"t","decision":"run"}' } }],
+      usage: { prompt_tokens: 60, completion_tokens: 8, prompt_cache_hit_tokens: 10, cached_tokens: 10, prompt_tokens_details: { cached_tokens: 10 } },
+    }) } } }
+    vi.doMock('../src/api.js', async orig => ({ ...(await orig() as any), createClient: () => fakeClient }))
+    const { classify: classify2, __resetClassifierClient } = await import('../src/autoMode.js')
+    const { __resetProviderCache } = await import('../src/providers.js')
+    __resetClassifierClient(); __resetProviderCache()
+    const seen: any[] = []
+    const d = await classify2('Bash', 'npm test', '', { loadSettings: () => stubSettings, onUsage: (u: any, m: any) => seen.push({ u, m }) })
+    expect(d).toBe('run')
+    expect(seen).toHaveLength(1)
+    expect(seen[0].u).toEqual({ prompt_tokens: 60, completion_tokens: 8, prompt_cache_hit_tokens: 10 })
+  })
+})
+
 describe('分类器 client memoize', () => {
   beforeEach(() => { vi.resetModules() })
 
