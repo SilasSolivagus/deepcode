@@ -24,6 +24,22 @@ describe('providers 内置表', () => {
     expect(BUILTIN_PROVIDERS.glm.meta['glm-5.2'].contextWindow).toBe(1_000_000)
     expect(BUILTIN_PROVIDERS.glm.meta['glm-5.2'].out).toBeGreaterThan(0)
   })
+  it('kimi 内置：档位/方言/前缀/env 正确，含各类模型', () => {
+    const k = BUILTIN_PROVIDERS.kimi
+    expect(k.models).toEqual({ fast: 'kimi-k2.5', smart: 'kimi-k2.7-code' })
+    expect(k.dialect).toBe('kimi')
+    expect(k.apiKeyEnv).toBe('MOONSHOT_API_KEY')
+    expect(k.modelPrefix).toBe('kimi')
+    expect(k.meta['kimi-k3'].contextWindow).toBe(1_048_576)
+    // thinkingOnly 模型标记正确（k2.7-code/k3）；k2.5/k2.6 支持非思考模式
+    expect(k.meta['kimi-k2.7-code'].thinkingOnly).toBe(true)
+    expect(k.meta['kimi-k3'].thinkingOnly).toBe(true)
+    expect(k.meta['kimi-k2.5'].thinkingOnly).toBeFalsy()
+    // fast 档必须支持非思考模式，否则记忆门控被 reasoning 吃空
+    expect(k.meta[k.models.fast].thinkingOnly).toBeFalsy()
+    // 视觉模型
+    expect(k.meta['kimi-k2.6'].supportsVision).toBe(true)
+  })
 })
 
 describe('resolveActiveProvider', () => {

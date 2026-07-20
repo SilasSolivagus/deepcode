@@ -9,6 +9,22 @@ export interface Usage {
   prompt_cache_hit_tokens: number
 }
 
+/** 各方言的 usage 归一到统一 Usage 形状：缓存命中字段位置各家不同，且任一字段可能缺省。
+ *  deepseek=顶层 prompt_cache_hit_tokens / glm+openai=prompt_tokens_details.cached_tokens / kimi=顶层 cached_tokens。
+ *  统一兜零：避免未归一的原始 usage（含 undefined 字段）流入 costCNY 算出 NaN。 */
+export function normalizeUsage(u: any, dialect: Dialect): Usage {
+  const cacheHit =
+    dialect === 'glm' ? (u?.prompt_tokens_details?.cached_tokens ?? 0)
+    : dialect === 'kimi' ? (u?.cached_tokens ?? u?.prompt_tokens_details?.cached_tokens ?? 0)
+    : dialect === 'openai' ? 0
+    : (u?.prompt_cache_hit_tokens ?? 0)
+  return {
+    prompt_tokens: u?.prompt_tokens ?? 0,
+    completion_tokens: u?.completion_tokens ?? 0,
+    prompt_cache_hit_tokens: cacheHit,
+  }
+}
+
 export interface ToolCall { id: string; name: string; args: string }
 
 export interface ChatResult {
@@ -30,18 +46,7 @@ export class Assembler {
 
   /** 喂入一个流式分片，返回其中的文本增量 */
   push(chunk: any): { text: string; reasoning: string } {
-    if (chunk?.usage) {
-      const u = chunk.usage
-      const cacheHit =
-        this.dialect === 'glm' ? (u.prompt_tokens_details?.cached_tokens ?? 0)
-        : this.dialect === 'openai' ? 0
-        : (u.prompt_cache_hit_tokens ?? 0)
-      this.usage = {
-        prompt_tokens: u.prompt_tokens ?? 0,
-        completion_tokens: u.completion_tokens ?? 0,
-        prompt_cache_hit_tokens: cacheHit,
-      }
-    }
+    if (chunk?.usage) this.usage = normalizeUsage(chunk.usage, this.dialect)
     const choice = chunk?.choices?.[0]
     if (!choice) return { text: '', reasoning: '' }
     if (choice.finish_reason) this.finishReason = choice.finish_reason
@@ -147,16 +152,17 @@ export function toWireMessages(messages: any[], supportsVision: boolean): any[] 
   })
 }
 
-/** thinking 请求体三态：supportsThinking=false → 完全省略；true → 按开关 enabled/disabled。 */
+/** thinking 请求体：supportsThinking=false → 完全省略；true → 按开关 enabled/disabled。
+ *  thinkingOnly（如 kimi-k2.7-code/k3）→「关思考」不发 disabled（端点会 400），改为省略走模型恒定思考默认。 */
 export function buildThinkingParams(
   supportsThinking: boolean,
   thinking: boolean,
   effortLevel: 'low' | 'medium' | 'high' | undefined,
+  thinkingOnly = false,
 ): Record<string, unknown> {
   if (!supportsThinking) return {}
-  return thinking
-    ? { reasoning_effort: effortLevel ?? 'medium', thinking: { type: 'enabled' } }
-    : { thinking: { type: 'disabled' } }
+  if (thinking) return { reasoning_effort: effortLevel ?? 'medium', thinking: { type: 'enabled' } }
+  return thinkingOnly ? {} : { thinking: { type: 'disabled' } }
 }
 
 export type StreamDelta = { type: 'text' | 'reasoning'; delta: string }
@@ -175,7 +181,7 @@ export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGener
         ...(opts.tools.length ? { tools: opts.tools } : {}),
         stream: true,
         stream_options: { include_usage: true },
-        ...buildThinkingParams(supportsThinking, opts.thinking, opts.effortLevel),
+        ...buildThinkingParams(supportsThinking, opts.thinking, opts.effortLevel, activeModelMeta(opts.model).thinkingOnly ?? false),
       } as any,
       { signal: opts.signal },
     ),

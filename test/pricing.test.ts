@@ -17,6 +17,21 @@ describe('costCNY', () => {
     // gpt-4o 不在 deepseek meta 表，走 defaultMeta(= pro 保守兜底)，miss=3 CNY/M 故非零
     expect(costCNY('gpt-4o', 10000, 5000, 500)).toBeGreaterThan(0)
   })
+  it('cacheHit=undefined（未归一原始 usage）→ 有限数不产 NaN', () => {
+    // ¥NaN 根因回归：原始 glm/kimi usage 无顶层缓存字段，cacheHit 传 undefined
+    const c = costCNY('deepseek-v4-flash', 1000, undefined as any, 500)
+    expect(Number.isFinite(c)).toBe(true)
+    expect(c).toBeGreaterThan(0)
+  })
+  it('全字段 undefined/NaN → 0，绝不 NaN', () => {
+    expect(costCNY('deepseek-v4-flash', undefined as any, undefined as any, undefined as any)).toBe(0)
+    expect(costCNY('deepseek-v4-flash', NaN, NaN, NaN)).toBe(0)
+  })
+  it('cacheHit > promptTokens → 命中被夹到 prompt，miss 非负', () => {
+    const c = costCNY('deepseek-v4-flash', 100, 999, 0)
+    expect(Number.isFinite(c)).toBe(true)
+    expect(c).toBeGreaterThanOrEqual(0)
+  })
 })
 
 describe('cacheSavingsCNY', () => {

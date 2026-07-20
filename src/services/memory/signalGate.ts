@@ -1,7 +1,7 @@
 import type OpenAI from 'openai'
 import { renderRecentMessages } from './extractPrompt.js'
-import { buildThinkingParams } from '../../api.js'
-import { activeModelMeta } from '../../providers.js'
+import { buildThinkingParams, normalizeUsage } from '../../api.js'
+import { activeModelMeta, activeProvider } from '../../providers.js'
 
 const GATE_SYS = '你判断一段对话是否包含值得长期记住的持久信息。只输出一个小写英文单词：yes 或 no，不要任何别的字。'
 const GATE_INSTRUCT = `只有这些算 yes：用户本人的事实或长期偏好、用户对工作方式的纠正或明确指导、项目的关键决策或约束。
@@ -18,15 +18,18 @@ export async function hasDurableSignal(
   try {
     const res = await client.chat.completions.create({
       model, max_tokens: 4,
-      // thinking 模型（如 glm）默认会先吐 reasoning，4 token 全被吃掉导致 content 恒为空；禁 thinking 让 content 直出 yes/no。
-      ...buildThinkingParams(activeModelMeta(model).supportsThinking, false, undefined),
+      // thinking 模型（如 glm/kimi）默认会先吐 reasoning，4 token 全被吃掉导致 content 恒为空；禁 thinking 让 content 直出 yes/no。
+      // 注：fast 档须为支持非思考模式的模型（deepseek/glm/kimi-k2.5 均可）；thinkingOnly 模型此处会退化为不发 disabled。
+      ...buildThinkingParams(activeModelMeta(model).supportsThinking, false, undefined, activeModelMeta(model).thinkingOnly ?? false),
       messages: [
         { role: 'system', content: GATE_SYS },
         { role: 'user', content: `${GATE_INSTRUCT}\n\n对话：\n${renderRecentMessages(recent)}` },
       ],
     } as any, { signal })
     const u = (res as any).usage
-    if (u && onUsage) onUsage(u, model)
+    // 原始 usage 各家缓存字段位置不同且可能缺省（glm/kimi 无顶层 prompt_cache_hit_tokens）；
+    // 归一后再上报，否则 undefined 字段流入 costCNY 会污染 sessionCost 成 ¥NaN。
+    if (u && onUsage) onUsage(normalizeUsage(u, activeProvider().dialect), model)
     const raw = String((res as any).choices?.[0]?.message?.content ?? '').trim()
     const t = raw.toLowerCase()
     // 先判否定（no/否/不），再判肯定（yes/是）——中文容错，防 fast 档回「是/否」被英文正则漏判成假阴性。

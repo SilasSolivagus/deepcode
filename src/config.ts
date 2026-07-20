@@ -56,11 +56,12 @@ export interface Settings {
   /** DeepSeek API key（首跑向导写入；env DEEPSEEK_API_KEY 优先级更高） */
   apiKey?: string
   /** active provider 选择（缺省 deepseek）。仅信任 user scope（project 剥离，见 settingsLayers）。 */
-  provider?: 'deepseek' | 'glm' | 'custom'
+  provider?: 'deepseek' | 'glm' | 'kimi' | 'custom'
   /** per-provider 覆盖（apiKey）+ custom 后端定义。仅信任 user scope。 */
   providers?: {
     deepseek?: { apiKey?: string }
     glm?: { apiKey?: string }
+    kimi?: { apiKey?: string }
     custom?: CustomProvider
   }
   /** 启动用内联模式（退回非全屏 TUI；env DEEPCODE_INLINE=1 / CLI --inline 优先） */
@@ -199,7 +200,7 @@ export function loadRawUserSettings(): Settings {
     allowedHttpHookUrls: parseStringArray(raw?.allowedHttpHookUrls),
     httpHookAllowedEnvVars: parseStringArray(raw?.httpHookAllowedEnvVars),
     memory: parseMemoryConfig(raw?.memory),
-    provider: raw?.provider === 'glm' || raw?.provider === 'custom' || raw?.provider === 'deepseek' ? raw.provider : undefined,
+    provider: raw?.provider === 'glm' || raw?.provider === 'kimi' || raw?.provider === 'custom' || raw?.provider === 'deepseek' ? raw.provider : undefined,
     providers: parseProvidersConfig(raw?.providers),
     outputStyle: raw?.outputStyle,
     language: typeof raw?.language === 'string' && raw.language.trim() ? raw.language.trim() : undefined,
@@ -277,8 +278,8 @@ export function parseSkillsConfig(raw: unknown): SkillsConfig | undefined {
   return out
 }
 
-/** 宽松解析 settings.providers：deepseek/glm 取 {apiKey:string}；custom 须有 baseURL + models.fast/smart。
- *  custom.dialect 非 deepseek/glm/openai 则丢弃。非对象 → undefined。 */
+/** 宽松解析 settings.providers：deepseek/glm/kimi 取 {apiKey:string}；custom 须有 baseURL + models.fast/smart。
+ *  custom.dialect 非 deepseek/glm/kimi/openai 则丢弃。非对象 → undefined。 */
 export function parseProvidersConfig(raw: unknown): Settings['providers'] | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
   const r = raw as Record<string, unknown>
@@ -290,6 +291,7 @@ export function parseProvidersConfig(raw: unknown): Settings['providers'] | unde
   }
   const ds = keyOnly(r.deepseek); if (ds) out.deepseek = ds
   const glm = keyOnly(r.glm); if (glm) out.glm = glm
+  const kimi = keyOnly(r.kimi); if (kimi) out.kimi = kimi
   const c = r.custom
   if (c && typeof c === 'object' && !Array.isArray(c)) {
     const cc = c as Record<string, any>
@@ -300,7 +302,7 @@ export function parseProvidersConfig(raw: unknown): Settings['providers'] | unde
       const custom: CustomProvider = { baseURL: cc.baseURL, models: { fast: models.fast, smart: models.smart } }
       if (typeof cc.apiKeyEnv === 'string') custom.apiKeyEnv = cc.apiKeyEnv
       if (typeof cc.apiKey === 'string') custom.apiKey = cc.apiKey
-      if (cc.dialect === 'deepseek' || cc.dialect === 'glm' || cc.dialect === 'openai') custom.dialect = cc.dialect
+      if (cc.dialect === 'deepseek' || cc.dialect === 'glm' || cc.dialect === 'kimi' || cc.dialect === 'openai') custom.dialect = cc.dialect
       if (cc.meta && typeof cc.meta === 'object') custom.meta = cc.meta as Record<string, ModelMeta>
       if (cc.defaultMeta && typeof cc.defaultMeta === 'object') custom.defaultMeta = cc.defaultMeta as ModelMeta
       out.custom = custom

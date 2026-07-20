@@ -1,7 +1,7 @@
 // src/providers.ts —— 多 provider 单一事实源（内置 deepseek/glm + custom）。
 import { loadSettings, type Settings } from './config.js'
 
-export type Dialect = 'deepseek' | 'glm' | 'openai'
+export type Dialect = 'deepseek' | 'glm' | 'openai' | 'kimi'
 
 /** 每模型元数据。hit/miss/out = CNY/1M。 */
 export interface ModelMeta {
@@ -11,6 +11,9 @@ export interface ModelMeta {
   contextWindow: number
   supportsThinking: boolean
   supportsVision?: boolean
+  /** 只支持思考模式的模型（如 kimi-k2.7-code/k3）：发 thinking:{type:disabled} 会被端点 400 拒绝。
+   *  buildThinkingParams 见此标记时，「关思考」不发 disabled 而是省略（让模型走其恒定思考默认）。 */
+  thinkingOnly?: boolean
 }
 
 /** custom provider（用户在 settings.providers.custom 自填的 OpenAI 兼容后端）。 */
@@ -74,6 +77,25 @@ export const BUILTIN_PROVIDERS: Record<string, ProviderPreset> = {
       'glm-4.6v-flash': { hit: 0, miss: 0, out: 0, contextWindow: 128_000, supportsThinking: true, supportsVision: true },
     },
     defaultMeta: GLM_DEFAULT,
+  },
+  kimi: {
+    id: 'kimi',
+    baseURL: 'https://api.moonshot.cn/v1',
+    apiKeyEnv: 'MOONSHOT_API_KEY',
+    dialect: 'kimi',
+    modelPrefix: 'kimi',
+    // fast=kimi-k2.5（最便宜且支持非思考模式，记忆门控禁 thinking 才不被吃空）；
+    // smart=kimi-k2.7-code（代码专用，仅思考模式）。/model 可切 k3（1M 上下文）。
+    models: { fast: 'kimi-k2.5', smart: 'kimi-k2.7-code' },
+    meta: { // hit/miss/out = CNY/1M，取自 platform.kimi.com/docs/pricing（2026-07 核实）
+      'kimi-k3': { hit: 2, miss: 20, out: 100, contextWindow: 1_048_576, supportsThinking: true, thinkingOnly: true },
+      'kimi-k2.7-code': { hit: 1.3, miss: 6.5, out: 27, contextWindow: 262_144, supportsThinking: true, thinkingOnly: true, supportsVision: true },
+      'kimi-k2.7-code-highspeed': { hit: 2.6, miss: 13, out: 54, contextWindow: 262_144, supportsThinking: true, thinkingOnly: true, supportsVision: true },
+      'kimi-k2.6': { hit: 1.1, miss: 6.5, out: 27, contextWindow: 262_144, supportsThinking: true, supportsVision: true },
+      'kimi-k2.5': { hit: 0.7, miss: 4, out: 21, contextWindow: 262_144, supportsThinking: true, supportsVision: true },
+    },
+    // 未知 kimi 新档兜底（取 k2.6 保守值，不设 thinkingOnly 以免误伤门控）。
+    defaultMeta: { hit: 1.1, miss: 6.5, out: 27, contextWindow: 262_144, supportsThinking: true },
   },
 }
 
@@ -161,7 +183,7 @@ export function resolveStartupModel(
   return foreignProviderOf(preset, configured, presets) ? preset.models.fast : configured
 }
 
-const PROVIDER_LABELS: Record<string, string> = { deepseek: 'DeepSeek', glm: 'GLM', custom: 'Custom' }
+const PROVIDER_LABELS: Record<string, string> = { deepseek: 'DeepSeek', glm: 'GLM', kimi: 'Kimi', custom: 'Custom' }
 /** provider 展示名（横幅、选择器标签用）。 */
 export function providerLabel(id: string): string {
   return PROVIDER_LABELS[id] ?? id

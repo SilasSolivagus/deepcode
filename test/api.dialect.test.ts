@@ -17,6 +17,16 @@ describe('Assembler usage 归一', () => {
     a.push({ usage: { prompt_tokens: 100, completion_tokens: 10 }, choices: [] })
     expect(a.finish().usage.prompt_cache_hit_tokens).toBe(0)
   })
+  it('kimi dialect 读顶层 cached_tokens 归一', () => {
+    const a = new Assembler('kimi')
+    a.push({ usage: { prompt_tokens: 100, completion_tokens: 10, cached_tokens: 33 }, choices: [] })
+    expect(a.finish().usage.prompt_cache_hit_tokens).toBe(33)
+  })
+  it('kimi dialect 无缓存字段 → 0（不产生 undefined 污染成本）', () => {
+    const a = new Assembler('kimi')
+    a.push({ usage: { prompt_tokens: 12, completion_tokens: 20, completion_tokens_details: { reasoning_tokens: 19 } }, choices: [] })
+    expect(a.finish().usage.prompt_cache_hit_tokens).toBe(0)
+  })
   it('缺省构造器 = deepseek', () => {
     const a = new Assembler()
     a.push({ usage: { prompt_tokens: 1, completion_tokens: 1, prompt_cache_hit_tokens: 1 }, choices: [] })
@@ -98,5 +108,25 @@ describe('buildThinkingParams 三态', () => {
   it('supportsThinking=true + thinking 关 → disabled', async () => {
     const { buildThinkingParams } = await import('../src/api.js')
     expect(buildThinkingParams(true, false, undefined)).toEqual({ thinking: { type: 'disabled' } })
+  })
+  it('thinkingOnly + thinking 关 → 省略 disabled（防端点 400）', async () => {
+    const { buildThinkingParams } = await import('../src/api.js')
+    expect(buildThinkingParams(true, false, undefined, true)).toEqual({})
+  })
+  it('thinkingOnly + thinking 开 → 正常 enabled', async () => {
+    const { buildThinkingParams } = await import('../src/api.js')
+    expect(buildThinkingParams(true, true, 'low', true)).toEqual({ reasoning_effort: 'low', thinking: { type: 'enabled' } })
+  })
+})
+
+describe('normalizeUsage 各方言缓存字段', () => {
+  it('deepseek/glm/kimi/openai 各取正确位置，缺省兜零', async () => {
+    const { normalizeUsage } = await import('../src/api.js')
+    expect(normalizeUsage({ prompt_tokens: 10, completion_tokens: 2, prompt_cache_hit_tokens: 4 }, 'deepseek').prompt_cache_hit_tokens).toBe(4)
+    expect(normalizeUsage({ prompt_tokens: 10, prompt_tokens_details: { cached_tokens: 5 } }, 'glm').prompt_cache_hit_tokens).toBe(5)
+    expect(normalizeUsage({ prompt_tokens: 10, cached_tokens: 6 }, 'kimi').prompt_cache_hit_tokens).toBe(6)
+    expect(normalizeUsage({ prompt_tokens: 10 }, 'openai').prompt_cache_hit_tokens).toBe(0)
+    // 完全空的 usage：三字段全兜零，绝不产 undefined
+    expect(normalizeUsage(undefined, 'kimi')).toEqual({ prompt_tokens: 0, completion_tokens: 0, prompt_cache_hit_tokens: 0 })
   })
 })

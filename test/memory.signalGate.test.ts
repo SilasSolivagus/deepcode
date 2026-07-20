@@ -44,11 +44,12 @@ describe('hasDurableSignal', () => {
     const c = mkClient(async () => { throw new Error('boom') })
     expect(await hasDurableSignal(c, 'fast', recent, sig)).toBe(true)
   })
-  it('有 usage 时回调 onUsage', async () => {
+  it('有 usage 时回调 onUsage（归一后上报，缺省字段兜零防 ¥NaN）', async () => {
     const c = mkClient(async () => ({ choices: [{ message: { content: 'yes' } }], usage: { prompt_tokens: 5 } }))
     const onUsage = vi.fn()
     await hasDurableSignal(c, 'fast', recent, sig, onUsage)
-    expect(onUsage).toHaveBeenCalledWith({ prompt_tokens: 5 }, 'fast')
+    // 原始 usage 只有 prompt_tokens；归一后补齐 completion/cache 字段为 0，绝不把 undefined 传下去
+    expect(onUsage).toHaveBeenCalledWith({ prompt_tokens: 5, completion_tokens: 0, prompt_cache_hit_tokens: 0 }, 'fast')
   })
 
   it('thinking 模型（glm 等 supportsThinking=true）→ 请求带 thinking:disabled，防 reasoning 吃光 max_tokens', async () => {

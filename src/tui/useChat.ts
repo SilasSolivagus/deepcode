@@ -1452,7 +1452,7 @@ export function createChatCore(opts: {
     if (!g.ok) { notice('warn', g.message); return }
     try {
       const raw = loadRawUserSettings()
-      raw.provider = preset.id as ProviderId // availablePresets 保证 id ∈ deepseek|glm|custom
+      raw.provider = preset.id as ProviderId // availablePresets 保证 id ∈ deepseek|glm|kimi|custom
       raw.model = id
       saveRawUserSettings(raw)
     } catch (e: any) {
