@@ -20,7 +20,7 @@ const ONLY = arg('--scenarios', '')
 const OUT = arg('--out', path.join(ROOT, 'results.json'))
 const scenarios = ONLY ? SCENARIOS.filter(s => ONLY.split(',').includes(s.id)) : SCENARIOS
 
-const providerOf = (m) => m.startsWith('glm') ? 'glm' : 'deepseek'
+const providerOf = (m) => m.startsWith('kimi') ? 'kimi' : m.startsWith('glm') ? 'glm' : 'deepseek'
 const assets = { accessLog: genAccessLog() }
 
 // 每个模型一个隔离 HOME（settings 钉 provider+model+关记忆）
