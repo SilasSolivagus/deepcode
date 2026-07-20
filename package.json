@@ -1,6 +1,6 @@
 {
   "name": "@silassolivagus/deepcode",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Terminal coding agent for DeepSeek, GLM & Kimi — multi-provider, built-in memory, reliable at a fraction of the cost (command: deepcode)",
   "license": "MIT",
   "repository": {
