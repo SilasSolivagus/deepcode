@@ -2,6 +2,7 @@
 // src/index.ts
 import { createClient } from './api.js'
 import { hasApiKey } from './config.js'
+import { setFlagSettingsPath } from './settingsLayers.js'
 
 const argv = process.argv
 const yolo = argv.includes('--yolo')
@@ -10,6 +11,9 @@ const inlineFlag = argv.includes('--inline') || process.env.DEEPCODE_INLINE === 
 const pIdx = argv.indexOf('-p')
 const settingsFlagIdx = argv.indexOf('--settings')
 const flagSettingsPath = settingsFlagIdx >= 0 ? argv[settingsFlagIdx + 1] : undefined
+// 进程级登记：令运行期 arg-less loadSettings()（activeProvider/计价/权限归属等）也认 --settings，
+// 否则 client 用 flag settings、而这些读真实 settings，二者割裂（provider/计价错位）。须在任何 loadSettings 之前。
+setFlagSettingsPath(flagSettingsPath)
 const bgRun = argv.includes('--background-run')
 const resumeIdx = argv.indexOf('--resume')
 const resumeFile = resumeIdx >= 0 ? argv[resumeIdx + 1] : undefined

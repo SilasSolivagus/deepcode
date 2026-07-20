@@ -207,7 +207,13 @@ function readRaw(file: string): any | undefined {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return undefined }
 }
 
-export function loadLayeredSettings(cwd: string = process.cwd(), flagPath?: string): LayeredResult {
+/** 进程级 --settings 覆盖路径。main 启动时设一次，令所有不显式传 flagPath 的 loadSettings()/loadLayeredSettings()
+ *  也认 --settings；否则运行期 activeProvider/计价等（arg-less loadSettings）读真实 settings，与 client 的 flag settings 割裂
+ *  （--settings 本意是完整覆盖）。显式传参仍优先。 */
+let _flagSettingsPath: string | undefined
+export function setFlagSettingsPath(p: string | undefined): void { _flagSettingsPath = p }
+
+export function loadLayeredSettings(cwd: string = process.cwd(), flagPath: string | undefined = _flagSettingsPath): LayeredResult {
   const layers: ScopePartial[] = []
   const scopes: LoadedScope[] = []
   for (const { scope, path: file } of scopePaths(cwd, flagPath)) {

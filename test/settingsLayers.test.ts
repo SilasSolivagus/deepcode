@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { stripUntrustedScope, isGitTracked, mergeScopePartials, loadLayeredSettings, deriveHookLayers } from '../src/settingsLayers.js'
+import { stripUntrustedScope, isGitTracked, mergeScopePartials, loadLayeredSettings, deriveHookLayers, setFlagSettingsPath } from '../src/settingsLayers.js'
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -138,6 +138,25 @@ describe('loadLayeredSettings', () => {
       const proj = res.scopes.find(s => s.scope === 'project')!
       expect(proj.stripped).toEqual(expect.arrayContaining(['apiKey', 'hooks', 'permissions.allow']))
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('setFlagSettingsPath 全局登记后，不传 flagPath 也认 --settings（否则运行期 activeProvider/计价与 client 割裂）', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dc-flag-'))
+    const flagFile = join(dir, 'flag.json')
+    try {
+      writeFileSync(flagFile, JSON.stringify({ provider: 'kimi', model: 'kimi-k3' }))
+      // 未登记：arg-less 不认 flag
+      expect(loadLayeredSettings(dir).settings.provider).not.toBe('kimi')
+      // 登记后：arg-less 也认 flag
+      setFlagSettingsPath(flagFile)
+      expect(loadLayeredSettings(dir).settings.provider).toBe('kimi')
+      expect(loadLayeredSettings(dir).settings.model).toBe('kimi-k3')
+      // 显式传参仍优先（传 undefined 显式覆盖不了默认，但传别的路径可）
+      expect(loadLayeredSettings(dir, flagFile).settings.provider).toBe('kimi')
+    } finally {
+      setFlagSettingsPath(undefined) // 复位，避免污染同文件其它用例
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 
