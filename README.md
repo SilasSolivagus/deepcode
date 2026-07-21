@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://deepcode.dirctable.com"><img src="https://img.shields.io/badge/website-deepcode.dirctable.com-5b7cfa" alt="website"></a>
   <a href="https://www.npmjs.com/package/@silassolivagus/deepcode"><img src="https://img.shields.io/npm/v/@silassolivagus/deepcode?color=5b7cfa&label=npm" alt="npm"></a>
   <a href="https://www.npmjs.com/package/@silassolivagus/deepcode"><img src="https://img.shields.io/npm/dm/@silassolivagus/deepcode?color=5b7cfa&label=downloads" alt="downloads"></a>
   <a href="https://github.com/SilasSolivagus/deepcode/stargazers"><img src="https://img.shields.io/github/stars/SilasSolivagus/deepcode?color=5b7cfa" alt="stars"></a>
