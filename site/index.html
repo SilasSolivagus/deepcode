@@ -92,6 +92,109 @@
   </div>
 </section>
 
+<!-- ========== 教程 ========== -->
+<section id="tutorial" class="container" style="padding:56px 20px">
+  <h2 data-i18n="tut.t" style="font-size:26px;font-weight:800;text-align:center">上手教程</h2>
+  <nav style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:20px 0 32px;font-size:12px">
+    <a href="#t-install" data-i18n="tut.n1" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">安装</a>
+    <a href="#t-provider" data-i18n="tut.n2" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">配置模型</a>
+    <a href="#t-cmd" data-i18n="tut.n3" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">命令快捷键</a>
+    <a href="#t-perm" data-i18n="tut.n4" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">工具权限</a>
+    <a href="#t-memory" data-i18n="tut.n5" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">记忆</a>
+    <a href="#t-agent" data-i18n="tut.n6" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">子代理与工作流</a>
+    <a href="#t-example" data-i18n="tut.n7" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">完整示例</a>
+  </nav>
+
+  <div id="t-install" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t1.t" style="font-size:18px">① 安装</h3>
+    <p data-i18n="t1.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">npm i -g @silassolivagus/deepcode
+deepcode</pre>
+    </div>
+  </div>
+
+  <div id="t-provider" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t2.t" style="font-size:18px">② 配置模型</h3>
+    <p data-i18n="t2.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">export DEEPSEEK_API_KEY=sk-...    # 或 GLM_API_KEY / MOONSHOT_API_KEY
+deepcode            # 交互式
+/model              # 切换 provider / 模型</pre>
+    </div>
+  </div>
+
+  <div id="t-cmd" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t3.t" style="font-size:18px">③ 常用命令 & 快捷键</h3>
+    <p data-i18n="t3.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">deepcode                        # 交互式 TUI
+deepcode -p "写一个 today.sh"   # headless 单次任务
+/model                          # 切换 provider / 模型
+/think                          # 开关深度思考
+Ctrl+J                          # 输入框内换行
+# 这个仓库用 pnpm                # 行首 # 快速记忆</pre>
+    </div>
+  </div>
+
+  <div id="t-perm" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t4.t" style="font-size:18px">④ 工具 & 权限</h3>
+    <p data-i18n="t4.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">/permissions                        # 查看权限规则
+deepcode --permission-mode plan     # 只读规划，不改文件
+deepcode --permission-mode accept   # 自动接受，无需逐条确认</pre>
+    </div>
+  </div>
+
+  <div id="t-memory" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t5.t" style="font-size:18px">⑤ 记忆</h3>
+    <p data-i18n="t5.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0"># 这个项目的测试命令是 pnpm test   # 行首 # 立即写入记忆
+cat DEEPCODE.md                     # 项目级记忆文件</pre>
+    </div>
+  </div>
+
+  <div id="t-agent" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t6.t" style="font-size:18px">⑥ 子代理 & 工作流</h3>
+    <p data-i18n="t6.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">/agents                    # 查看可用子代理
+/loop 10m /review-prs      # 按固定间隔重复执行</pre>
+    </div>
+  </div>
+
+  <div id="t-example" class="tut-block" style="margin-bottom:0">
+    <h3 data-i18n="t7.t" style="font-size:18px">⑦ 一个完整示例</h3>
+    <p data-i18n="t7.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">deepcode -p "给 utils/date.ts 补齐单元测试并跑通"</pre>
+    </div>
+  </div>
+</section>
+
 <script>
   const I18N = {
     zh: {
@@ -106,7 +209,16 @@
       "p2.t":"一线水准 · 实测","p2.d":"同题对打，防污染场景 × 5 模型 × 3 seed pass³，程序化判分。",
       "p3.t":"性价比拉满","p3.d":"直连国产模型的价格优势 + 缓存 / token 精算，每次调用花多少全程实时可见。",
       "p4.t":"生态全兼容","p4.d":"Skill / MCP / loop 俱全，工具编排 · 权限 · 记忆 · 子代理全都有。",
-      "bench.t":"实测，不是 PPT","bench.d":"可复现的自建 eval harness + 与国际一线闭源 agent 同题对打。防污染自建场景 × 5 模型 × 3 seed 的 pass³(专抓 flaky)，程序化判分不靠主观。"
+      "bench.t":"实测，不是 PPT","bench.d":"可复现的自建 eval harness + 与国际一线闭源 agent 同题对打。防污染自建场景 × 5 模型 × 3 seed 的 pass³(专抓 flaky)，程序化判分不靠主观。",
+      "tut.t":"上手教程","ui.copy":"复制",
+      "tut.n1":"安装","tut.n2":"配置模型","tut.n3":"命令快捷键","tut.n4":"工具权限","tut.n5":"记忆","tut.n6":"子代理与工作流","tut.n7":"完整示例",
+      "t1.t":"① 安装","t1.d":"npm 全局安装，需 Node ≥ 22.5。首次运行走向导粘 key，直接可用。",
+      "t2.t":"② 配置模型","t2.d":"默认 deepseek-v4-pro。切 GLM / Kimi 或自建 OpenAI 兼容端点：设对应 env key，用 /model 切换。",
+      "t3.t":"③ 常用命令 & 快捷键","t3.d":"交互 TUI 或 -p headless；/model 切模型、/think 开思考；Ctrl+J 换行、# 行首快速记忆。",
+      "t4.t":"④ 工具 & 权限","t4.d":"工具编排自动干活；权限模式 default / accept / plan / auto，可按规则 ask / deny 收紧。",
+      "t5.t":"⑤ 记忆","t5.d":"项目 DEEPCODE.md + 全局抽屉；行首 # 一句话存记忆；自动记忆随会话沉淀。",
+      "t6.t":"⑥ 子代理 & 工作流","t6.d":"复杂任务派子代理并行；用 loop / workflow 把多步编排成确定流程。",
+      "t7.t":"⑦ 一个完整示例","t7.d":"给一个真实任务，看它 Grep→Read→Edit→自测跑通，全程成本可见。"
     },
     en: {
       "brand.cn":"",
@@ -120,7 +232,16 @@
       "p2.t":"Top-tier, measured","p2.d":"Head-to-head on the same tasks — contamination-safe scenarios × 5 models × 3 seeds, pass³, programmatic scoring.",
       "p3.t":"Economics that add up","p3.d":"Domestic-model pricing + cache / token accounting; see exactly what each call costs, live.",
       "p4.t":"Whole ecosystem","p4.d":"Skill / MCP / loop all supported — tool orchestration, permissions, memory, subagents included.",
-      "bench.t":"Measured, not marketed","bench.d":"A reproducible in-house eval harness, head-to-head with top-tier closed-source agents. Contamination-safe scenarios × 5 models × 3 seeds, pass³ (catches flakiness), scored programmatically."
+      "bench.t":"Measured, not marketed","bench.d":"A reproducible in-house eval harness, head-to-head with top-tier closed-source agents. Contamination-safe scenarios × 5 models × 3 seeds, pass³ (catches flakiness), scored programmatically.",
+      "tut.t":"Getting started","ui.copy":"Copy",
+      "tut.n1":"Install","tut.n2":"Set up a model","tut.n3":"Commands & shortcuts","tut.n4":"Tools & permissions","tut.n5":"Memory","tut.n6":"Subagents & workflows","tut.n7":"Full example",
+      "t1.t":"① Install","t1.d":"Install globally via npm, Node ≥ 22.5 required. First run walks you through pasting a key — then you're ready.",
+      "t2.t":"② Set up a model","t2.d":"Defaults to deepseek-v4-pro. Switch to GLM / Kimi or your own OpenAI-compatible endpoint: set the matching env key and switch with /model.",
+      "t3.t":"③ Commands & shortcuts","t3.d":"Interactive TUI or headless -p; /model switches models, /think toggles deep thinking; Ctrl+J for newline, # at line start for a quick memory.",
+      "t4.t":"④ Tools & permissions","t4.d":"Tool orchestration runs the work; permission modes are default / accept / plan / auto, and you can tighten them with ask / deny rules.",
+      "t5.t":"⑤ Memory","t5.d":"Per-project DEEPCODE.md plus a global drawer; # at line start saves a memory instantly; automatic memory accumulates as you work.",
+      "t6.t":"⑥ Subagents & workflows","t6.d":"Complex tasks fan out to parallel subagents; loop / workflow turn multi-step work into a repeatable pipeline.",
+      "t7.t":"⑦ A full example","t7.d":"Give it a real task and watch it Grep→Read→Edit→test until it passes, with cost visible the whole way."
     }
   };
   function applyLang(lang){
