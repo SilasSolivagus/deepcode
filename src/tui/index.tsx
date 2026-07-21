@@ -10,7 +10,7 @@ import { App } from './App.js'
 import { FullscreenApp } from './FullscreenApp.js'
 import { ThemeProvider } from './theme.js'
 import { enterAltScreen, installCleanup } from './altscreen.js'
-import { makeMouseFilteredStdin } from './mouseStdin.js'
+import { makeFilteredStdin } from './mouseStdin.js'
 import { emitWheel } from './wheel.js'
 import { installTaskCleanup, cleanupOldTaskLogs } from '../tasks.js'
 import { loadSettings } from '../config.js'
@@ -47,20 +47,25 @@ export async function startTui(opts: {
   })
   const Root = renderer === 'fullscreen' ? FullscreenApp : App
   const fullscreen = renderer === 'fullscreen'
-  // 全屏：必须在 ink render() 之前同步进 alt-screen（备用屏+清屏+归位）+ 开 SGR 鼠标捕获（滚轮滚动），
-  // 并由本处拥有退出还原。若放进组件 effect，effect 在 ink 首帧之后才跑，会导致 ink log-update 的
-  // 光标位置假设错乱、整屏错位。鼠标序列在喂给 ink 前过滤（mouseStdin），滚轮转 emitWheel。
+  // 两种渲染器（TTY）都：ink render() 之前开括号粘贴（?2004h）+ 用过滤流喂 ink（剥粘贴标记、粘贴内回车
+  // 不误提交），并由本处拥有退出还原。全屏另需同步进 alt-screen（备用屏+清屏+归位）+ 开 SGR 鼠标捕获
+  // （滚轮滚动）；这些必须在 ink 首帧前做，放进组件 effect 会晚于首帧导致 log-update 光标假设错乱、整屏错位。
   let cleanupFull: (() => void) | undefined
   let customStdin: NodeJS.ReadStream | undefined
-  if (fullscreen && process.stdout.isTTY) {
-    const leaveAlt = enterAltScreen(s => { process.stdout.write(s) })
-    process.stdout.write('\x1b[?1000h\x1b[?1006h') // 开鼠标按钮事件（含滚轮）+ SGR 扩展坐标
-    const mf = makeMouseFilteredStdin(process.stdin, emitWheel)
+  if (process.stdout.isTTY) {
+    process.stdout.write('\x1b[?2004h') // 开括号粘贴
+    let leaveAlt: (() => void) | undefined
+    if (fullscreen) {
+      leaveAlt = enterAltScreen(s => { process.stdout.write(s) })
+      process.stdout.write('\x1b[?1000h\x1b[?1006h') // 开鼠标按钮事件（含滚轮）+ SGR 扩展坐标
+    }
+    const mf = makeFilteredStdin(process.stdin, { onWheel: fullscreen ? emitWheel : undefined })
     customStdin = mf.stdin
     const fullLeave = () => {
-      try { process.stdout.write('\x1b[?1000l\x1b[?1006l') } catch { /* ignore */ } // 关鼠标捕获
+      if (fullscreen) { try { process.stdout.write('\x1b[?1000l\x1b[?1006l') } catch { /* ignore */ } } // 关鼠标捕获
+      try { process.stdout.write('\x1b[?2004l') } catch { /* ignore */ } // 关括号粘贴
       mf.cleanup()
-      leaveAlt()
+      leaveAlt?.()
     }
     const dispose = installCleanup(fullLeave)
     // 幂等：跑一次即返，防 finally 二次调（/tui 切换时经 unmount 提前调过一次）。

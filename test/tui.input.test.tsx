@@ -61,4 +61,25 @@ describe('InputBox', () => {
     r.stdin.write('/mo')
     expect(onChange).toHaveBeenLastCalledWith('/mo')
   })
+
+  // 多行粘贴防误提交的兜底：不依赖终端的 bracketed paste，靠去抖窗口内的回车归为内容。
+  it('粘贴块在途时紧跟的回车并入内容、不提交（bracketed paste 不可用终端的兜底）', async () => {
+    const onSubmit = vi.fn()
+    const r = render(<InputBox onSubmit={onSubmit} onInterrupt={noop} history={[]} busy={false} />)
+    await delay()
+    r.stdin.write('第一行\n第二行')   // 含换行 → 判为粘贴块，进缓冲、去抖在途
+    r.stdin.write('\r')               // 粘贴末尾的回车（去抖窗口内到达）→ 当内容，不提交
+    await delay(60)                   // 窗口过去，缓冲 flush
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('粘贴后去抖窗口关闭（>40ms）再按回车 → 正常提交', async () => {
+    const onSubmit = vi.fn()
+    const r = render(<InputBox onSubmit={onSubmit} onInterrupt={noop} history={[]} busy={false} />)
+    await delay()
+    r.stdin.write('x'.repeat(30))     // 长 → 粘贴块，进缓冲
+    await delay(60)                   // 窗口关闭，flush，缓冲态清空
+    r.stdin.write('\r')               // 此时的回车是真实提交
+    expect(onSubmit).toHaveBeenCalledTimes(1)
+  })
 })

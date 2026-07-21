@@ -4,6 +4,7 @@
 // （避免污染输入框），其中滚轮（button 64=上、65=下）转成滚动方向回调，其余文本原样转发给 ink。
 import { PassThrough } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
+import { initPasteState, stripBracketedPaste, type PasteState } from './pasteBracket.js'
 
 /** 纯函数（可单测）：剔除一段输入里的鼠标 SGR 序列，返回剩余转发文本 + 解析出的滚轮方向。 */
 export function parseWheel(s: string): { forward: string; wheels: Array<'up' | 'down'> } {
@@ -17,10 +18,14 @@ export function parseWheel(s: string): { forward: string; wheels: Array<'up' | '
   return { forward, wheels }
 }
 
-/** 包一层过滤 stdin 喂给 ink：滚轮 → onWheel，其余按键原样转发。代理 tty 方法到真实 stdin。 */
-export function makeMouseFilteredStdin(
+/**
+ * 包一层过滤 stdin 喂给 ink：先剥括号粘贴标记（粘贴内 \r→\n），再（若给了 onWheel）把滚轮转 onWheel、
+ * 剔除其余鼠标序列，其余按键原样转发。代理 tty 方法到真实 stdin。
+ * onWheel 省略时（inline 模式无鼠标捕获）只做括号粘贴过滤。
+ */
+export function makeFilteredStdin(
   source: NodeJS.ReadStream,
-  onWheel: (dir: 'up' | 'down') => void,
+  opts: { onWheel?: (dir: 'up' | 'down') => void } = {},
 ): { stdin: NodeJS.ReadStream; cleanup: () => void } {
   const pt = new PassThrough() as any
   pt.isTTY = source.isTTY
@@ -32,13 +37,28 @@ export function makeMouseFilteredStdin(
   // = E3 80 81）拆到相邻 data 块，逐块 chunk.toString('utf8') 会把半个字符解成替换符（乱码）。
   // decoder.write 缓冲不完整尾字节到下次，重组完整字符。ASCII（含鼠标 SGR 序列）单字节即时透传，行为不变。
   const decoder = new StringDecoder('utf8')
+  let pasteState: PasteState = initPasteState()
   const onData = (chunk: Buffer | string) => {
     const text = typeof chunk === 'string' ? chunk : decoder.write(chunk)
-    const { forward, wheels } = parseWheel(text)
-    for (const w of wheels) onWheel(w)
+    const pr = stripBracketedPaste(pasteState, text)
+    pasteState = pr.state
+    let forward = pr.forward
+    if (opts.onWheel) {
+      const w = parseWheel(forward)
+      for (const dir of w.wheels) opts.onWheel(dir)
+      forward = w.forward
+    }
     if (forward) pt.write(forward)
   }
   source.on('data', onData)
 
   return { stdin: pt as NodeJS.ReadStream, cleanup: () => { source.off('data', onData) } }
+}
+
+/** 向后兼容别名：鼠标滚轮 + 括号粘贴过滤（全屏模式）。 */
+export function makeMouseFilteredStdin(
+  source: NodeJS.ReadStream,
+  onWheel: (dir: 'up' | 'down') => void,
+): { stdin: NodeJS.ReadStream; cleanup: () => void } {
+  return makeFilteredStdin(source, { onWheel })
 }

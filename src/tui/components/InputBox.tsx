@@ -121,10 +121,25 @@ export function InputBox(props: {
   useEffect(() => { const id = setInterval(() => setCursorOn(v => !v), 530); return () => clearInterval(id) }, [])
 
   useInput((input, key) => {
-    // 控制键到来时先处理悬挂的粘贴缓冲：ESC 丢弃，其余键先 flush 把粘贴内容物化进 value
-    if (pasteTimerRef.current && (key.return || key.escape || key.backspace || key.delete || key.upArrow || key.downArrow || key.tab)) {
+    // 控制键到来时先处理悬挂的粘贴缓冲。三类：
+    //  ① ESC → 丢弃缓冲；
+    //  ② 多行粘贴在途（去抖窗口内、缓冲已含换行）时到达的回车 → 归为粘贴内容（当换行并入缓冲，
+    //     不 flush、不提交）。终端未响应 bracketed paste（?2004）时，多行粘贴末尾的裸 \r 会被 ink
+    //     解析成 return，若此时提交就把整段粘贴当消息发出去了（真机冒烟暴露）。人手不可能在 40ms
+    //     去抖窗口内按回车，且只对已含换行的多行粘贴生效——单行粘贴后紧跟的回车仍是正常提交
+    //     （保留「粘贴一行命令即回车执行」的手感）。不依赖终端能力，是 bracketed paste 的根本兜底。
+    //  ③ 其余控制键（backspace/delete/↑↓/tab，及单行粘贴的回车）→ 先 flush 把粘贴内容物化进 value。
+    if (pasteTimerRef.current) {
       if (key.escape) { pasteBufRef.current = ''; clearTimeout(pasteTimerRef.current); pasteTimerRef.current = null }
-      else flushPasteBuffer()
+      else if (key.return && pasteBufRef.current.includes('\n')) {
+        pasteBufRef.current += '\n'
+        clearTimeout(pasteTimerRef.current)
+        pasteTimerRef.current = setTimeout(flushPasteBuffer, PASTE_COALESCE_MS)
+        return
+      }
+      else if (key.return || key.backspace || key.delete || key.upArrow || key.downArrow || key.tab) {
+        flushPasteBuffer()
+      }
     }
     // emacs kill/yank 链：本次按键默认打断链；只有 kill/yank 分支在末尾重新置 true。
     // 先读上一次标志供 continuing(kill) / gating(yank-pop) 用，再立即清零，

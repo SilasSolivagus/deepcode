@@ -15,6 +15,7 @@ import { foldTranscript, shouldFold } from './focusFold.js'
 import { performTuiSwitch } from './tuiSwitch.js'
 import { flushThenExit } from './exitFlush.js'
 import { findMemoryFiles } from '../prompt.js'
+import { parseHashMemory, writeHashMemory, type MemoryScope } from './hashMemory.js'
 import { computeSuggestions } from './suggest.js'
 import { Banner } from './components/Banner.js'
 import { ScrollView } from './ScrollView.js'
@@ -71,6 +72,8 @@ export function FullscreenApp(props: {
   const [skillsMode, setSkillsMode] = useState(false)
   const [rewindStep, setRewindStep] = useState<'point' | 'mode' | null>(null)
   const [rewindTurn, setRewindTurn] = useState<number | null>(null)
+  // 行首 # 快速记忆：非 null 时持有待保存的记忆文本，作用域选择器打开中
+  const [memPending, setMemPending] = useState<string | null>(null)
   const [lastSigint, setLastSigint] = useState(0)
   const justPickedRef = useRef<string | null>(null)
   const lastEscRef = useRef(0)
@@ -97,10 +100,10 @@ export function FullscreenApp(props: {
   }, [])
 
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode || workflowsMode || fleetMode || rewindStep || skillsMode) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode || workflowsMode || fleetMode || rewindStep || skillsMode || memPending !== null) {
       setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode, workflowsMode, fleetMode, rewindStep, skillsMode])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode, workflowsMode, fleetMode, rewindStep, skillsMode, memPending !== null])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((input, key) => {
     if (key.escape && workflowsMode) { setWorkflowsMode(false); return }
@@ -108,7 +111,7 @@ export function FullscreenApp(props: {
     if (key.escape) {
       const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion
         && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep
-        && !workflowsMode && !fleetMode && !skillsMode && draft === ''
+        && !workflowsMode && !fleetMode && !skillsMode && memPending === null && draft === ''
       if (idle) {
         const now = Date.now()
         if (now - lastEscRef.current < 600) { lastEscRef.current = 0; setRewindStep('point') }
@@ -128,7 +131,7 @@ export function FullscreenApp(props: {
       else setLastSigint(now)
     }
     // Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !workflowsMode && !fleetMode && !rewindStep && !skillsMode) {
+    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !workflowsMode && !fleetMode && !rewindStep && !skillsMode && memPending === null) {
       void core.send('/cycle-mode')
     }
   })
@@ -245,6 +248,13 @@ export function FullscreenApp(props: {
     if (text.trim().split(/\s+/)[0] === '/fleet') { setFleetMode(true); return }
     if (text.trim().split(/\s+/)[0] === '/tui') { handleTuiSwitch(text); return }
     if (text.trim() === '/focus') { handleFocus(); return }
+    // 行首 # 快速记忆：有内容→打开作用域选择器（项目 / 全局）；空 #→提示，都不发给模型
+    if (text.charAt(0) === '#') {
+      const mem = parseHashMemory(text)
+      if (mem !== null) { setMemPending(mem); return }
+      core.notice('info', '记忆内容为空——# 后面写要记住的内容')
+      return
+    }
     setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     void core.send(text, attachments)
   }
@@ -373,6 +383,22 @@ export function FullscreenApp(props: {
                 skills={core.skills}
                 overrides={core.skillOverrides()}
                 onExit={(o) => { core.saveSkillOverrides(o); setSkillsMode(false) }}
+              />
+            : memPending !== null
+            ? <SelectList
+                title={`保存记忆：「${memPending.length > 40 ? memPending.slice(0, 40) + '…' : memPending}」`}
+                items={['项目记忆（./DEEPCODE.md）', '全局记忆（~/.deepcode/DEEPCODE.md，所有项目）']}
+                onPick={i => {
+                  const scope: MemoryScope = i === 0 ? 'project' : 'global'
+                  try {
+                    const p = writeHashMemory(scope, memPending, core.getCwd())
+                    core.notice('info', `已保存记忆到 ${p}`)
+                  } catch (e) {
+                    core.notice('warn', `保存记忆失败：${e instanceof Error ? e.message : String(e)}`)
+                  }
+                  setMemPending(null)
+                }}
+                onCancel={() => setMemPending(null)}
               />
             : rewindStep === 'point'
             ? (() => {
