@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>deepcode 深度编程 — 终端里的编码 agent</title>
+<meta name="description" content="直连 DeepSeek / GLM / Kimi 的终端编码 agent。国际一线体验，国产模型性价比，Skill / MCP / loop 全兼容。">
+<style>
+  :root{
+    --brand:#5b7cfa; --bg:#f6f8ff; --fg:#1a1f36; --muted:#5b6b8c;
+    --term-bg:#0d1117; --term-fg:#c9d1d9; --border:#e6ebf5;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--sans);background:var(--bg);color:var(--fg);line-height:1.6}
+  .container{max-width:960px;margin:0 auto;padding:0 20px}
+  a{color:inherit;text-decoration:none}
+  code,pre{font-family:var(--mono)}
+  @media (max-width:640px){ .container{padding:0 16px} }
+  @media (max-width:640px){ #why > div{ grid-template-columns:1fr } }
+  @media (max-width:640px){ header .navlinks{display:none!important} }
+</style>
+</head>
+<body>
+<!-- ========== 顶栏 ========== -->
+<header style="position:sticky;top:0;z-index:10;background:rgba(246,248,255,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)">
+  <div class="container" style="display:flex;align-items:center;justify-content:space-between;height:56px">
+    <a href="#top" style="font-weight:800;font-size:17px">deepcode <span style="font-weight:600;font-size:13px;color:var(--muted)" data-i18n="brand.cn">深度编程</span></a>
+    <nav style="display:flex;gap:16px;align-items:center;font-size:13px;color:var(--muted)">
+      <span class="navlinks" style="display:flex;gap:16px">
+        <a href="#why" data-i18n="nav.why">为什么</a>
+        <a href="#bench" data-i18n="nav.bench">跑分</a>
+        <a href="#tutorial" data-i18n="nav.tutorial">教程</a>
+        <a href="#faq" data-i18n="nav.faq">FAQ</a>
+      </span>
+      <span style="display:inline-flex;border:1px solid #d0d7e6;border-radius:6px;overflow:hidden">
+        <button data-lang-btn="zh" style="border:0;background:transparent;padding:3px 8px;cursor:pointer;font-size:12px">中</button>
+        <button data-lang-btn="en" style="border:0;background:transparent;padding:3px 8px;cursor:pointer;font-size:12px">EN</button>
+      </span>
+      <a href="https://github.com/SilasSolivagus/deepcode" style="color:var(--fg)">GitHub</a>
+      <a href="https://www.npmjs.com/package/@silassolivagus/deepcode" style="color:var(--fg)">npm</a>
+    </nav>
+  </div>
+</header>
+
+<!-- ========== Hero ========== -->
+<section id="top" class="container" style="text-align:center;padding:56px 20px 8px">
+  <h1 data-i18n="hero.title" style="font-size:38px;font-weight:800;letter-spacing:-.5px">终端里的编码 agent</h1>
+  <p data-i18n="hero.sub" style="font-size:15px;color:var(--muted);max-width:560px;margin:16px auto 0"></p>
+  <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:26px 0 6px">
+    <button id="copyInstall" style="background:var(--brand);color:#fff;border:0;font-size:14px;font-weight:600;padding:11px 18px;border-radius:8px;cursor:pointer;box-shadow:0 6px 18px rgba(91,124,250,.3)">
+      <span data-i18n="hero.copy">📋 npm i -g @silassolivagus/deepcode</span>
+    </button>
+    <a href="https://github.com/SilasSolivagus/deepcode" style="background:#fff;border:1px solid #d0d7e6;font-size:14px;font-weight:600;padding:11px 18px;border-radius:8px">
+      <span data-i18n="hero.star">⭐ Star on GitHub</span>
+    </a>
+  </div>
+  <p data-i18n="hero.req" style="font-size:12px;color:#9aa4c0;margin-bottom:26px">Node ≥ 22.5 · 首跑向导粘 key，直接用</p>
+
+  <div style="max-width:640px;margin:0 auto">
+    <img src="assets/demo.gif" alt="deepcode 终端演示" style="width:100%;border-radius:12px;box-shadow:0 20px 50px rgba(26,31,54,.25)">
+  </div>
+</section>
+
+<!-- ========== 卖点 4 支柱 ========== -->
+<section id="why" class="container" style="padding:56px 20px">
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+    <div class="pillar" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px">
+      <h3 data-i18n="p1.t" style="font-size:16px;color:var(--brand)">多国产模型直连</h3>
+      <p data-i18n="p1.d" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    </div>
+    <div class="pillar" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px">
+      <h3 data-i18n="p2.t" style="font-size:16px;color:var(--brand)">一线水准 · 实测</h3>
+      <p data-i18n="p2.d" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    </div>
+    <div class="pillar" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px">
+      <h3 data-i18n="p3.t" style="font-size:16px;color:var(--brand)">性价比拉满</h3>
+      <p data-i18n="p3.d" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    </div>
+    <div class="pillar" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px">
+      <h3 data-i18n="p4.t" style="font-size:16px;color:var(--brand)">生态全兼容</h3>
+      <p data-i18n="p4.d" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 实测跑分 ========== -->
+<section id="bench" style="background:#fff;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+  <div class="container" style="padding:56px 20px;text-align:center">
+    <h2 data-i18n="bench.t" style="font-size:26px;font-weight:800">实测，不是 PPT</h2>
+    <p data-i18n="bench.d" style="font-size:14px;color:var(--muted);max-width:600px;margin:12px auto 24px"></p>
+    <img src="assets/benchmark.svg" alt="benchmark" style="max-width:100%;height:auto">
+  </div>
+</section>
+
+<!-- ========== 教程 ========== -->
+<section id="tutorial" class="container" style="padding:56px 20px">
+  <h2 data-i18n="tut.t" style="font-size:26px;font-weight:800;text-align:center">上手教程</h2>
+  <nav style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:20px 0 32px;font-size:12px">
+    <a href="#t-install" data-i18n="tut.n1" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">安装</a>
+    <a href="#t-provider" data-i18n="tut.n2" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">配置模型</a>
+    <a href="#t-cmd" data-i18n="tut.n3" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">命令快捷键</a>
+    <a href="#t-perm" data-i18n="tut.n4" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">工具权限</a>
+    <a href="#t-memory" data-i18n="tut.n5" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">记忆</a>
+    <a href="#t-agent" data-i18n="tut.n6" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">子代理与工作流</a>
+    <a href="#t-example" data-i18n="tut.n7" style="background:#fff;border:1px solid var(--border);border-radius:6px;padding:5px 10px">完整示例</a>
+  </nav>
+
+  <div id="t-install" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t1.t" style="font-size:18px">① 安装</h3>
+    <p data-i18n="t1.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">npm i -g @silassolivagus/deepcode
+deepcode</pre>
+    </div>
+  </div>
+
+  <div id="t-provider" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t2.t" style="font-size:18px">② 配置模型</h3>
+    <p data-i18n="t2.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">export DEEPSEEK_API_KEY=sk-...    # 或 GLM_API_KEY / MOONSHOT_API_KEY
+deepcode            # 交互式
+/model              # 切换 provider / 模型</pre>
+    </div>
+  </div>
+
+  <div id="t-cmd" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t3.t" style="font-size:18px">③ 常用命令 & 快捷键</h3>
+    <p data-i18n="t3.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">deepcode                        # 交互式 TUI
+deepcode -p "写一个 today.sh"   # headless 单次任务
+/model                          # 切换 provider / 模型
+/think                          # 开关深度思考
+Ctrl+J                          # 输入框内换行
+# 这个仓库用 pnpm                # 行首 # 快速记忆</pre>
+    </div>
+  </div>
+
+  <div id="t-perm" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t4.t" style="font-size:18px">④ 工具 & 权限</h3>
+    <p data-i18n="t4.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">/permissions                        # 查看权限规则
+deepcode --permission-mode plan     # 只读规划，不改文件
+deepcode --permission-mode accept   # 自动接受，无需逐条确认</pre>
+    </div>
+  </div>
+
+  <div id="t-memory" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t5.t" style="font-size:18px">⑤ 记忆</h3>
+    <p data-i18n="t5.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0"># 这个项目的测试命令是 pnpm test   # 行首 # 立即写入记忆
+cat DEEPCODE.md                     # 项目级记忆文件</pre>
+    </div>
+  </div>
+
+  <div id="t-agent" class="tut-block" style="margin-bottom:40px">
+    <h3 data-i18n="t6.t" style="font-size:18px">⑥ 子代理 & 工作流</h3>
+    <p data-i18n="t6.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">/agents                    # 查看可用子代理
+/loop 10m /review-prs      # 按固定间隔重复执行</pre>
+    </div>
+  </div>
+
+  <div id="t-example" class="tut-block" style="margin-bottom:0">
+    <h3 data-i18n="t7.t" style="font-size:18px">⑦ 一个完整示例</h3>
+    <p data-i18n="t7.d" style="font-size:14px;color:var(--muted);margin:8px 0 12px"></p>
+    <div class="codeblock" style="position:relative;background:var(--term-bg);border-radius:8px;padding:14px 16px">
+      <button onclick="copyText(this.nextElementSibling.textContent, this)"
+        style="position:absolute;top:8px;right:8px;background:#1f2633;border:0;color:#8b949e;font-size:11px;padding:4px 8px;border-radius:5px;cursor:pointer"
+        data-i18n="ui.copy">复制</button>
+      <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">deepcode -p "给 utils/date.ts 补齐单元测试并跑通"</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ========== FAQ ========== -->
+<section id="faq" style="background:#fff;border-top:1px solid var(--border)">
+  <div class="container" style="padding:56px 20px;max-width:720px">
+    <h2 data-i18n="faq.t" style="font-size:26px;font-weight:800;text-align:center;margin-bottom:24px">常见问题</h2>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q1.q" style="font-size:15px"></h3>
+      <p data-i18n="q1.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q2.q" style="font-size:15px"></h3>
+      <p data-i18n="q2.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q3.q" style="font-size:15px"></h3>
+      <p data-i18n="q3.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q4.q" style="font-size:15px"></h3>
+      <p data-i18n="q4.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== Footer ========== -->
+<footer style="text-align:center;padding:32px 20px;font-size:12px;color:var(--muted)">
+  <div style="margin-bottom:8px">
+    <a href="https://github.com/SilasSolivagus/deepcode" style="margin:0 8px;color:var(--fg)">GitHub</a>
+    <a href="https://www.npmjs.com/package/@silassolivagus/deepcode" style="margin:0 8px;color:var(--fg)">npm</a>
+    <a id="social" href="assets/wechat-qr.jpg" target="_blank" rel="noopener" style="margin:0 8px;color:var(--fg)" data-i18n="foot.social">微信</a>
+  </div>
+  <div>by Silas · MIT · © Silas</div>
+</footer>
+
+<script>
+  const I18N = {
+    zh: {
+      "brand.cn":"深度编程",
+      "nav.why":"为什么","nav.bench":"跑分","nav.tutorial":"教程","nav.faq":"FAQ",
+      "hero.title":"终端里的编码 agent",
+      "hero.sub":"直连 DeepSeek / GLM / Kimi，国际一线 agent 的体验与质量——实测，不是 PPT。国产模型的性价比，Skill / MCP / loop 全兼容，每一行都在你手里。",
+      "hero.copy":"📋 npm i -g @silassolivagus/deepcode",
+      "hero.star":"⭐ Star on GitHub",
+      "hero.req":"Node ≥ 22.5 · 首跑向导粘 key，直接用",
+      "p1.t":"多国产模型直连","p1.d":"DeepSeek / GLM / Kimi 一键切，也支持自建 OpenAI 兼容端点。",
+      "p2.t":"一线水准 · 实测","p2.d":"同题对打，防污染场景 × 5 模型 × 3 seed pass³，程序化判分。",
+      "p3.t":"性价比拉满","p3.d":"直连国产模型的价格优势 + 缓存 / token 精算，每次调用花多少全程实时可见。",
+      "p4.t":"生态全兼容","p4.d":"Skill / MCP / loop 俱全，工具编排 · 权限 · 记忆 · 子代理全都有。",
+      "bench.t":"实测，不是 PPT","bench.d":"可复现的自建 eval harness + 与国际一线闭源 agent 同题对打。防污染自建场景 × 5 模型 × 3 seed 的 pass³(专抓 flaky)，程序化判分不靠主观。",
+      "tut.t":"上手教程","ui.copy":"复制",
+      "tut.n1":"安装","tut.n2":"配置模型","tut.n3":"命令快捷键","tut.n4":"工具权限","tut.n5":"记忆","tut.n6":"子代理与工作流","tut.n7":"完整示例",
+      "t1.t":"① 安装","t1.d":"npm 全局安装，需 Node ≥ 22.5。首次运行走向导粘 key，直接可用。",
+      "t2.t":"② 配置模型","t2.d":"默认 deepseek-v4-pro。切 GLM / Kimi 或自建 OpenAI 兼容端点：设对应 env key，用 /model 切换。",
+      "t3.t":"③ 常用命令 & 快捷键","t3.d":"交互 TUI 或 -p headless；/model 切模型、/think 开思考；Ctrl+J 换行、# 行首快速记忆。",
+      "t4.t":"④ 工具 & 权限","t4.d":"工具编排自动干活；权限模式 default / accept / plan / auto，可按规则 ask / deny 收紧。",
+      "t5.t":"⑤ 记忆","t5.d":"项目 DEEPCODE.md + 全局抽屉；行首 # 一句话存记忆；自动记忆随会话沉淀。",
+      "t6.t":"⑥ 子代理 & 工作流","t6.d":"复杂任务派子代理并行；用 loop / workflow 把多步编排成确定流程。",
+      "t7.t":"⑦ 一个完整示例","t7.d":"给一个真实任务，看它 Grep→Read→Edit→自测跑通，全程成本可见。",
+      "faq.t":"常见问题",
+      "q1.q":"要自己的 API key 吗？","q1.a":"要。deepcode 直连你自己的模型账号（DeepSeek / GLM / Kimi 等），首跑向导粘 key 即可，成本进你自己的账号。",
+      "q2.q":"支持哪些模型？","q2.a":"DeepSeek、GLM、Kimi 开箱即用，也支持任意 OpenAI 兼容端点（自建 / 中转）。",
+      "q3.q":"我的代码和数据去哪？","q3.a":"直连你配置的模型服务，不经第三方中转；工具在你本机跑，每一步都在你眼前。",
+      "q4.q":"适合谁？","q4.a":"想在终端里用国产模型、又要一线 agent 体验与掌控感的开发者。",
+      "foot.social":"微信"
+    },
+    en: {
+      "brand.cn":"",
+      "nav.why":"Why","nav.bench":"Benchmarks","nav.tutorial":"Guide","nav.faq":"FAQ",
+      "hero.title":"A coding agent in your terminal",
+      "hero.sub":"Straight to DeepSeek / GLM / Kimi — top-tier agent quality, measured not marketed. Domestic-model economics, full Skill / MCP / loop support, every line stays yours.",
+      "hero.copy":"📋 npm i -g @silassolivagus/deepcode",
+      "hero.star":"⭐ Star on GitHub",
+      "hero.req":"Node ≥ 22.5 · paste your key on first run",
+      "p1.t":"Direct to domestic models","p1.d":"Switch DeepSeek / GLM / Kimi in one line; bring your own OpenAI-compatible endpoint too.",
+      "p2.t":"Top-tier, measured","p2.d":"Head-to-head on the same tasks — contamination-safe scenarios × 5 models × 3 seeds, pass³, programmatic scoring.",
+      "p3.t":"Economics that add up","p3.d":"Domestic-model pricing + cache / token accounting; see exactly what each call costs, live.",
+      "p4.t":"Whole ecosystem","p4.d":"Skill / MCP / loop all supported — tool orchestration, permissions, memory, subagents included.",
+      "bench.t":"Measured, not marketed","bench.d":"A reproducible in-house eval harness, head-to-head with top-tier closed-source agents. Contamination-safe scenarios × 5 models × 3 seeds, pass³ (catches flakiness), scored programmatically.",
+      "tut.t":"Getting started","ui.copy":"Copy",
+      "tut.n1":"Install","tut.n2":"Set up a model","tut.n3":"Commands & shortcuts","tut.n4":"Tools & permissions","tut.n5":"Memory","tut.n6":"Subagents & workflows","tut.n7":"Full example",
+      "t1.t":"① Install","t1.d":"Install globally via npm, Node ≥ 22.5 required. First run walks you through pasting a key — then you're ready.",
+      "t2.t":"② Set up a model","t2.d":"Defaults to deepseek-v4-pro. Switch to GLM / Kimi or your own OpenAI-compatible endpoint: set the matching env key and switch with /model.",
+      "t3.t":"③ Commands & shortcuts","t3.d":"Interactive TUI or headless -p; /model switches models, /think toggles deep thinking; Ctrl+J for newline, # at line start for a quick memory.",
+      "t4.t":"④ Tools & permissions","t4.d":"Tool orchestration runs the work; permission modes are default / accept / plan / auto, and you can tighten them with ask / deny rules.",
+      "t5.t":"⑤ Memory","t5.d":"Per-project DEEPCODE.md plus a global drawer; # at line start saves a memory instantly; automatic memory accumulates as you work.",
+      "t6.t":"⑥ Subagents & workflows","t6.d":"Complex tasks fan out to parallel subagents; loop / workflow turn multi-step work into a repeatable pipeline.",
+      "t7.t":"⑦ A full example","t7.d":"Give it a real task and watch it Grep→Read→Edit→test until it passes, with cost visible the whole way.",
+      "faq.t":"FAQ",
+      "q1.q":"Do I need my own API key?","q1.a":"Yes. deepcode talks directly to your own model account (DeepSeek / GLM / Kimi, etc.). Paste your key on first run; cost goes to your account.",
+      "q2.q":"Which models are supported?","q2.a":"DeepSeek, GLM, Kimi out of the box, plus any OpenAI-compatible endpoint (self-hosted / proxy).",
+      "q3.q":"Where do my code and data go?","q3.a":"Straight to the model service you configure, no third-party relay; tools run on your machine, every step in front of you.",
+      "q4.q":"Who is it for?","q4.a":"Developers who want domestic models in the terminal with top-tier agent quality and full control.",
+      "foot.social":"WeChat"
+    }
+  };
+  function applyLang(lang){
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach(el=>{
+      const k = el.getAttribute('data-i18n');
+      const v = I18N[lang] && I18N[lang][k];
+      if (v != null) el.textContent = v;
+    });
+    document.querySelectorAll('[data-i18n-html]').forEach(el=>{
+      const k = el.getAttribute('data-i18n-html');
+      const v = I18N[lang] && I18N[lang][k];
+      if (v != null) el.innerHTML = v;
+    });
+    document.querySelectorAll('[data-lang-btn]').forEach(b=>{
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-lang-btn')===lang));
+    });
+    localStorage.setItem('lang', lang);
+  }
+  function copyText(text, btn){
+    navigator.clipboard.writeText(text).then(()=>{
+      const span = btn.querySelector('[data-i18n]') || btn;
+      span.textContent = (document.documentElement.lang==='en'?'✓ Copied':'✓ 已复制');
+      setTimeout(()=>applyLang(document.documentElement.lang), 1200);
+    }).catch(()=>{});
+  }
+  function resolveInitialLang(){
+    const saved = localStorage.getItem('lang');
+    if (saved === 'zh' || saved === 'en') return saved;
+    return (navigator.language||'zh').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  }
+  document.addEventListener('DOMContentLoaded',()=>{
+    document.querySelectorAll('[data-lang-btn]').forEach(b=>{
+      b.addEventListener('click',()=>applyLang(b.getAttribute('data-lang-btn')));
+    });
+    const ci = document.getElementById('copyInstall');
+    if (ci) ci.addEventListener('click',()=>copyText('npm i -g @silassolivagus/deepcode', ci));
+    applyLang(resolveInitialLang());
+  });
+</script>
+</body>
+</html>
