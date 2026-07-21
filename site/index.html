@@ -20,6 +20,7 @@
   code,pre{font-family:var(--mono)}
   @media (max-width:640px){ .container{padding:0 16px} }
   @media (max-width:640px){ #why > div{ grid-template-columns:1fr } }
+  @media (max-width:640px){ header nav{gap:10px} header .navlinks{display:none!important} }
 </style>
 </head>
 <body>
@@ -28,10 +29,12 @@
   <div class="container" style="display:flex;align-items:center;justify-content:space-between;height:56px">
     <a href="#top" style="font-weight:800;font-size:17px">deepcode <span style="font-weight:600;font-size:13px;color:var(--muted)" data-i18n="brand.cn">深度编程</span></a>
     <nav style="display:flex;gap:16px;align-items:center;font-size:13px;color:var(--muted)">
-      <a href="#why" data-i18n="nav.why">为什么</a>
-      <a href="#bench" data-i18n="nav.bench">跑分</a>
-      <a href="#tutorial" data-i18n="nav.tutorial">教程</a>
-      <a href="#faq" data-i18n="nav.faq">FAQ</a>
+      <span class="navlinks" style="display:flex;gap:16px">
+        <a href="#why" data-i18n="nav.why">为什么</a>
+        <a href="#bench" data-i18n="nav.bench">跑分</a>
+        <a href="#tutorial" data-i18n="nav.tutorial">教程</a>
+        <a href="#faq" data-i18n="nav.faq">FAQ</a>
+      </span>
       <span style="display:inline-flex;border:1px solid #d0d7e6;border-radius:6px;overflow:hidden">
         <button data-lang-btn="zh" style="border:0;background:transparent;padding:3px 8px;cursor:pointer;font-size:12px">中</button>
         <button data-lang-btn="en" style="border:0;background:transparent;padding:3px 8px;cursor:pointer;font-size:12px">EN</button>
