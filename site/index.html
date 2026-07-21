@@ -72,10 +72,10 @@
     zh: {
       "nav.why":"为什么","nav.bench":"跑分","nav.tutorial":"教程","nav.faq":"FAQ",
       "hero.title":"终端里的编码 agent",
-      "hero.sub":"直连 DeepSeek / GLM / Kimi,国际一线 agent 的体验与质量——实测,不是 PPT。国产模型的性价比,Skill / MCP / loop 全兼容,每一行都在你手里。",
+      "hero.sub":"直连 DeepSeek / GLM / Kimi，国际一线 agent 的体验与质量——实测，不是 PPT。国产模型的性价比，Skill / MCP / loop 全兼容，每一行都在你手里。",
       "hero.copy":"📋 npm i -g @silassolivagus/deepcode",
       "hero.star":"⭐ Star on GitHub",
-      "hero.req":"Node ≥ 22.5 · 首跑向导粘 key,直接用",
+      "hero.req":"Node ≥ 22.5 · 首跑向导粘 key，直接用",
       "hero.termtitle":"deepcode — 终端会话",
       "hero.term":"<span style='color:#27c93f'>❯</span> 修复登录接口偶发 500<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 找到 4 处)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · 空指针兜底)</span><br>根因是并发刷新时 token 竞态,已加锁——见 session.ts:124。<br><span style='color:#8b949e'>成本实时结算 · 12 turns · deepseek-v4-pro</span>"
     },
@@ -110,7 +110,6 @@
   function copyText(text, btn){
     navigator.clipboard.writeText(text).then(()=>{
       const span = btn.querySelector('[data-i18n]') || btn;
-      const prev = span.textContent;
       span.textContent = (document.documentElement.lang==='en'?'✓ Copied':'✓ 已复制');
       setTimeout(()=>applyLang(document.documentElement.lang), 1200);
     }).catch(()=>{});
