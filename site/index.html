@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>deepcode — 终端里的编码 agent</title>
+<meta name="description" content="直连 DeepSeek / GLM / Kimi 的终端编码 agent。国际一线体验,国产模型性价比,Skill / MCP / loop 全兼容。">
+<style>
+  :root{
+    --brand:#5b7cfa; --bg:#f6f8ff; --fg:#1a1f36; --muted:#5b6b8c;
+    --term-bg:#0d1117; --term-fg:#c9d1d9; --border:#e6ebf5;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{font-family:var(--sans);background:var(--bg);color:var(--fg);line-height:1.6}
+  .container{max-width:960px;margin:0 auto;padding:0 20px}
+  a{color:inherit;text-decoration:none}
+  code,pre{font-family:var(--mono)}
+  @media (max-width:640px){ .container{padding:0 16px} }
+</style>
+</head>
+<body>
+  <div class="container" style="padding:40px 20px">
+    <p data-i18n="demo.smoke">语言切换正常</p>
+    <button data-lang-btn="zh">中</button>
+    <button data-lang-btn="en">EN</button>
+  </div>
+  <!-- 板块由后续任务追加 -->
+
+<script>
+  const I18N = {
+    zh: { "demo.smoke": "语言切换正常" },
+    en: { "demo.smoke": "Language switch works" }
+  };
+  function applyLang(lang){
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-i18n]').forEach(el=>{
+      const k = el.getAttribute('data-i18n');
+      const v = I18N[lang] && I18N[lang][k];
+      if (v != null) el.textContent = v;
+    });
+    document.querySelectorAll('[data-lang-btn]').forEach(b=>{
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-lang-btn')===lang));
+    });
+    localStorage.setItem('lang', lang);
+  }
+  function resolveInitialLang(){
+    const saved = localStorage.getItem('lang');
+    if (saved === 'zh' || saved === 'en') return saved;
+    return (navigator.language||'zh').toLowerCase().startsWith('zh') ? 'zh' : 'en';
+  }
+  document.addEventListener('DOMContentLoaded',()=>{
+    document.querySelectorAll('[data-lang-btn]').forEach(b=>{
+      b.addEventListener('click',()=>applyLang(b.getAttribute('data-lang-btn')));
+    });
+    applyLang(resolveInitialLang());
+  });
+</script>
+</body>
+</html>
