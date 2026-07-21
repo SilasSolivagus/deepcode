@@ -22,17 +22,73 @@
 </style>
 </head>
 <body>
-  <div class="container" style="padding:40px 20px">
-    <p data-i18n="demo.smoke">语言切换正常</p>
-    <button data-lang-btn="zh">中</button>
-    <button data-lang-btn="en">EN</button>
+<!-- ========== 顶栏 ========== -->
+<header style="position:sticky;top:0;z-index:10;background:rgba(246,248,255,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)">
+  <div class="container" style="display:flex;align-items:center;justify-content:space-between;height:56px">
+    <a href="#top" style="font-weight:800;font-size:17px">deepcode</a>
+    <nav style="display:flex;gap:16px;align-items:center;font-size:13px;color:var(--muted)">
+      <a href="#why" data-i18n="nav.why">为什么</a>
+      <a href="#bench" data-i18n="nav.bench">跑分</a>
+      <a href="#tutorial" data-i18n="nav.tutorial">教程</a>
+      <a href="#faq" data-i18n="nav.faq">FAQ</a>
+      <span style="display:inline-flex;border:1px solid #d0d7e6;border-radius:6px;overflow:hidden">
+        <button data-lang-btn="zh" style="border:0;background:transparent;padding:3px 8px;cursor:pointer;font-size:12px">中</button>
+        <button data-lang-btn="en" style="border:0;background:transparent;padding:3px 8px;cursor:pointer;font-size:12px">EN</button>
+      </span>
+      <a href="https://github.com/SilasSolivagus/deepcode" style="color:var(--fg)">GitHub</a>
+      <a href="https://www.npmjs.com/package/@silassolivagus/deepcode" style="color:var(--fg)">npm</a>
+    </nav>
   </div>
-  <!-- 板块由后续任务追加 -->
+</header>
+
+<!-- ========== Hero ========== -->
+<section id="top" class="container" style="text-align:center;padding:56px 20px 8px">
+  <h1 data-i18n="hero.title" style="font-size:38px;font-weight:800;letter-spacing:-.5px">终端里的编码 agent</h1>
+  <p data-i18n="hero.sub" style="font-size:15px;color:var(--muted);max-width:560px;margin:16px auto 0"></p>
+  <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin:26px 0 6px">
+    <button id="copyInstall" style="background:var(--brand);color:#fff;border:0;font-size:14px;font-weight:600;padding:11px 18px;border-radius:8px;cursor:pointer;box-shadow:0 6px 18px rgba(91,124,250,.3)">
+      <span data-i18n="hero.copy">📋 npm i -g @silassolivagus/deepcode</span>
+    </button>
+    <a href="https://github.com/SilasSolivagus/deepcode" style="background:#fff;border:1px solid #d0d7e6;font-size:14px;font-weight:600;padding:11px 18px;border-radius:8px">
+      <span data-i18n="hero.star">⭐ Star on GitHub</span>
+    </a>
+  </div>
+  <p data-i18n="hero.req" style="font-size:12px;color:#9aa4c0;margin-bottom:26px">Node ≥ 22.5 · 首跑向导粘 key,直接用</p>
+
+  <!-- 终端窗口 demo(纯 HTML,首屏秒开) -->
+  <div style="max-width:640px;margin:0 auto;background:var(--term-bg);border-radius:12px;box-shadow:0 20px 50px rgba(26,31,54,.25);overflow:hidden">
+    <div style="display:flex;gap:7px;padding:12px 14px;border-bottom:1px solid #1f2633">
+      <span style="width:11px;height:11px;border-radius:50%;background:#ff5f56"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#ffbd2e"></span>
+      <span style="width:11px;height:11px;border-radius:50%;background:#27c93f"></span>
+      <span style="margin-left:8px;font-size:10px;color:#8b949e;font-family:var(--mono)" data-i18n="hero.termtitle">deepcode — 终端会话</span>
+    </div>
+    <div style="font-family:var(--mono);font-size:12.5px;line-height:1.9;color:var(--term-fg);padding:16px 18px;text-align:left" data-i18n-html="hero.term"></div>
+  </div>
+</section>
 
 <script>
   const I18N = {
-    zh: { "demo.smoke": "语言切换正常" },
-    en: { "demo.smoke": "Language switch works" }
+    zh: {
+      "nav.why":"为什么","nav.bench":"跑分","nav.tutorial":"教程","nav.faq":"FAQ",
+      "hero.title":"终端里的编码 agent",
+      "hero.sub":"直连 DeepSeek / GLM / Kimi,国际一线 agent 的体验与质量——实测,不是 PPT。国产模型的性价比,Skill / MCP / loop 全兼容,每一行都在你手里。",
+      "hero.copy":"📋 npm i -g @silassolivagus/deepcode",
+      "hero.star":"⭐ Star on GitHub",
+      "hero.req":"Node ≥ 22.5 · 首跑向导粘 key,直接用",
+      "hero.termtitle":"deepcode — 终端会话",
+      "hero.term":"<span style='color:#27c93f'>❯</span> 修复登录接口偶发 500<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 找到 4 处)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · 空指针兜底)</span><br>根因是并发刷新时 token 竞态,已加锁——见 session.ts:124。<br><span style='color:#8b949e'>成本实时结算 · 12 turns · deepseek-v4-pro</span>"
+    },
+    en: {
+      "nav.why":"Why","nav.bench":"Benchmarks","nav.tutorial":"Guide","nav.faq":"FAQ",
+      "hero.title":"A coding agent in your terminal",
+      "hero.sub":"Straight to DeepSeek / GLM / Kimi — top-tier agent quality, measured not marketed. Domestic-model economics, full Skill / MCP / loop support, every line stays yours.",
+      "hero.copy":"📋 npm i -g @silassolivagus/deepcode",
+      "hero.star":"⭐ Star on GitHub",
+      "hero.req":"Node ≥ 22.5 · paste your key on first run",
+      "hero.termtitle":"deepcode — session",
+      "hero.term":"<span style='color:#27c93f'>❯</span> Fix intermittent 500 on login<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 4 hits)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · null guard)</span><br>Root cause: token race on concurrent refresh — locked. See session.ts:124.<br><span style='color:#8b949e'>cost settled live · 12 turns · deepseek-v4-pro</span>"
+    }
   };
   function applyLang(lang){
     document.documentElement.lang = lang;
@@ -41,10 +97,23 @@
       const v = I18N[lang] && I18N[lang][k];
       if (v != null) el.textContent = v;
     });
+    document.querySelectorAll('[data-i18n-html]').forEach(el=>{
+      const k = el.getAttribute('data-i18n-html');
+      const v = I18N[lang] && I18N[lang][k];
+      if (v != null) el.innerHTML = v;
+    });
     document.querySelectorAll('[data-lang-btn]').forEach(b=>{
       b.setAttribute('aria-pressed', String(b.getAttribute('data-lang-btn')===lang));
     });
     localStorage.setItem('lang', lang);
+  }
+  function copyText(text, btn){
+    navigator.clipboard.writeText(text).then(()=>{
+      const span = btn.querySelector('[data-i18n]') || btn;
+      const prev = span.textContent;
+      span.textContent = (document.documentElement.lang==='en'?'✓ Copied':'✓ 已复制');
+      setTimeout(()=>applyLang(document.documentElement.lang), 1200);
+    }).catch(()=>{});
   }
   function resolveInitialLang(){
     const saved = localStorage.getItem('lang');
@@ -55,6 +124,8 @@
     document.querySelectorAll('[data-lang-btn]').forEach(b=>{
       b.addEventListener('click',()=>applyLang(b.getAttribute('data-lang-btn')));
     });
+    const ci = document.getElementById('copyInstall');
+    if (ci) ci.addEventListener('click',()=>copyText('npm i -g @silassolivagus/deepcode', ci));
     applyLang(resolveInitialLang());
   });
 </script>
