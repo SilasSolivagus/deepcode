@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>deepcode — 终端里的编码 agent</title>
+<title>deepcode 深度编程 — 终端里的编码 agent</title>
 <meta name="description" content="直连 DeepSeek / GLM / Kimi 的终端编码 agent。国际一线体验,国产模型性价比,Skill / MCP / loop 全兼容。">
 <style>
   :root{
@@ -26,7 +26,7 @@
 <!-- ========== 顶栏 ========== -->
 <header style="position:sticky;top:0;z-index:10;background:rgba(246,248,255,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)">
   <div class="container" style="display:flex;align-items:center;justify-content:space-between;height:56px">
-    <a href="#top" style="font-weight:800;font-size:17px">deepcode</a>
+    <a href="#top" style="font-weight:800;font-size:17px">deepcode <span style="font-weight:600;font-size:13px;color:var(--muted)" data-i18n="brand.cn">深度编程</span></a>
     <nav style="display:flex;gap:16px;align-items:center;font-size:13px;color:var(--muted)">
       <a href="#why" data-i18n="nav.why">为什么</a>
       <a href="#bench" data-i18n="nav.bench">跑分</a>
@@ -56,15 +56,8 @@
   </div>
   <p data-i18n="hero.req" style="font-size:12px;color:#9aa4c0;margin-bottom:26px">Node ≥ 22.5 · 首跑向导粘 key,直接用</p>
 
-  <!-- 终端窗口 demo(纯 HTML,首屏秒开) -->
-  <div style="max-width:640px;margin:0 auto;background:var(--term-bg);border-radius:12px;box-shadow:0 20px 50px rgba(26,31,54,.25);overflow:hidden">
-    <div style="display:flex;gap:7px;padding:12px 14px;border-bottom:1px solid #1f2633">
-      <span style="width:11px;height:11px;border-radius:50%;background:#ff5f56"></span>
-      <span style="width:11px;height:11px;border-radius:50%;background:#ffbd2e"></span>
-      <span style="width:11px;height:11px;border-radius:50%;background:#27c93f"></span>
-      <span style="margin-left:8px;font-size:10px;color:#8b949e;font-family:var(--mono)" data-i18n="hero.termtitle">deepcode — 终端会话</span>
-    </div>
-    <div style="font-family:var(--mono);font-size:12.5px;line-height:1.9;color:var(--term-fg);padding:16px 18px;text-align:left" data-i18n-html="hero.term"></div>
+  <div style="max-width:640px;margin:0 auto">
+    <img src="assets/demo.gif" alt="deepcode 终端演示" style="width:100%;border-radius:12px;box-shadow:0 20px 50px rgba(26,31,54,.25)">
   </div>
 </section>
 
@@ -93,28 +86,26 @@
 <script>
   const I18N = {
     zh: {
+      "brand.cn":"深度编程",
       "nav.why":"为什么","nav.bench":"跑分","nav.tutorial":"教程","nav.faq":"FAQ",
       "hero.title":"终端里的编码 agent",
       "hero.sub":"直连 DeepSeek / GLM / Kimi，国际一线 agent 的体验与质量——实测，不是 PPT。国产模型的性价比，Skill / MCP / loop 全兼容，每一行都在你手里。",
       "hero.copy":"📋 npm i -g @silassolivagus/deepcode",
       "hero.star":"⭐ Star on GitHub",
       "hero.req":"Node ≥ 22.5 · 首跑向导粘 key，直接用",
-      "hero.termtitle":"deepcode — 终端会话",
-      "hero.term":"<span style='color:#27c93f'>❯</span> 修复登录接口偶发 500<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 找到 4 处)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · 空指针兜底)</span><br>根因是并发刷新时 token 竞态,已加锁——见 session.ts:124。<br><span style='color:#8b949e'>成本实时结算 · 12 turns · deepseek-v4-pro</span>",
       "p1.t":"多国产模型直连","p1.d":"DeepSeek / GLM / Kimi 一键切，也支持自建 OpenAI 兼容端点。",
       "p2.t":"一线水准 · 实测","p2.d":"同题对打，防污染场景 × 5 模型 × 3 seed pass³，程序化判分。",
       "p3.t":"性价比拉满","p3.d":"直连国产模型的价格优势 + 缓存 / token 精算，每次调用花多少全程实时可见。",
       "p4.t":"生态全兼容","p4.d":"Skill / MCP / loop 俱全，工具编排 · 权限 · 记忆 · 子代理全都有。"
     },
     en: {
+      "brand.cn":"",
       "nav.why":"Why","nav.bench":"Benchmarks","nav.tutorial":"Guide","nav.faq":"FAQ",
       "hero.title":"A coding agent in your terminal",
       "hero.sub":"Straight to DeepSeek / GLM / Kimi — top-tier agent quality, measured not marketed. Domestic-model economics, full Skill / MCP / loop support, every line stays yours.",
       "hero.copy":"📋 npm i -g @silassolivagus/deepcode",
       "hero.star":"⭐ Star on GitHub",
       "hero.req":"Node ≥ 22.5 · paste your key on first run",
-      "hero.termtitle":"deepcode — session",
-      "hero.term":"<span style='color:#27c93f'>❯</span> Fix intermittent 500 on login<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 4 hits)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · null guard)</span><br>Root cause: token race on concurrent refresh — locked. See session.ts:124.<br><span style='color:#8b949e'>cost settled live · 12 turns · deepseek-v4-pro</span>",
       "p1.t":"Direct to domestic models","p1.d":"Switch DeepSeek / GLM / Kimi in one line; bring your own OpenAI-compatible endpoint too.",
       "p2.t":"Top-tier, measured","p2.d":"Head-to-head on the same tasks — contamination-safe scenarios × 5 models × 3 seeds, pass³, programmatic scoring.",
       "p3.t":"Economics that add up","p3.d":"Domestic-model pricing + cache / token accounting; see exactly what each call costs, live.",
