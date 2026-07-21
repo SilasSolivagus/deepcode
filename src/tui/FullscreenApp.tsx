@@ -73,6 +73,7 @@ export function FullscreenApp(props: {
   const [rewindTurn, setRewindTurn] = useState<number | null>(null)
   const [lastSigint, setLastSigint] = useState(0)
   const justPickedRef = useRef<string | null>(null)
+  const lastEscRef = useRef(0)
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
 
   // —— 滚动状态 ——
@@ -103,6 +104,18 @@ export function FullscreenApp(props: {
 
   useInput((input, key) => {
     if (key.escape && workflowsMode) { setWorkflowsMode(false); return }
+    // 双击 Esc（≤600ms）= 回退选择器（CC rewind 入口），仅在纯空闲+输入框为空时；单 Esc 仍归 InputBox。
+    if (key.escape) {
+      const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion
+        && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep
+        && !workflowsMode && !fleetMode && !skillsMode && draft === ''
+      if (idle) {
+        const now = Date.now()
+        if (now - lastEscRef.current < 600) { lastEscRef.current = 0; setRewindStep('point') }
+        else lastEscRef.current = now
+      }
+      return
+    }
     const ms = Math.max(0, totalRef.current - viewportRef.current)
     // 改 offset/stuck 后靠 setTick 触发重渲，info/跟随由下方 reconcile effect 统一重算
     if (key.pageUp) { stuckRef.current = false; setOffset(page(scrollRef.current, 'up', viewportRef.current, ms)); setTick(x => x + 1); return }

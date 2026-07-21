@@ -71,6 +71,7 @@ export function App(props: {
   const [lastSigint, setLastSigint] = useState(0)
   // 补全菜单隐藏：onPick 后记录刚选中的值，若 draft 恰好等于该值则不显示菜单
   const justPickedRef = useRef<string | null>(null)
+  const lastEscRef = useRef(0)
   // InputBox value 注入：通过 nonce 强制 InputBox 接受新值
   const [valueOverride, setValueOverride] = useState<{ text: string; nonce: number } | undefined>(undefined)
 
@@ -89,6 +90,19 @@ export function App(props: {
   // 个别终端不识别时此分支静默不触发，可用 /plan、/accept 命令作保底。
   useInput((input, key) => {
     if (key.escape && workflowsMode) { setWorkflowsMode(false); return }
+    // 双击 Esc（≤600ms）= 回退选择器（CC 的 rewind 入口），仅在纯空闲+输入框为空时触发；
+    // 单 Esc 仍由 InputBox 处理（清空输入 / busy 时中断），不受影响。
+    if (key.escape) {
+      const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion
+        && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep
+        && !workflowsMode && !fleetMode && !skillsMode && draft === ''
+      if (idle) {
+        const now = Date.now()
+        if (now - lastEscRef.current < 600) { lastEscRef.current = 0; setRewindStep('point') }
+        else lastEscRef.current = now
+      }
+      return
+    }
     if (key.ctrl && input === 'c') {
       const now = Date.now()
       // 两次 Ctrl+C 也是杀进程的退出路径：必须先 await 有界 flushMemory，否则后台记忆提取子代理被杀、记忆没写成盘

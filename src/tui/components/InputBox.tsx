@@ -154,6 +154,13 @@ export function InputBox(props: {
       else applyCur(word ? wordRight(c) : ecRight(c))
       return
     }
+    // Ctrl+J（终端 linefeed \n，ink 记为 name='enter'≠'return'）= 在光标处插入换行、不提交。
+    // 标准终端里 Alt/Shift+Enter 均发不出可区分序列（ink 死键），故 Ctrl+J 是唯一可靠的换行键。
+    if (input === '\n' && !key.return) {
+      if (props.suggestionsActive) return
+      applyCur(ecInsert({ value: valueRef.current, cursor: cursorRef.current }, '\n'))
+      return
+    }
     if (key.return) {
       if (props.suggestionsActive) return            // 菜单接管 Enter
       // 续行优先（与非 busy 同逻辑）

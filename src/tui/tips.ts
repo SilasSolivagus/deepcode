@@ -20,6 +20,7 @@ export const DEFAULT_TIPS: Tip[] = [
   { id: 'fork-rename', content: '用 /fork 复制会话试不同思路，用 /rename 给会话起名区分', cooldownSessions: 10, isRelevant: () => true },
   { id: 'steering', content: 'deepcode 干活时直接打字回车即可补充或转向，无需先打断', cooldownSessions: 8, isRelevant: () => true },
   { id: 'compact', content: '上下文变长时用 /compact 压缩，保留要点后继续干活', cooldownSessions: 12, isRelevant: () => true },
+  { id: 'select-copy', content: '全屏下拖选复制文本：iTerm2 按住 Option 拖动，Terminal.app/多数终端按住 Shift 拖动；或用 /copy 复制上条回复、/tui inline 走原生选择', cooldownSessions: 12, isRelevant: () => true },
 ]
 
 function buildCustomTips(override?: SpinnerTipsOverride): Tip[] {

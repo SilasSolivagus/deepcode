@@ -60,7 +60,7 @@ import { resolveAgents } from '../agentsLoader.js'
 import { exportTranscript } from '../export.js'
 import os from 'node:os'
 import { createCheckpointer, type Checkpointer } from '../checkpoint.js'
-import { lastAssistantText, copyToClipboard } from '../clipboard.js'
+import { lastAssistantText, nthAssistantText, lastCodeBlock, copyToClipboard } from '../clipboard.js'
 import { sessionStats, formatStats } from '../stats.js'
 import { formatKeybindings } from '../keybindings.js'
 import { startMcpConnections } from '../mcp.js'
@@ -1839,12 +1839,24 @@ export function createChatCore(opts: {
       }
       return
     }
-    if (line === '/copy') {
-      const t = lastAssistantText(messages)
-      if (!t) { notice('warn', '没有可复制的回复'); return }
+    if (line === '/copy' || line.startsWith('/copy ')) {
+      const arg = line.slice('/copy'.length).trim()
+      let t: string | null
+      let label: string
+      if (arg === 'code') {
+        t = lastCodeBlock(lastAssistantText(messages))
+        label = '最后一个代码块'
+      } else if (/^\d+$/.test(arg)) {
+        t = nthAssistantText(messages, parseInt(arg, 10))
+        label = `倒数第 ${arg} 条回复`
+      } else {
+        t = lastAssistantText(messages)
+        label = '上条回复'
+      }
+      if (!t) { notice('warn', '没有可复制的内容'); return }
       try {
         copyToClipboard(t)
-        notice('info', `已复制上条回复到剪贴板（${t.length} 字）`)
+        notice('info', `已复制${label}到剪贴板（${t.length} 字）`)
       } catch (e: any) {
         notice('error', `复制失败：${e?.message ?? e}`)
       }

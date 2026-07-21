@@ -37,6 +37,16 @@ describe('computeSuggestions skills 补全', () => {
     expect(out.map(s => s.value)).toContain('/model')
   })
 
+  it('子串模糊匹配：命令名中段也能命中（/text → /context）', () => {
+    const out = computeSuggestions('/text', { cwd: process.cwd(), customCommands: new Map() })
+    expect(out.map(s => s.value)).toContain('/context')
+  })
+
+  it('输入恰为某命令全名时隐藏菜单（回车直接提交）', () => {
+    const out = computeSuggestions('/model', { cwd: process.cwd(), customCommands: new Map() })
+    expect(out).toEqual([])
+  })
+
   it('自定义命令 hint = 首行描述 + 来源后缀 (用户)/(项目)', () => {
     const out = computeSuggestions('/', {
       cwd: process.cwd(),

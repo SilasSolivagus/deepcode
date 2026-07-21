@@ -27,4 +27,20 @@ describe('renderItem 抽取', () => {
     expect(f).toContain('读取 2 个文件')
     expect(f).toContain('运行 1 条命令')
   })
+
+  it('reasoning 进行中用 theme.reasoning 紫色渲染（非纯 dim）', () => {
+    const item = { kind: 'reasoning', done: false, segments: [{ orig: '正在推理' }], pending: '' } as any
+    const node = renderItem(item, 0, DEFAULT_THEME)
+    // ink-testing-library 在非 TTY 剥离 ANSI 颜色，故直接验 Text 的 color prop
+    const hasColor = (n: any, color: string): boolean => {
+      if (!n || typeof n !== 'object') return false
+      if (n.props?.color === color) return true
+      const ch = n.props?.children
+      const arr = Array.isArray(ch) ? ch : [ch]
+      return arr.some((c: any) => hasColor(c, color))
+    }
+    expect(hasColor(node, DEFAULT_THEME.reasoning)).toBe(true)
+    const f = render(<Box>{node}</Box>).lastFrame()!
+    expect(f).toContain('思考中')
+  })
 })

@@ -31,6 +31,17 @@ describe('InputBox cursor — 打字与渲染', () => {
     stdin.write('\r'); await tick()
     expect(onSubmit).toHaveBeenCalledWith('hello', expect.any(Array))
   })
+  it('Ctrl+J（\\n）在光标处插入换行而不提交，可写多行 prompt', async () => {
+    const onSubmit = vi.fn()
+    const { stdin } = render(<InputBox onSubmit={onSubmit} onInterrupt={() => {}} history={[]} busy={false} />)
+    await tick()
+    stdin.write('ab'); await tick()
+    stdin.write('\n'); await tick()            // Ctrl+J：插入换行，不提交
+    expect(onSubmit).not.toHaveBeenCalled()
+    stdin.write('cd'); await tick()
+    stdin.write('\r'); await tick()            // Enter：提交
+    expect(onSubmit).toHaveBeenCalledWith('ab\ncd', expect.any(Array))
+  })
   it('渲染含字素反色光标（末尾反色空格）', async () => {
     const { stdin, lastFrame } = render(<InputBox onSubmit={() => {}} onInterrupt={() => {}} history={[]} busy={false} />)
     await tick()

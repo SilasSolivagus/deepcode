@@ -26,7 +26,7 @@ export function renderItem(item: TranscriptItem, index: number, theme: Theme): R
       return (
         <Box key={index}>
           <Text color={theme.accent}>{'> '}</Text>
-          <Text dimColor>{item.text}</Text>
+          <Text>{item.text}</Text>
         </Box>
       )
 
@@ -47,15 +47,15 @@ export function renderItem(item: TranscriptItem, index: number, theme: Theme): R
           </Box>
         )
       }
-      // 进行中：显示 "✻ 思考中…" + 最近 3 行（dim 灰斜体，非紫色）
+      // 进行中：显示 "✻ 思考中…" + 最近 3 行（思考流紫，italic；尾行略暗区分标题）
       {
         const lines = displayTextOf(item).split('\n')
         const tail = lines.slice(-3)
         return (
           <Box key={index} flexDirection="column">
-            <Text dimColor italic>✻ 思考中…</Text>
+            <Text color={theme.reasoning} italic>✻ 思考中…</Text>
             {tail.map((l, i) => (
-              <Text key={i} dimColor italic>{l}</Text>
+              <Text key={i} color={theme.reasoning} italic dimColor>{l}</Text>
             ))}
           </Box>
         )

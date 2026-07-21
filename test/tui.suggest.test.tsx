@@ -9,13 +9,15 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 describe('computeSuggestions', () => {
-  it('"/" 列出全部内置命令，"/mo" 前缀过滤，自定义命令并入', () => {
+  it('"/" 列出全部内置命令，"/mo" 子串过滤，自定义命令并入', () => {
     const all = computeSuggestions('/', { cwd: '/tmp', customCommands: new Map([['review', { template: 'x', source: 'user' as const }]]) })
     expect(all.map(s => s.value)).toContain('/model')
     expect(all.map(s => s.value)).toContain('/review')
     expect(all.length).toBe(BUILTIN_COMMANDS.length + 1)
+    // 子串匹配：/model 与 /memory 都含 "mo"
     const filtered = computeSuggestions('/mo', { cwd: '/tmp', customCommands: new Map() })
-    expect(filtered.map(s => s.value)).toEqual(['/model'])
+    expect(filtered.map(s => s.value)).toContain('/model')
+    expect(filtered.map(s => s.value)).toContain('/memory')
   })
 
   it('"@" 后缀按文件名模糊匹配 cwd 下文件', () => {

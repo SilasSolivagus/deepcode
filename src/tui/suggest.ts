@@ -74,7 +74,7 @@ export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/goal', hint: '设置/查看/清除会话级停止目标' },
   { value: '/context', hint: '上下文占比' },
   { value: '/stats', hint: '本会话统计' },
-  { value: '/copy', hint: '复制上条回复到剪贴板' },
+  { value: '/copy', hint: '复制回复到剪贴板（/copy N 倒数第N条 · /copy code 最后代码块）' },
   { value: '/memory', hint: '查看生效的记忆文件' },
   { value: '/compact', hint: '手动压缩历史' },
   { value: '/clear', hint: '清空对话' },
@@ -143,9 +143,11 @@ export function computeSuggestions(input: string, env: { cwd: string; customComm
       .map(s => ({ value: `/${s.name}`, hint: firstSentence(s.description ?? '') }))
     // 桶 0：内置命令保留精选顺序。桶序：内置 → 用户命令 → 项目命令 → 技能。
     const all = [...BUILTIN_COMMANDS, ...b1, ...b2, ...b3]
-    const filtered = all.filter(s => s.value.startsWith(input))
+    // 命令名内子串模糊匹配（/text 可搜到 /context），去掉前导 / 后在命令名内找子串
+    const q = input.slice(1).toLowerCase()
+    const filtered = all.filter(s => s.value.toLowerCase().includes(q))
     // 精确等于某命令全名时隐藏菜单，让回车直接提交（防死锁，见既有注释）
-    if (filtered.length === 1 && filtered[0].value === input) return []
+    if (all.some(s => s.value === input)) return []
     return filtered
   }
   const at = input.match(/@([\w./-]*)$/)
