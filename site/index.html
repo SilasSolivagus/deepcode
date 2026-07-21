@@ -83,6 +83,15 @@
   </div>
 </section>
 
+<!-- ========== 实测跑分 ========== -->
+<section id="bench" style="background:#fff;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+  <div class="container" style="padding:56px 20px;text-align:center">
+    <h2 data-i18n="bench.t" style="font-size:26px;font-weight:800">实测，不是 PPT</h2>
+    <p data-i18n="bench.d" style="font-size:14px;color:var(--muted);max-width:600px;margin:12px auto 24px"></p>
+    <img src="assets/benchmark.svg" alt="benchmark" style="max-width:100%;height:auto">
+  </div>
+</section>
+
 <script>
   const I18N = {
     zh: {
@@ -96,7 +105,8 @@
       "p1.t":"多国产模型直连","p1.d":"DeepSeek / GLM / Kimi 一键切，也支持自建 OpenAI 兼容端点。",
       "p2.t":"一线水准 · 实测","p2.d":"同题对打，防污染场景 × 5 模型 × 3 seed pass³，程序化判分。",
       "p3.t":"性价比拉满","p3.d":"直连国产模型的价格优势 + 缓存 / token 精算，每次调用花多少全程实时可见。",
-      "p4.t":"生态全兼容","p4.d":"Skill / MCP / loop 俱全，工具编排 · 权限 · 记忆 · 子代理全都有。"
+      "p4.t":"生态全兼容","p4.d":"Skill / MCP / loop 俱全，工具编排 · 权限 · 记忆 · 子代理全都有。",
+      "bench.t":"实测，不是 PPT","bench.d":"可复现的自建 eval harness + 与国际一线闭源 agent 同题对打。防污染自建场景 × 5 模型 × 3 seed 的 pass³(专抓 flaky)，程序化判分不靠主观。"
     },
     en: {
       "brand.cn":"",
@@ -109,7 +119,8 @@
       "p1.t":"Direct to domestic models","p1.d":"Switch DeepSeek / GLM / Kimi in one line; bring your own OpenAI-compatible endpoint too.",
       "p2.t":"Top-tier, measured","p2.d":"Head-to-head on the same tasks — contamination-safe scenarios × 5 models × 3 seeds, pass³, programmatic scoring.",
       "p3.t":"Economics that add up","p3.d":"Domestic-model pricing + cache / token accounting; see exactly what each call costs, live.",
-      "p4.t":"Whole ecosystem","p4.d":"Skill / MCP / loop all supported — tool orchestration, permissions, memory, subagents included."
+      "p4.t":"Whole ecosystem","p4.d":"Skill / MCP / loop all supported — tool orchestration, permissions, memory, subagents included.",
+      "bench.t":"Measured, not marketed","bench.d":"A reproducible in-house eval harness, head-to-head with top-tier closed-source agents. Contamination-safe scenarios × 5 models × 3 seeds, pass³ (catches flakiness), scored programmatically."
     }
   };
   function applyLang(lang){
