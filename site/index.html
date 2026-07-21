@@ -195,6 +195,39 @@ cat DEEPCODE.md                     # 项目级记忆文件</pre>
   </div>
 </section>
 
+<!-- ========== FAQ ========== -->
+<section id="faq" style="background:#fff;border-top:1px solid var(--border)">
+  <div class="container" style="padding:56px 20px;max-width:720px">
+    <h2 data-i18n="faq.t" style="font-size:26px;font-weight:800;text-align:center;margin-bottom:24px">常见问题</h2>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q1.q" style="font-size:15px"></h3>
+      <p data-i18n="q1.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q2.q" style="font-size:15px"></h3>
+      <p data-i18n="q2.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q3.q" style="font-size:15px"></h3>
+      <p data-i18n="q3.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q4.q" style="font-size:15px"></h3>
+      <p data-i18n="q4.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== Footer ========== -->
+<footer style="text-align:center;padding:32px 20px;font-size:12px;color:var(--muted)">
+  <div style="margin-bottom:8px">
+    <a href="https://github.com/SilasSolivagus/deepcode" style="margin:0 8px;color:var(--fg)">GitHub</a>
+    <a href="https://www.npmjs.com/package/@silassolivagus/deepcode" style="margin:0 8px;color:var(--fg)">npm</a>
+    <a id="social" href="#" style="margin:0 8px;color:var(--fg)" data-i18n="foot.social">社交媒体</a>
+  </div>
+  <div>by Silas · MIT · © Silas</div>
+</footer>
+
 <script>
   const I18N = {
     zh: {
@@ -218,7 +251,13 @@ cat DEEPCODE.md                     # 项目级记忆文件</pre>
       "t4.t":"④ 工具 & 权限","t4.d":"工具编排自动干活；权限模式 default / accept / plan / auto，可按规则 ask / deny 收紧。",
       "t5.t":"⑤ 记忆","t5.d":"项目 DEEPCODE.md + 全局抽屉；行首 # 一句话存记忆；自动记忆随会话沉淀。",
       "t6.t":"⑥ 子代理 & 工作流","t6.d":"复杂任务派子代理并行；用 loop / workflow 把多步编排成确定流程。",
-      "t7.t":"⑦ 一个完整示例","t7.d":"给一个真实任务，看它 Grep→Read→Edit→自测跑通，全程成本可见。"
+      "t7.t":"⑦ 一个完整示例","t7.d":"给一个真实任务，看它 Grep→Read→Edit→自测跑通，全程成本可见。",
+      "faq.t":"常见问题",
+      "q1.q":"要自己的 API key 吗？","q1.a":"要。deepcode 直连你自己的模型账号（DeepSeek / GLM / Kimi 等），首跑向导粘 key 即可，成本进你自己的账号。",
+      "q2.q":"支持哪些模型？","q2.a":"DeepSeek、GLM、Kimi 开箱即用，也支持任意 OpenAI 兼容端点（自建 / 中转）。",
+      "q3.q":"我的代码和数据去哪？","q3.a":"直连你配置的模型服务，不经第三方中转；工具在你本机跑，每一步都在你眼前。",
+      "q4.q":"适合谁？","q4.a":"想在终端里用国产模型、又要一线 agent 体验与掌控感的开发者。",
+      "foot.social":"社交媒体"
     },
     en: {
       "brand.cn":"",
@@ -241,7 +280,13 @@ cat DEEPCODE.md                     # 项目级记忆文件</pre>
       "t4.t":"④ Tools & permissions","t4.d":"Tool orchestration runs the work; permission modes are default / accept / plan / auto, and you can tighten them with ask / deny rules.",
       "t5.t":"⑤ Memory","t5.d":"Per-project DEEPCODE.md plus a global drawer; # at line start saves a memory instantly; automatic memory accumulates as you work.",
       "t6.t":"⑥ Subagents & workflows","t6.d":"Complex tasks fan out to parallel subagents; loop / workflow turn multi-step work into a repeatable pipeline.",
-      "t7.t":"⑦ A full example","t7.d":"Give it a real task and watch it Grep→Read→Edit→test until it passes, with cost visible the whole way."
+      "t7.t":"⑦ A full example","t7.d":"Give it a real task and watch it Grep→Read→Edit→test until it passes, with cost visible the whole way.",
+      "faq.t":"FAQ",
+      "q1.q":"Do I need my own API key?","q1.a":"Yes. deepcode talks directly to your own model account (DeepSeek / GLM / Kimi, etc.). Paste your key on first run; cost goes to your account.",
+      "q2.q":"Which models are supported?","q2.a":"DeepSeek, GLM, Kimi out of the box, plus any OpenAI-compatible endpoint (self-hosted / proxy).",
+      "q3.q":"Where do my code and data go?","q3.a":"Straight to the model service you configure, no third-party relay; tools run on your machine, every step in front of you.",
+      "q4.q":"Who is it for?","q4.a":"Developers who want domestic models in the terminal with top-tier agent quality and full control.",
+      "foot.social":"Social"
     }
   };
   function applyLang(lang){
