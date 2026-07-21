@@ -19,6 +19,7 @@
   a{color:inherit;text-decoration:none}
   code,pre{font-family:var(--mono)}
   @media (max-width:640px){ .container{padding:0 16px} }
+  @media (max-width:640px){ #why > div{ grid-template-columns:1fr } }
 </style>
 </head>
 <body>
@@ -67,6 +68,28 @@
   </div>
 </section>
 
+<!-- ========== 卖点 4 支柱 ========== -->
+<section id="why" class="container" style="padding:56px 20px">
+  <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
+    <div class="pillar" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px">
+      <h3 data-i18n="p1.t" style="font-size:16px;color:var(--brand)">多国产模型直连</h3>
+      <p data-i18n="p1.d" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    </div>
+    <div class="pillar" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px">
+      <h3 data-i18n="p2.t" style="font-size:16px;color:var(--brand)">一线水准 · 实测</h3>
+      <p data-i18n="p2.d" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    </div>
+    <div class="pillar" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px">
+      <h3 data-i18n="p3.t" style="font-size:16px;color:var(--brand)">性价比拉满</h3>
+      <p data-i18n="p3.d" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    </div>
+    <div class="pillar" style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px">
+      <h3 data-i18n="p4.t" style="font-size:16px;color:var(--brand)">生态全兼容</h3>
+      <p data-i18n="p4.d" style="font-size:13px;color:var(--muted);margin-top:8px"></p>
+    </div>
+  </div>
+</section>
+
 <script>
   const I18N = {
     zh: {
@@ -77,7 +100,11 @@
       "hero.star":"⭐ Star on GitHub",
       "hero.req":"Node ≥ 22.5 · 首跑向导粘 key，直接用",
       "hero.termtitle":"deepcode — 终端会话",
-      "hero.term":"<span style='color:#27c93f'>❯</span> 修复登录接口偶发 500<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 找到 4 处)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · 空指针兜底)</span><br>根因是并发刷新时 token 竞态,已加锁——见 session.ts:124。<br><span style='color:#8b949e'>成本实时结算 · 12 turns · deepseek-v4-pro</span>"
+      "hero.term":"<span style='color:#27c93f'>❯</span> 修复登录接口偶发 500<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 找到 4 处)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · 空指针兜底)</span><br>根因是并发刷新时 token 竞态,已加锁——见 session.ts:124。<br><span style='color:#8b949e'>成本实时结算 · 12 turns · deepseek-v4-pro</span>",
+      "p1.t":"多国产模型直连","p1.d":"DeepSeek / GLM / Kimi 一键切，也支持自建 OpenAI 兼容端点。",
+      "p2.t":"一线水准 · 实测","p2.d":"同题对打，防污染场景 × 5 模型 × 3 seed pass³，程序化判分。",
+      "p3.t":"性价比拉满","p3.d":"直连国产模型的价格优势 + 缓存 / token 精算，每次调用花多少全程实时可见。",
+      "p4.t":"生态全兼容","p4.d":"Skill / MCP / loop 俱全，工具编排 · 权限 · 记忆 · 子代理全都有。"
     },
     en: {
       "nav.why":"Why","nav.bench":"Benchmarks","nav.tutorial":"Guide","nav.faq":"FAQ",
@@ -87,7 +114,11 @@
       "hero.star":"⭐ Star on GitHub",
       "hero.req":"Node ≥ 22.5 · paste your key on first run",
       "hero.termtitle":"deepcode — session",
-      "hero.term":"<span style='color:#27c93f'>❯</span> Fix intermittent 500 on login<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 4 hits)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · null guard)</span><br>Root cause: token race on concurrent refresh — locked. See session.ts:124.<br><span style='color:#8b949e'>cost settled live · 12 turns · deepseek-v4-pro</span>"
+      "hero.term":"<span style='color:#27c93f'>❯</span> Fix intermittent 500 on login<br><span style='color:#5b7cfa'>⏺ Grep</span> <span style='color:#8b949e'>(\"login\" · 4 hits)</span><br><span style='color:#5b7cfa'>⏺ Read</span> <span style='color:#8b949e'>(auth/session.ts:120)</span><br><span style='color:#5b7cfa'>⏺ Edit</span> <span style='color:#8b949e'>(auth/session.ts · null guard)</span><br>Root cause: token race on concurrent refresh — locked. See session.ts:124.<br><span style='color:#8b949e'>cost settled live · 12 turns · deepseek-v4-pro</span>",
+      "p1.t":"Direct to domestic models","p1.d":"Switch DeepSeek / GLM / Kimi in one line; bring your own OpenAI-compatible endpoint too.",
+      "p2.t":"Top-tier, measured","p2.d":"Head-to-head on the same tasks — contamination-safe scenarios × 5 models × 3 seeds, pass³, programmatic scoring.",
+      "p3.t":"Economics that add up","p3.d":"Domestic-model pricing + cache / token accounting; see exactly what each call costs, live.",
+      "p4.t":"Whole ecosystem","p4.d":"Skill / MCP / loop all supported — tool orchestration, permissions, memory, subagents included."
     }
   };
   function applyLang(lang){
