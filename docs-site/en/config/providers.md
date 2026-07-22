@@ -2,7 +2,7 @@
 title: Providers
 ---
 
-# Multi-provider
+# Providers
 
 deepcode ships with three built-in backends (DeepSeek / GLM / Kimi·Moonshot), plus an OpenAI-compatible `custom` slot that can point at any self-hosted or third-party OpenAI-compatible endpoint. All four share the same main loop, tools, and permission system — switching backends just swaps the key and baseURL, everything else works the same.
 

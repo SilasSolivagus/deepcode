@@ -61,4 +61,4 @@ deepcode
 ## 下一步
 
 - [多 provider 配置](/config/providers)：切 DeepSeek / GLM / Kimi / 自建后端。
-- [settings](/config/settings)：`~/.deepcode/settings.json` 的完整字段说明。
+- [settings](/config/settings)：`~/.deepcode/settings.json` 的字段说明。

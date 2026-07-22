@@ -61,4 +61,4 @@ deepcode
 ## Next steps
 
 - [Multi-provider config](/en/config/providers): switch between DeepSeek / GLM / Kimi / self-hosted backends.
-- [Settings](/en/config/settings): full field reference for `~/.deepcode/settings.json`.
+- [Settings](/en/config/settings): settings fields for `~/.deepcode/settings.json`.
