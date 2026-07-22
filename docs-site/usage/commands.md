@@ -3,6 +3,93 @@ title: 命令与快捷键
 ---
 # 命令与快捷键
 
-::: info 本页即将上线
-本页文档正在编写中。当前可先看 [README](https://github.com/SilasSolivagus/deepcode#readme) 与 [官网](https://deepcode.dirctable.com) 对应内容。
-:::
+交互 TUI 里，斜杠命令、文件引用、快捷键是主要的操作入口。本页只挑高频常用的讲一遍；完整命令清单见 [参考 / 命令](/reference/commands)。
+
+## 怎么用命令
+
+输入框里敲 `/` 就会弹出命令菜单，按名称和描述模糊匹配、实时排序；`↑` / `↓` 移动选中项，`Tab` 或 `Enter` 确认补全。菜单同时支持三种触发前缀：
+
+- `/` — 斜杠命令菜单（内置命令 + 自定义命令 + 可调用技能）
+- `@` — 文件引用菜单，补全当前目录下的文件路径
+- `!` — 直跑 shell 命令，不进对话历史
+
+自定义命令放在 `~/.deepcode/commands/*.md`（全局）或 `<项目>/.deepcode/commands/*.md`（项目级），文件正文里的 `$ARGUMENTS` 会被替换成命令后面跟的参数，同样能在 `/` 菜单里补全出来。
+
+## 高频命令
+
+### 模型与思考
+
+- `/model` — 无参打开模型选择器，`/model <名字>` 直接切到指定模型。同 provider 内切档立即生效，跨 provider 切换会自动重启进程并恢复当前会话。
+- `/think` — thinking 模式开关。
+- `/effort low|medium|high|off` — 调整思考力度档位。
+
+### 权限模式
+
+- `/plan` — 只读探索 + 写计划，写操作需要走 `ExitPlanMode` 请用户审批。
+- `/accept` — acceptEdits 模式开关：Edit/Write 免确认，Bash 仍确认。
+- `/auto` — auto 模式，分类器自动判定放行/询问/拦截，只读操作免审。
+- `/dontask` — dontAsk 模式：读操作放行、写操作自动拒绝，不弹确认框。
+
+四种模式外加默认模式，用 `Shift+Tab` 可以直接循环切换，不必逐条敲命令。详见 [权限模式](/usage/permissions)。
+
+### 会话与历史
+
+- `/compact` — 手动压缩对话历史。
+- `/clear` — 清空对话、开一个新会话文件（花费累计保留）。
+- `/resume` — 列出并恢复本目录下的历史会话。
+- `/rewind` — 回退到某一轮之前，可选仅对话 / 仅代码 / 两者一起回退。
+- `/fork` — 把当前会话分叉成新会话继续跑，原会话冻结。
+- `/rename <名字>` — 给当前会话命名，方便在 `/resume` 列表里认出来。
+
+### 成本与状态
+
+- `/cost` — 本会话花费明细。
+- `/stats` — 本会话统计：轮数、工具调用、token、缓存、花费。
+- `/recap` — 一句话回顾当前会话进度和下一步。
+- `/goal <条件>` — 设置一个会话级停止前自检目标；无参数时报告当前进行中的目标。
+- `/context` — 查看上下文占比和上一次 usage。
+
+### 记忆
+
+- `/memory` — 查看当前生效的指令文件和全局记忆抽屉内容。
+- `/pause-memory` — 暂停/恢复本会话的记忆读写（别名 `/memory-pause`、`/toggle-memory`）。
+
+### 协作与产出
+
+- `/copy` — 复制上一条回复到剪贴板。
+- `/export` — 导出整段对话到 markdown 文件。
+- `/commit` — 预跑 git 状态、按仓库风格生成并创建一个 commit。
+- `/commit-push-pr` — 在 `/commit` 基础上再推送、创建或更新 PR（需要 `gh` CLI）。
+
+### 环境与诊断
+
+- `/doctor` — 诊断安装、配置、连通性。
+- `/config` — 查看合并后的配置及每一项的来源追溯。
+- `/mcp` — 查看已配置的 MCP server。
+- `/skills` — 列出当前可用的技能。
+- `/init` — 分析项目结构，生成 `DEEPCODE.md`。
+
+## 键位表
+
+| 按键 | 作用 |
+| --- | --- |
+| `/` | 打开斜杠命令菜单 |
+| `@` | 打开文件引用菜单 |
+| `!` | 直跑 shell 命令 |
+| `↑` / `↓` | 补全菜单里移动选中项；空闲时浏览历史输入 |
+| `Tab` / `Enter` | 确认补全菜单选中项；无菜单时 `Enter` 直接提交 |
+| `Shift+Tab` | 循环切换权限模式（默认 → auto → acceptEdits → plan → dontAsk → 默认） |
+| 行尾 `\` + `Enter` | 续行，写多行输入 |
+| `Esc` | 生成中按一下中断当前回合；空闲时清空输入框；连按两次进回退（rewind）选择器 |
+| `PageUp` / `PageDown` | 上/下翻页滚动历史 |
+| `Ctrl+G` | 跳到底部并恢复自动跟随 |
+| `Ctrl+C`（2 秒内连按两次） | 退出 |
+| `Shift` + 拖拽 | 走终端原生选中（鼠标默认被滚轮捕获） |
+
+## 完整清单
+
+以上只是高频子集，完整命令参考见 [参考 / 命令](/reference/commands)。
+
+---
+
+相关：[权限模式](/usage/permissions) · [转向 / rewind / compact](/usage/steering)
