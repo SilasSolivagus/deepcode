@@ -28,7 +28,7 @@
     <text x="228" y="172">多 provider</text>
     <rect x="372" y="152" width="130" height="30" rx="15" fill="#171a2b" stroke="#2a3050"/>
     <text x="388" y="172">自带记忆</text>
-    <rect x="512" y="152" width="216" height="30" rx="15" fill="#171a2b" stroke="#3a4170"/>
-    <text x="528" y="172" fill="#8b9dff" font-weight="700">追平 Claude · 成本 1/7</text>
+    <rect x="512" y="152" width="140" height="30" rx="15" fill="#171a2b" stroke="#3a4170"/>
+    <text x="528" y="172" fill="#8b9dff" font-weight="700">国产模型性价比</text>
   </g>
 </svg>

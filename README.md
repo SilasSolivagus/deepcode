@@ -1,3 +1,5 @@
+<p align="center"><b>中文</b> · <a href="README.en.md">English</a></p>
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/header.svg" width="820" alt="deepcode — 终端编码 agent，直连 DeepSeek / GLM / Kimi">
 </p>
@@ -13,12 +15,14 @@
 
 <p align="center">
   <b>直连 DeepSeek / GLM / Kimi 的终端编码 agent。</b><br>
-  一次真实任务 <b>¥0.68</b> 跑完、可靠性拉满——工具编排 · 权限 · 记忆 · 子代理 · 工作流，<b>每一行都在你手里</b>。
+  国产模型的性价比，工具编排 · 权限 · 记忆 · 子代理 · 工作流全都有——<b>每一行都在你手里</b>。
 </p>
+<p align="center">🌐 官网 · <a href="https://deepcode.dirctable.com">deepcode.dirctable.com</a></p>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/demo.gif" width="820" alt="deepcode 终端会话：Grep/Read 工具调用 → 引用行号的实质答案 → 成本行结算">
 </p>
+<p align="center"><sub>适合想在终端用国产大模型、又要国际一线 agent 体验与完全掌控感的开发者。</sub></p>
 
 ## 30 秒上手
 
@@ -40,19 +44,19 @@ deepcode -p "<任务>" --json  # headless + JSON（text/status/turns/usage/costC
 可复现的自建 eval harness（`eval/`）+ 与顶级闭源 agent 同题对打。**防污染自建场景 × 5 模型 × 3 seed 的 pass^3**（照 τ-bench 可靠性理念，专抓 flaky），程序化判分不靠主观。
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/benchmark.svg" width="840" alt="成本-可靠性 Pareto：deepseek-v4-pro 满分可靠、成本便宜 7–10×；vs Claude 四类任务打平">
+  <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/benchmark.svg" width="840" alt="成本-可靠性 Pareto：deepseek-v4-pro 满分可靠、成本便宜 7–10×；vs 国际一线闭源 agent 四类打平">
 </p>
 
-- **Pareto 赢家 = `deepseek-v4-pro`**：3 个模型跑满 5/5 场景 pass^3（deepseek-v4-pro / glm-5.2 / kimi-k3），而 deepseek-v4-pro 只要 **¥0.68——便宜 7–10×**。
-- **追平 Claude**：Office 三件套 / 联网深度研究 / 数据分析 / 复杂求值器，四类真实任务 **产出全部打平**。
-- **Kimi 也全可靠**：`kimi-k3` 同样跑满 5/5（含最难的求值器），要 Kimi 生态或 1M 上下文时是稳的选择，代价是成本最高（¥6.56）。
-- **pass^N 抓 flaky**：deepseek-flash 的求值器是 1/3（单跑会误判 OK，多 seed 才照出不可靠）——这正是可靠性度量的价值。
+- **Pareto 赢家 = `deepseek-v4-pro`**：deepseek-v4-pro / glm-5.2 / kimi-k3 均跑满 5/5 场景 pass^3；deepseek-v4-pro 仅 **¥0.68——便宜 7–10×**。
+- **追平国际一线闭源 agent**：Office 三件套 / 联网深度研究 / 数据分析 / 复杂求值器，四类真实任务产出全部打平。
+- **Kimi 同样全可靠**：`kimi-k3` 跑满 5/5（含最难的求值器），适合 Kimi 生态或 1M 上下文场景，代价是成本最高（¥6.56）。
+- **pass^N 抓 flaky**：deepseek-flash 求值器仅 1/3——单跑会误判 OK，多 seed 才照出不可靠，这正是可靠性度量的价值。
 
-> 诚实边界：最烧脑的深推理（微妙算法 bug / 超大代码库 / 深架构）上 Claude 可能仍领先——那主要是**模型能力**、非 harness。完整报告见 [`eval/RESULTS-2026-07-17.md`](eval/RESULTS-2026-07-17.md)。
+> 诚实边界：最烧脑的深推理（微妙算法 bug / 超大代码库 / 深架构）上，国际一线闭源 agent 可能仍领先——主要是**模型能力**差距、非 harness。完整报告见 [`eval/RESULTS-2026-07-17.md`](eval/RESULTS-2026-07-17.md)。
 
 ## 为什么不直接用兼容接口跑闭源 agent？
 
-DeepSeek 提供 [Anthropic 兼容接口](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api)，两行环境变量就能让闭源终端 agent 跑在 DeepSeek 上——但那是**租房**：harness 是黑盒，系统提示词与工具描述是为别的模型调教的，兼容层还会丢字段。deepcode 是**拥有**：
+DeepSeek 提供 [兼容接口](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api)，两行环境变量就能让闭源终端 agent 跑在 DeepSeek 上——但那是**租房**：harness 是黑盒，系统提示词与工具描述是为别的模型调教的，兼容层还会丢字段。deepcode 是**拥有**：
 
 | | 兼容接口 + 闭源 agent | deepcode |
 |---|---|---|
@@ -70,14 +74,14 @@ DeepSeek 提供 [Anthropic 兼容接口](https://api-docs.deepseek.com/zh-cn/gui
 
 **🔀 原生多 provider，运行时切换**
 
-一套 harness 通吃 DeepSeek / GLM / Kimi / 自建后端；方言 adapter 把各厂的 usage、缓存命中、thinking 三态字段统一归一，切厂无感（含 Kimi 仅思考模式的 k2.7-code/k3，自动规避报错）。
+一套 harness 通吃 DeepSeek / GLM / Kimi / 自建后端；方言 adapter 统一各厂 usage、缓存命中、thinking 三态字段，切厂无感（含 Kimi 仅思考模式的 k2.7-code/k3，自动规避报错）。
 
 </td>
 <td width="50%" valign="top">
 
 **💰 国产 thinking 模型的成本控制**
 
-显式关思考默认省 ~39× 输出 token；并解决了国产 thinking 模型在短回答/门控场景 content 被 reasoning 击穿的坑——这是直连闭源 agent 遇不到的问题。
+显式关思考默认省 ~39× 输出 token；并修复国产 thinking 模型短回答/门控场景 content 被 reasoning 击穿的坑——直连闭源 agent 遇不到的问题。
 
 </td>
 </tr>
@@ -86,14 +90,14 @@ DeepSeek 提供 [Anthropic 兼容接口](https://api-docs.deepseek.com/zh-cn/gui
 
 **🧠 自带记忆系统**
 
-per-project + 跨项目全局抽屉 + dream 后台归纳 + `SearchMemory` 全文检索（node:sqlite FTS5，零依赖），信号门控只在真有持久信息时才提取。无感主动召回 + 跨项目连续记忆。
+per-project + 跨项目全局抽屉 + dream 后台归纳 + `SearchMemory` 全文检索（node:sqlite FTS5，零依赖）；信号门控只在有持久信息时提取，无感主动召回、跨项目连续记忆。
 
 </td>
 <td width="50%" valign="top">
 
 **📊 可复现 eval harness**
 
-防污染场景 × 多模型 × N seeds × 程序化判分，出 pass^N 可靠性 + 成本-Pareto，一键回归。把「便宜模型上的可靠性/元」做成一等指标。
+防污染场景 × 多模型 × N seeds × 程序化判分，一键出 pass^N 可靠性 + 成本-Pareto 回归报告，把「便宜模型的可靠性/元」做成一等指标。
 
 </td>
 </tr>
@@ -109,7 +113,7 @@ GLM-4.6v 视觉透传 + GLM-OCR 文档输入，模型无关地注入主循环。
 
 **🛡️ 权限与安全**
 
-allow/ask/deny 三桶 + auto 模式分类器 + 分层 settings + SSRF 防护 + git worktree 隔离子代理——放手让它干活，边界你说了算。
+allow/ask/deny 三桶 + auto 模式分类器 + 分层 settings + SSRF 防护 + git worktree 隔离子代理——放手干活，边界你说了算。
 
 </td>
 </tr>
