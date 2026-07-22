@@ -56,7 +56,7 @@ A reproducible, self-built eval harness (`eval/`) pitted against top-tier closed
 
 ## Why Not Just Run a Closed-Source Agent Through a Compatibility Endpoint?
 
-DeepSeek offers an [Anthropic-compatible endpoint](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api) — two environment variables and you can point a closed-source terminal agent at DeepSeek. But that's **renting**: the harness is a black box, its system prompt and tool descriptions were tuned for a different model, and the compatibility layer drops fields along the way. deepcode is **owning**:
+DeepSeek offers a [compatible endpoint](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api) — two environment variables and you can point a closed-source terminal agent at DeepSeek. But that's **renting**: the harness is a black box, its system prompt and tool descriptions were tuned for a different model, and the compatibility layer drops fields along the way. deepcode is **owning**:
 
 | | Compat endpoint + closed-source agent | deepcode |
 |---|---|---|
@@ -74,7 +74,7 @@ DeepSeek offers an [Anthropic-compatible endpoint](https://api-docs.deepseek.com
 
 **🔀 Native multi-provider, switch at runtime**
 
-One harness covers DeepSeek / GLM / Kimi / self-hosted backends; an adapter layer normalizes each vendor's usage, cache-hit, and thinking tri-state fields so switching vendors is seamless (including Kimi's thinking-only models k2.7-code/k3, with automatic error avoidance).
+One harness covers DeepSeek / GLM / Kimi / self-hosted backends; a dialect adapter layer normalizes each vendor's usage, cache-hit, and thinking tri-state fields so switching vendors is seamless (including Kimi's thinking-only models k2.7-code/k3, with automatic error avoidance).
 
 </td>
 <td width="50%" valign="top">
@@ -113,7 +113,7 @@ GLM-4.6v vision pass-through and GLM-OCR document input, injected into the main 
 
 **🛡️ Permissions & security**
 
-allow/ask/deny three-bucket model + an auto classifier + layered settings + SSRF protection + git-worktree-isolated subagents — let it run, you decide the boundaries.
+allow/ask/deny three-bucket model + an auto-mode classifier + layered settings + SSRF protection + git-worktree-isolated subagents — let it run, you decide the boundaries.
 
 </td>
 </tr>

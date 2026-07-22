@@ -56,7 +56,7 @@ deepcode -p "<任务>" --json  # headless + JSON（text/status/turns/usage/costC
 
 ## 为什么不直接用兼容接口跑闭源 agent？
 
-DeepSeek 提供 [Anthropic 兼容接口](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api)，两行环境变量就能让闭源终端 agent 跑在 DeepSeek 上——但那是**租房**：harness 是黑盒，系统提示词与工具描述是为别的模型调教的，兼容层还会丢字段。deepcode 是**拥有**：
+DeepSeek 提供 [兼容接口](https://api-docs.deepseek.com/zh-cn/guides/anthropic_api)，两行环境变量就能让闭源终端 agent 跑在 DeepSeek 上——但那是**租房**：harness 是黑盒，系统提示词与工具描述是为别的模型调教的，兼容层还会丢字段。deepcode 是**拥有**：
 
 | | 兼容接口 + 闭源 agent | deepcode |
 |---|---|---|
@@ -74,7 +74,7 @@ DeepSeek 提供 [Anthropic 兼容接口](https://api-docs.deepseek.com/zh-cn/gui
 
 **🔀 原生多 provider，运行时切换**
 
-一套 harness 通吃 DeepSeek / GLM / Kimi / 自建后端；adapter 统一各厂 usage、缓存命中、thinking 三态字段，切厂无感（含 Kimi 仅思考模式的 k2.7-code/k3，自动规避报错）。
+一套 harness 通吃 DeepSeek / GLM / Kimi / 自建后端；方言 adapter 统一各厂 usage、缓存命中、thinking 三态字段，切厂无感（含 Kimi 仅思考模式的 k2.7-code/k3，自动规避报错）。
 
 </td>
 <td width="50%" valign="top">
@@ -113,7 +113,7 @@ GLM-4.6v 视觉透传 + GLM-OCR 文档输入，模型无关地注入主循环。
 
 **🛡️ 权限与安全**
 
-allow/ask/deny 三桶 + auto 分类器 + 分层 settings + SSRF 防护 + git worktree 隔离子代理——放手干活，边界你说了算。
+allow/ask/deny 三桶 + auto 模式分类器 + 分层 settings + SSRF 防护 + git worktree 隔离子代理——放手干活，边界你说了算。
 
 </td>
 </tr>
