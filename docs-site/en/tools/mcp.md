@@ -31,13 +31,15 @@ MCP servers are configured under the `mcpServers` field, each entry a `command` 
 }
 ```
 
-Values in `env` support `${VAR}` and `${VAR:-default}` expansion, resolved from the current process environment at connect time. Connecting to a single server has a 30-second timeout (handshake plus fetching its tool list); after that, each call to one of its tools has a 120-second timeout — timeouts error out without affecting other servers.
+Values in `env` support `${VAR}` and `${VAR:-default}` expansion, resolved from the current process environment at connect time. The handshake (`connect`) has its own 30-second timeout, and fetching the tool list (`listTools`) has a separate 30-second timeout — the two aren't a shared budget, so a single server can in the worst case take close to 60 seconds; after that, each call to one of its tools has a 120-second timeout. Any timeout only errors out that one server, without affecting the others.
 
 `mcpServers` is a sensitive field: it only takes effect from the user layer (`~/.deepcode/settings.json`) — project/local layers get it stripped even if they set it. See [settings](/en/config/settings).
 
 ## Async connection
 
-deepcode doesn't wait for MCP servers to finish connecting before it becomes usable at startup: every configured server is immediately marked `pending`, then each connects in parallel without blocking anything, including TUI startup. Once a server connects, its status flips to `connected` and the tools it exposes are hot-inserted into the shared tool pool right away — usable in the current session immediately. If a server fails to connect (process won't spawn, handshake times out, etc.), its status flips to `failed` and the error is surfaced as a warning; it never crashes startup or blocks other servers from connecting and being used.
+In the interactive TUI, deepcode doesn't wait for MCP servers to finish connecting before it becomes usable at startup: every configured server is immediately marked `pending`, then each connects in parallel without blocking anything, including TUI startup. Once a server connects, its status flips to `connected` and the tools it exposes are hot-inserted into the shared tool pool right away — usable in the current session immediately. If a server fails to connect (process won't spawn, handshake times out, etc.), its status flips to `failed` and the error is surfaced as a warning; it never crashes startup or blocks other servers from connecting and being used.
+
+One-shot headless (`-p`) and background (resumed) sessions take a different path: they `await` each server's connection **sequentially**, in configured order, and only start the first turn once every server has finished connecting (or timed out/failed) — MCP connections block startup synchronously in these non-interactive modes, not the hot-insert model above.
 
 ## Resource tools
 
@@ -46,7 +48,7 @@ As long as at least one MCP server is configured, deepcode adds three resource t
 | Tool | Behavior |
 | --- | --- |
 | `ListMcpResources` | Lists resources exposed by connected servers, each result tagged with a `server` field; an optional `server` argument scopes it to one server; servers that don't declare resource capability are skipped, and one server erroring doesn't affect the others' results |
-| `ReadMcpResource` | Reads a specific resource by `server` + `uri`; text content is returned inline; binary content is saved to a temp file and its path is returned; a missing resource or a server that doesn't implement resource reads returns a readable error suggesting you re-run `ListMcpResources` to refresh |
+| `ReadMcpResource` | Reads a specific resource by `server` + `uri`; text content is returned inline; binary content is saved to a temp file and its path is returned; a missing resource returns a readable error suggesting you re-run `ListMcpResources` to refresh and retry; a server that advertises resource support but doesn't implement reads just returns its own error, with no suggestion to re-list |
 | `WaitForMcpServers` | Waits for servers still `pending` to finish connecting (up to 5 seconds, polling every 50ms); an optional `servers` argument scopes it to specific servers; returns `ready`/`connected`/`failed`/`stillPending` fields |
 
 ## Permissions
