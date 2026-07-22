@@ -87,7 +87,7 @@ skillOverrides
 
 ## SSRF 防护
 
-hook 里的 HTTP 请求和 WebSearch 走两层防护：先过 `allowedHttpHookUrls` 白名单（不设=不限制，`[]`=全禁，非空则须匹配通配模式），再在网络层加一道 IP 守卫（拦截内网地址、DNS 重绑定），并禁止请求跟随重定向。有代理时代理接管 DNS 解析，守卫让位给代理。
+hook 里的 HTTP 请求走两层防护：先过 `allowedHttpHookUrls` 白名单（不设=不限制，`[]`=全禁，非空则须匹配通配模式），再在网络层加一道 IP 守卫（拦截内网地址、DNS 重绑定），并禁止请求跟随重定向。有代理时代理接管 DNS 解析，守卫让位给代理。
 
 ---
 

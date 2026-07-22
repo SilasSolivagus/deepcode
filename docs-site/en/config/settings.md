@@ -87,7 +87,7 @@ Each provider's key is read from an environment variable first, with `apiKey`/`p
 
 ## SSRF protection
 
-HTTP requests from hooks and WebSearch go through two layers of protection: first an `allowedHttpHookUrls` allowlist (unset = unrestricted, `[]` = fully blocked, non-empty = must match a glob pattern), then a network-layer IP guard (blocking private/internal addresses and DNS rebinding), with redirects disallowed. When a proxy is active, the proxy handles DNS resolution and the guard steps aside.
+HTTP requests from hooks go through two layers of protection: first an `allowedHttpHookUrls` allowlist (unset = unrestricted, `[]` = fully blocked, non-empty = must match a glob pattern), then a network-layer IP guard (blocking private/internal addresses and DNS rebinding), with redirects disallowed. When a proxy is active, the proxy handles DNS resolution and the guard steps aside.
 
 ---
 
