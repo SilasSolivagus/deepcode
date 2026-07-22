@@ -27,10 +27,9 @@ Custom commands live in `~/.deepcode/commands/*.md` (global) or `<project>/.deep
 
 - `/plan` — read-only exploration plus a written plan; writes go through `ExitPlanMode` for user approval.
 - `/accept` — toggles acceptEdits mode: Edit/Write run without confirmation, Bash still confirms.
-- `/auto` — auto mode: a classifier decides run/ask/block per action, read-only calls skip confirmation.
 - `/dontask` — dontAsk mode: reads are allowed, writes are auto-denied, no confirmation prompt either way.
 
-On top of the default mode, `Shift+Tab` cycles through all of these without typing a command. See [Permission modes](/en/usage/permissions).
+`/plan`, `/accept`, and `/dontask` can all be typed directly; auto mode (a classifier decides run/ask/block per action, read-only calls skip confirmation) has no typed command — it's reachable only by cycling with `Shift+Tab`. `Shift+Tab` covers all five states (default → auto → acceptEdits → plan → dontAsk → default) without typing a command. See [Permission modes](/en/usage/permissions).
 
 ### Session & history
 

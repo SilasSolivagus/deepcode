@@ -27,10 +27,9 @@ title: 命令与快捷键
 
 - `/plan` — 只读探索 + 写计划，写操作需要走 `ExitPlanMode` 请用户审批。
 - `/accept` — acceptEdits 模式开关：Edit/Write 免确认，Bash 仍确认。
-- `/auto` — auto 模式，分类器自动判定放行/询问/拦截，只读操作免审。
 - `/dontask` — dontAsk 模式：读操作放行、写操作自动拒绝，不弹确认框。
 
-四种模式外加默认模式，用 `Shift+Tab` 可以直接循环切换，不必逐条敲命令。详见 [权限模式](/usage/permissions)。
+`/plan`、`/accept`、`/dontask` 都能直接敲命令切入；auto 模式（分类器自动判定放行/询问/拦截，只读操作免审）没有对应的打字命令，只能靠 `Shift+Tab` 循环到。`Shift+Tab` 覆盖全部五态（默认 → auto → acceptEdits → plan → dontAsk → 默认），不必逐条敲命令。详见 [权限模式](/usage/permissions)。
 
 ### 会话与历史
 
