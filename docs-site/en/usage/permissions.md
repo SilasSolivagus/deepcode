@@ -35,8 +35,8 @@ Each switch updates the footer label: `default`, `auto`, `accept` (for `acceptEd
 
 1. **`deny` rules are highest priority** — a `deny` hit is rejected outright (for Bash commands it's downgraded to a forced confirmation instead of an outright rejection; every other tool is rejected directly). This check runs before the read-only shortcut, `yolo`, `acceptEdits`, and allow/ask rules — no mode can bypass it.
 2. **System-level safety backstop** — for example `rm`/`rmdir` targeting a critical system path or the current working directory requires explicit confirmation even in `yolo` mode; this backstop bypasses permission rules entirely, and `yolo` cannot skip it.
-3. **Read-only tools / `yolo` / `acceptEdits`** — read-only operations are approved directly; `yolo` approves almost everything; `acceptEdits` only approves `Edit`/`Write`, everything else still goes through the rules below.
-4. **allow / ask rules** — a matching `allow` rule approves the call; a matching `ask` rule forces a confirmation prompt even if the same call also matches an `allow` rule or the session is in `yolo` mode.
+3. **Read-only tools / `yolo` / `acceptEdits`** — read-only operations are approved by default — unless a path-based `ask` rule matches (see below); `yolo` approves almost everything; `acceptEdits` only approves `Edit`/`Write`, everything else still goes through the rules below.
+4. **allow / ask rules** — a matching `allow` rule approves the call; a matching `ask` rule forces a confirmation prompt, overriding allow rules, `yolo` mode, and the read-only shortcut.
 5. **`auto` mode classifier** — if none of the above matched, the classifier decides run / ask / block.
 
 `dontAsk` does not go through this chain — the moment a confirmation would normally be shown, it's decided as a rejection instead. In practice that behaves as "reads approved, writes all denied."

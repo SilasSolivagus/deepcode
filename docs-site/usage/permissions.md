@@ -35,8 +35,8 @@ default → auto → acceptEdits → plan → dontAsk → default
 
 1. **deny 规则最高**——命中 deny 即拒绝（Bash 命令命中时降级为强制确认而非直接拒绝，其它工具直接拒绝）。这一判断早于只读短路、`yolo`、`acceptEdits`、allow/ask 规则，任何模式都不能绕过。
 2. **系统级安全兜底**——例如 `rm`/`rmdir` 打到关键系统路径或当前工作目录，即使处于 `yolo` 模式也必须显式确认；这类兜底不经过权限规则判断，`yolo` 不能绕过。
-3. **只读工具 / `yolo` / `acceptEdits`**——只读操作直接放行；`yolo` 放行几乎全部操作；`acceptEdits` 只对 `Edit`/`Write` 放行，其余操作仍走后续规则。
-4. **allow / ask 规则**——命中 allow 规则放行；命中 ask 规则强制弹窗确认，即使同时命中 allow 规则或处于 `yolo` 模式，ask 规则依然生效。
+3. **只读工具 / `yolo` / `acceptEdits`**——只读操作默认放行，除非有路径维度的 `ask` 规则命中（见下）；`yolo` 放行几乎全部操作；`acceptEdits` 只对 `Edit`/`Write` 放行，其余操作仍走后续规则。
+4. **allow / ask 规则**——命中 allow 规则放行；命中 ask 规则强制弹窗确认，凌驾 allow 规则、`yolo` 模式与只读短路。
 5. **`auto` 模式分类器**——以上都没命中时，由分类器判定放行 / 询问 / 拦截。
 
 `dontAsk` 不参与上述判断链——它在需要弹窗确认的那一刻直接判定为拒绝，行为上等价于「只读放行、写操作全拒」。
