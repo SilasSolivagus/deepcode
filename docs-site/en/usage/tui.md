@@ -51,10 +51,10 @@ A multi-line status bar sits below the input box. From top to bottom, in cluster
 **Row 1 — model / mode / directory**
 
 ```
-[deepseek-v4-pro | acceptEdits | think:medium] | my-project git:(main)
+[deepseek-v4-pro | accept | think:medium] | my-project git:(main)
 ```
 
-Inside the brackets: current model, permission mode (`default`/`acceptEdits`/`plan`/`auto`/`dontAsk`/`yolo`, see [permission modes](/en/usage/permissions)), and the thinking effort level appended when thinking is on. Outside the brackets: the current directory name and git branch (if any). When the focus view is on, a `· focus` badge is appended at the end of the line.
+Inside the brackets: current model, permission mode (rendered as `default`/`auto`/`accept`/`plan`/`⏵⏵DONT-ASK`/`yolo` in the status bar, see [permission modes](/en/usage/permissions)), and the thinking effort level appended when thinking is on. Outside the brackets: the current directory name and git branch (if any). When the focus view is on, a `· focus` badge is appended at the end of the line.
 
 **Row 2 — context / cache / cost**
 

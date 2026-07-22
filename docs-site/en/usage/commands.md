@@ -79,7 +79,7 @@ Custom commands live in `~/.deepcode/commands/*.md` (global) or `<project>/.deep
 | `Tab` / `Enter` | Confirm the selected completion; `Enter` alone submits when no menu is open |
 | `Shift+Tab` | Cycle permission mode (default → auto → acceptEdits → plan → dontAsk → default) |
 | `\` + `Enter` at end of line | Continue on a new line for multi-line input |
-| `Esc` | Interrupts the current turn while generating; clears the input box when idle; double-press opens the rewind picker |
+| `Esc` | Interrupts the current turn while generating; clears the input box when idle; double-press opens the rewind picker (when idle, input box empty) |
 | `PageUp` / `PageDown` | Scroll history up/down a page |
 | `Ctrl+G` | Jump to the bottom and resume auto-follow |
 | `Ctrl+C` (twice within 2s) | Exit |
