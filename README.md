@@ -119,6 +119,7 @@ allow/ask/deny 三桶 + auto 模式分类器 + 分层 settings + SSRF 防护 + g
 </tr>
 </table>
 
+<a id="配置"></a>
 <details>
 <summary><b>配置</b>（env / 向导 / settings.json，切 GLM · Kimi · 自建）</summary>
 

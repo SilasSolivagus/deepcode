@@ -119,6 +119,7 @@ allow/ask/deny three-bucket model + an auto-mode classifier + layered settings +
 </tr>
 </table>
 
+<a id="configuration"></a>
 <details>
 <summary><b>Configuration</b> (env / wizard / settings.json, switching GLM · Kimi · self-hosted)</summary>
 
