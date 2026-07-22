@@ -6,3 +6,6 @@ loop/
 bench/
 .superpowers/
 .deepcode/
+docs-site/node_modules/
+docs-site/.vitepress/dist/
+docs-site/.vitepress/cache/
