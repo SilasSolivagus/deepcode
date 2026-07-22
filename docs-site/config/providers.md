@@ -96,7 +96,7 @@ export MOONSHOT_API_KEY=...
 
 **Kimi**：`kimi-k3`（仅思考）、`kimi-k2.7-code`（仅思考）、`kimi-k2.7-code-highspeed`（仅思考）、`kimi-k2.6`、`kimi-k2.5`
 
-## thinking 三态
+## thinking 开关与仅思考守卫
 
 thinking 默认 **`disabled`**（关），省 token、出手快；`/think` 开关切换，`/effort low|medium|high` 调思考力度。
 

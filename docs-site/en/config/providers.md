@@ -96,7 +96,7 @@ Full built-in model list per provider (models marked "thinking-only" can't have 
 
 **Kimi**: `kimi-k3` (thinking-only), `kimi-k2.7-code` (thinking-only), `kimi-k2.7-code-highspeed` (thinking-only), `kimi-k2.6`, `kimi-k2.5`
 
-## Thinking: three states
+## Thinking toggle & the thinking-only guard
 
 Thinking defaults to **`disabled`** — saves tokens, responds faster. `/think` toggles it on/off, `/effort low|medium|high` adjusts how hard it thinks.
 
