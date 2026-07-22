@@ -81,7 +81,7 @@ matcher 匹配的目标字段随事件而定：
       {
         "matcher": "Bash|Write",
         "hooks": [
-          { "type": "command", "command": "echo \"about to run: $TOOL_NAME\" >> /tmp/audit.log", "timeout": 5000 }
+          { "type": "command", "command": "echo \"about to run: $TOOL_NAME\" >> /tmp/audit.log", "timeout": 5 }
         ]
       }
     ],
@@ -96,11 +96,11 @@ matcher 匹配的目标字段随事件而定：
 }
 ```
 
-除了最常用的 `type: "command"`（跑一条 shell 命令，字段有 `command`/`timeout`/`async`）之外，还支持三种类型：`type: "prompt"`（丢给一次 LLM 判定，字段 `prompt`/`model`）、`type: "agent"`（跑一个只读子代理多轮核查，字段同 `prompt`/`model`）、`type: "http"`（打一个 HTTP 请求，字段 `url`/`headers`/`allowedEnvVars`）。command hook 的退出码决定结果：非 0 视为出错，`2` 视为阻断（block）当次操作；标准输出如果是一段 JSON，会按约定字段（比如 `decision`、`hookSpecificOutput.permissionDecision`）进一步影响权限判定和上下文注入。`async: true` 把命令交给后台执行、不阻塞当前流程。
+除了最常用的 `type: "command"`（跑一条 shell 命令，字段有 `command`/`timeout`（单位：秒，默认 60）/`async`）之外，还支持三种类型：`type: "prompt"`（丢给一次 LLM 判定，字段 `prompt`/`model`）、`type: "agent"`（跑一个只读子代理多轮核查，字段同 `prompt`/`model`）、`type: "http"`（打一个 HTTP 请求，字段 `url`/`headers`/`allowedEnvVars`）。command hook 的退出码决定结果：`2` 视为阻断（block）当次操作，阻断原因取自 stderr/stdout 文本；其他非 0 退出码视为出错，同样取 stderr/stdout 文本；只有退出码为 0 时，若标准输出是一段 JSON，才会按约定字段（比如 `decision`、`hookSpecificOutput.permissionDecision`）进一步影响权限判定和上下文注入。`async: true` 把命令交给后台执行、不阻塞当前流程。
 
 ## 安全
 
-- **http hook 的 SSRF 防护**：`type: "http"` 发起的请求先过 `allowedHttpHookUrls` 白名单（不设=不限制，`[]`=全部禁止，非空则须匹配通配模式），再在网络层加一道 IP 守卫拦截内网地址和 DNS 重绑定，并禁止跟随重定向，与 WebSearch 共用同一套防护。
+- **http hook 的 SSRF 防护**：`type: "http"` 发起的请求先过 `allowedHttpHookUrls` 白名单（不设=不限制，`[]`=全部禁止，非空则须匹配通配模式），再在网络层套一层 IP 守卫（`ssrfGuardedLookup`，拦截内网地址和 DNS 重绑定），并禁止请求跟随重定向（`redirect: 'error'`）。
 - **project 层剥离**：`hooks` 本身、以及与它配套的 `allowedHttpHookUrls`、`httpHookAllowedEnvVars`，都在危险字段剥离名单里——项目仓库里的 `.deepcode/settings.json`（以及被 git 跟踪的 `settings.local.json`）就算配了 `hooks` 也不会生效，只有 `~/.deepcode/settings.json`（或你自己未提交进仓库的本地覆盖）里的 hooks 才会被执行。这样即使克隆到一个恶意仓库，也不会被静默塞进任意命令执行。
 
 ---

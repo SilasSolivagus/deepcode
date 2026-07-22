@@ -27,11 +27,11 @@ deepcode defines the following events (the full `HOOK_EVENTS` enumeration in `sr
 | `UserPromptExpansion` | After a custom command/prompt expansion |
 | `Stop` | When an agent turn ends normally |
 | `StopFailure` | When an agent turn ends abnormally |
-| `SubagentStart` | When a 子代理 starts |
-| `SubagentStop` | When a 子代理 finishes |
+| `SubagentStart` | When a subagent starts |
+| `SubagentStop` | When a subagent finishes |
 | `PreCompact` | Before context compaction runs |
 | `PostCompact` | After context compaction runs |
-| `TaskCreated` | When a task (background command/子代理/todo) is created |
+| `TaskCreated` | When a task (background command/subagent/todo) is created |
 | `TaskCompleted` | When a task completes/finishes |
 | `MessageDisplay` | Right before a message is shown to the user |
 | `Notification` | When a system notification fires |
@@ -81,7 +81,7 @@ Hooks live under the `hooks` field in settings.json, grouped by event name; each
       {
         "matcher": "Bash|Write",
         "hooks": [
-          { "type": "command", "command": "echo \"about to run: $TOOL_NAME\" >> /tmp/audit.log", "timeout": 5000 }
+          { "type": "command", "command": "echo \"about to run: $TOOL_NAME\" >> /tmp/audit.log", "timeout": 5 }
         ]
       }
     ],
@@ -96,11 +96,11 @@ Hooks live under the `hooks` field in settings.json, grouped by event name; each
 }
 ```
 
-Besides the most common `type: "command"` (runs a shell command, with fields `command`/`timeout`/`async`), three other types exist: `type: "prompt"` (a single LLM judgment call, fields `prompt`/`model`), `type: "agent"` (a read-only 子代理 doing a multi-turn check, same fields as prompt), and `type: "http"` (fires an HTTP request, fields `url`/`headers`/`allowedEnvVars`). A command hook's exit code drives the outcome: non-zero is treated as an error, `2` blocks the current operation; if stdout is a JSON object, its conventional fields (e.g. `decision`, `hookSpecificOutput.permissionDecision`) further shape the permission decision and injected context. `async: true` hands the command off to the background without blocking the current flow.
+Besides the most common `type: "command"` (runs a shell command, with fields `command`/`timeout` (in seconds, default 60)/`async`), three other types exist: `type: "prompt"` (a single LLM judgment call, fields `prompt`/`model`), `type: "agent"` (a read-only subagent doing a multi-turn check, same fields as prompt), and `type: "http"` (fires an HTTP request, fields `url`/`headers`/`allowedEnvVars`). A command hook's exit code drives the outcome: `2` blocks the current operation, with the block reason taken from stderr/stdout text; any other non-zero exit is treated as an error, also from stderr/stdout text; only when the exit code is 0 does a JSON stdout payload get parsed, whose conventional fields (e.g. `decision`, `hookSpecificOutput.permissionDecision`) further shape the permission decision and injected context. `async: true` hands the command off to the background without blocking the current flow.
 
 ## Security
 
-- **SSRF protection for http hooks**: requests made by a `type: "http"` hook first pass an `allowedHttpHookUrls` allowlist (unset = unrestricted, `[]` = fully blocked, non-empty = must match a glob pattern), then a network-layer IP guard blocking private/internal addresses and DNS rebinding, with redirects disallowed — the same protection WebSearch uses.
+- **SSRF protection for http hooks**: requests made by a `type: "http"` hook first pass an `allowedHttpHookUrls` allowlist (unset = unrestricted, `[]` = fully blocked, non-empty = must match a glob pattern), then a network-layer IP guard (`ssrfGuardedLookup`, blocking private/internal addresses and DNS rebinding), with redirects disallowed (`redirect: 'error'`).
 - **Project-layer stripping**: `hooks` itself, along with its companion fields `allowedHttpHookUrls` and `httpHookAllowedEnvVars`, are in the dangerous-field stripping list — a project-repo `.deepcode/settings.json` (or a git-tracked `settings.local.json`) that sets `hooks` has it stripped and ignored; only hooks configured in `~/.deepcode/settings.json` (or your own untracked local override) actually run. That way cloning a malicious repo can't silently smuggle in arbitrary command execution.
 
 ---
