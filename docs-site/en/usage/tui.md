@@ -65,7 +65,7 @@ Context 12k / 971k [██░░░░░░░░] · cache 62% (−¥0.0180) �
 - `Context used/window` plus a 10-cell mini progress bar: it turns red at ≥95% usage, yellow at ≥80%, and the theme accent color otherwise.
 - `cache N% (−¥x)` only appears when this turn hit the prefix cache (hitRate > 0), showing hit rate and money saved.
 - A `budget used/target` segment is inserted when a token budget is configured.
-- The trailing `¥cost` is the cumulative session spend, and changes color once it reaches the `costWarnCNY` threshold.
+- The trailing `¥cost` is the cumulative session spend, always shown in the same color; once cumulative cost crosses the `costWarnCNY` threshold, deepcode additionally shows a one-time warning notice (a toast-style message, not a status-bar color change).
 - If a custom `statusLineCommand` is configured, its stdout is appended as a separate line under this cluster.
 
 **Row 3 cluster — memory / tool counts / hint**
