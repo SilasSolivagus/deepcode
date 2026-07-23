@@ -29,7 +29,7 @@ import { scanMemoryFiles } from '../memdir/memoryScan.js'
 import { listPromotionCandidates, promoteCandidate } from '../services/memory/promote.js'
 import { parseFrontmatter } from '../agentsLoader.js'
 import { loadSettings, loadRawUserSettings, saveRawUserSettings, addUserAllowRule, removeUserAllowRuleByValue, removeUserDenyRuleByValue, removeUserAskRuleByValue, SETTINGS_FILE } from '../config.js'
-import type { Settings } from '../config.js'
+import type { Settings, OnboardingKeys } from '../config.js'
 import { loadAppState, saveAppState } from '../tipsState.js'
 import { selectTip, recordTipShown } from './tips.js'
 import { formatPermissionRules, resolveRuleRemoval } from '../permissionsView.js'
@@ -420,6 +420,11 @@ export interface ChatCore {
   anyRunningWork(): boolean
   /** 当前 provider 展示名（横幅用；展示组件不自己读磁盘）。 */
   providerName(): string
+  /** /setup 向导 initial 预填：当前 provider + custom 后端定义（无遮罩 key，Setup 本身不回显 key）。 */
+  existingKeysSummary(): Partial<OnboardingKeys>
+  /** /setup 完成后调用：重读 webSearch key 到内存工具配置，使新加 key 免重启即时生效。
+   *  主 provider 自身的 key/切换不在此路径（客户端已固化，仍需 /model 或重启）。 */
+  reloadSettings(): void
   /** /tui 切换 carry-flags 用 getters */
   yolo(): boolean
   permMode(): PermissionMode
@@ -446,7 +451,7 @@ export function nextPermMode(cur: PermissionMode, disableAuto: boolean): Permiss
 const EXTRACT_DRAIN_TIMEOUT_MS = 30000
 
 const HELP_TEXT =
-  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/auto 或 Shift+Tab：auto 模式（分类器自动判 run/ask/block，只读免审）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/dontask dontAsk 模式（读放行/写自动拒，不弹窗；Shift+Tab 循环含此档）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cd <路径> 迁移会话主工作目录（刷新环境/项目记忆/技能，与 /add-dir 互补）\n/cost   本会话花费明细\n/recap  一句话回顾当前会话（目标+下一步）\n/goal <条件> 设置会话级停止前自检目标；无参报告进行中目标；/goal clear 清除\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看生效的指令文件与全局记忆抽屉；/memory rm <编号> <文件名> 删除某条全局记忆（文件名以列表为准，防止列表变化后删错）；/memory promote 列出可升格到全局的存量记忆；/memory promote <编号> <文件名> 升格某条\n/pause-memory（别名 /memory-pause、/toggle-memory）暂停/恢复本会话记忆读写\n/reload-skills 重扫并热加载本会话新增/改动的技能\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（rm/deny-rm/ask-rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/tui <inline|fullscreen> 切换渲染器（重启并恢复当前会话）\n/focus  切换 focus 视图（全屏下折叠工具结果，只在全屏渲染器可用）\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/background 或 /bg [prompt] 把会话送到后台并释放终端\n/stop [id] 列出/停止后台会话\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/setup  重新配置 API key（LLM/搜索/图片识别，主 provider 切换仍用 /model）\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/auto 或 Shift+Tab：auto 模式（分类器自动判 run/ask/block，只读免审）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/dontask dontAsk 模式（读放行/写自动拒，不弹窗；Shift+Tab 循环含此档）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cd <路径> 迁移会话主工作目录（刷新环境/项目记忆/技能，与 /add-dir 互补）\n/cost   本会话花费明细\n/recap  一句话回顾当前会话（目标+下一步）\n/goal <条件> 设置会话级停止前自检目标；无参报告进行中目标；/goal clear 清除\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看生效的指令文件与全局记忆抽屉；/memory rm <编号> <文件名> 删除某条全局记忆（文件名以列表为准，防止列表变化后删错）；/memory promote 列出可升格到全局的存量记忆；/memory promote <编号> <文件名> 升格某条\n/pause-memory（别名 /memory-pause、/toggle-memory）暂停/恢复本会话记忆读写\n/reload-skills 重扫并热加载本会话新增/改动的技能\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（rm/deny-rm/ask-rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/tui <inline|fullscreen> 切换渲染器（重启并恢复当前会话）\n/focus  切换 focus 视图（全屏下折叠工具结果，只在全屏渲染器可用）\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/background 或 /bg [prompt] 把会话送到后台并释放终端\n/stop [id] 列出/停止后台会话\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -821,6 +826,8 @@ export function createChatCore(opts: {
       setState()
     })
 
+  // /setup 加改搜索 key 后即时生效：webSearchConfig 保持同一对象引用，reloadSettings 原地 Object.assign 更新。
+  const webSearchConfig = resolveWebSearchConfig(settings)
   const tools = [
     // allTools 中的静态 exitPlanModeTool 替换为工厂版（含审批回调）
     ...allTools.filter(t => t.name !== 'ExitPlanMode'),
@@ -851,7 +858,7 @@ export function createChatCore(opts: {
       client: opts.client,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
     }),
-    makeWebSearchTool({ config: resolveWebSearchConfig(settings) }),
+    makeWebSearchTool({ config: webSearchConfig }),
     makeAskUserQuestionTool({ ask: questionAsk }),
     makeSkillTool(() => skills, {
       client: opts.client,
@@ -1591,6 +1598,11 @@ export function createChatCore(opts: {
         notice('info', `已切换到 ${model}`)
       }
       refreshStatusLine() // 5.7 模型变化触发 statusLine 刷新
+      return
+    }
+    if (line === '/setup') {
+      // 向导需要交互式 ink render，TUI 里由 App/FullscreenApp 拦截打开 overlay；此处仅兜底不误发模型。
+      notice('info', '/setup 需要交互式 TUI 界面，请在前台 TUI 会话中运行')
       return
     }
     if (line === '/think') {
@@ -2445,6 +2457,21 @@ export function createChatCore(opts: {
     hasTranscript,
     anyRunningWork,
     providerName: () => providerLabel(activePreset.id),
+    existingKeysSummary: () => {
+      const out: Partial<OnboardingKeys> = { provider: activePreset.id as ProviderId }
+      const custom = settings.providers?.custom
+      if (activePreset.id === 'custom' && custom?.baseURL && custom.models) {
+        out.custom = { baseURL: custom.baseURL, models: custom.models }
+      }
+      return out
+    },
+    reloadSettings: () => {
+      try {
+        const fresh = loadSettings(cwd, opts.flagSettingsPath)
+        Object.assign(webSearchConfig, resolveWebSearchConfig(fresh))
+        if (fresh.providers) settings.providers = fresh.providers
+      } catch { /* 读取失败保留旧值，不阻断 */ }
+    },
     yolo: () => opts.yolo,
     permMode: () => permMode,
     model: () => model,

@@ -67,6 +67,7 @@ export function computeLineWindow(heights: number[], selected: number, lineBudge
 
 export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/model', hint: 'flash↔pro 切换（/model <名> 指定）' },
+  { value: '/setup', hint: '重新配置 API key（LLM/搜索/图片识别）' },
   { value: '/think', hint: 'thinking 模式开关' },
   { value: '/accept', hint: 'acceptEdits 开关' },
   { value: '/cost', hint: '本会话花费明细' },
