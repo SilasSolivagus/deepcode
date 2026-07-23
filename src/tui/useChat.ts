@@ -1082,7 +1082,7 @@ export function createChatCore(opts: {
         maxToolResultChars: settings.maxToolResultChars,
         ctx,
         permission: {
-          mode: permMode,
+          get mode() { return permMode },
           rules: settings.permissions.allow,
           deny: resolveDenyList(settings.permissions.deny),
           cwd,
