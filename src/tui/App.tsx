@@ -27,7 +27,7 @@ import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
-import { Setup } from './setup.js'
+import { Setup, SoloKeyEntry } from './setup.js'
 import { useThemeControl, themeNames, BLOCK_GAP, GUTTER } from './theme.js'
 import { loadRawUserSettings, saveRawUserSettings } from '../config.js'
 
@@ -82,12 +82,12 @@ export function App(props: {
 
   // pendingAsk / pendingPlanApproval / resumeMode / rewindStep / workflowsMode 激活时清除 draft 和 valueOverride，防止 InputBox 卸载后 remount 时老值复活
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || setupMode || outputStyleMode || themeMode || rewindStep || workflowsMode || fleetMode || skillsMode || memPending !== null) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || state.pendingKeyEntry || resumeMode || modelPickerMode || setupMode || outputStyleMode || themeMode || rewindStep || workflowsMode || fleetMode || skillsMode || memPending !== null) {
       setDraft('')
       setValueOverride(undefined)
       justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, setupMode, outputStyleMode, themeMode, rewindStep, workflowsMode, fleetMode, skillsMode, memPending !== null])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, !!state.pendingKeyEntry, resumeMode, modelPickerMode, setupMode, outputStyleMode, themeMode, rewindStep, workflowsMode, fleetMode, skillsMode, memPending !== null])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ctrl+C 两次退出（App 层统一管理，exitOnCtrlC: false 时才需要）
   // Ctrl+C 两次退出 + Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
@@ -98,7 +98,7 @@ export function App(props: {
     // 双击 Esc（≤600ms）= 回退选择器（CC 的 rewind 入口），仅在纯空闲+输入框为空时触发；
     // 单 Esc 仍由 InputBox 处理（清空输入 / busy 时中断），不受影响。
     if (key.escape) {
-      const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion
+      const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !state.pendingKeyEntry
         && !resumeMode && !modelPickerMode && !setupMode && !outputStyleMode && !themeMode && !rewindStep
         && !workflowsMode && !fleetMode && !skillsMode && memPending === null && draft === ''
       if (idle) {
@@ -114,7 +114,7 @@ export function App(props: {
       if (now - lastSigint < 2000) void flushThenExit(() => core.flushMemory(), exit, () => core.notice('info', '正在保存记忆…'))
       else setLastSigint(now)
     }
-    if (key.shift && key.tab && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !setupMode && !outputStyleMode && !themeMode && !rewindStep && !workflowsMode && !fleetMode && !skillsMode && memPending === null) {
+    if (key.shift && key.tab && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !state.pendingKeyEntry && !resumeMode && !modelPickerMode && !setupMode && !outputStyleMode && !themeMode && !rewindStep && !workflowsMode && !fleetMode && !skillsMode && memPending === null) {
       core.cycleMode()
     }
   })
@@ -293,6 +293,14 @@ export function App(props: {
         ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
         : state.pendingPlanApproval
         ? <PlanApprovalDialog pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
+        : state.pendingKeyEntry
+        ? <SoloKeyEntry
+            label={state.pendingKeyEntry.label}
+            baseURL={state.pendingKeyEntry.baseURL}
+            model={state.pendingKeyEntry.model}
+            onDone={(key) => core.resolveKeyEntry(key)}
+            onCancel={() => core.resolveKeyEntry(undefined)}
+          />
         : resumeMode
           ? <SelectList
               items={core.resumeList().map(s => s.preview)}

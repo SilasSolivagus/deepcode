@@ -101,7 +101,7 @@ describe('/model 跨 provider 切换', () => {
     expect(exited).toEqual([0])
   })
 
-  it('目标 provider 没配 key → 硬拒，不写 settings、不重启（防重启后开机即崩）', async () => {
+  it('目标 provider 没配 key → 挂起 pendingKeyEntry（就地录入），不写 settings、不重启、不报错通知', async () => {
     glmKey = undefined
     const core = makeCore()
     await core.send('/model glm-5.2')
@@ -109,7 +109,10 @@ describe('/model 跨 provider 切换', () => {
     expect(saved).toHaveLength(0)
     expect(spawned).toHaveLength(0)
     expect(exited).toHaveLength(0)
-    expect(notices(core)).toContain('ZHIPUAI_API_KEY')
+    expect(notices(core)).not.toContain('ZHIPUAI_API_KEY')
+    expect(core.state.pendingKeyEntry).toEqual({
+      providerId: 'glm', label: 'GLM', baseURL: expect.any(String), model: expect.any(String), modelId: 'glm-5.2',
+    })
   })
 
   it('有会话记录时带 --resume 重启，恢复当前会话', async () => {

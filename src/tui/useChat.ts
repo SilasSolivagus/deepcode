@@ -28,7 +28,7 @@ import { formatMemory, formatMemoryView } from '../memory.js'
 import { scanMemoryFiles } from '../memdir/memoryScan.js'
 import { listPromotionCandidates, promoteCandidate } from '../services/memory/promote.js'
 import { parseFrontmatter } from '../agentsLoader.js'
-import { loadSettings, loadRawUserSettings, saveRawUserSettings, addUserAllowRule, removeUserAllowRuleByValue, removeUserDenyRuleByValue, removeUserAskRuleByValue, SETTINGS_FILE } from '../config.js'
+import { loadSettings, loadRawUserSettings, saveRawUserSettings, saveOnboardingKeys, addUserAllowRule, removeUserAllowRuleByValue, removeUserDenyRuleByValue, removeUserAskRuleByValue, SETTINGS_FILE } from '../config.js'
 import type { Settings, OnboardingKeys } from '../config.js'
 import { loadAppState, saveAppState } from '../tipsState.js'
 import { selectTip, recordTipShown } from './tips.js'
@@ -246,6 +246,8 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
 export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; resolve: (d: Decision) => void }
 export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
 export interface PendingPlanApproval { plan: string; allowedPrompts?: AllowedPrompt[]; resolve: (approved: boolean) => void }
+/** /model 选中一个未配 key 的 provider 时挂起：UI 弹单 provider key 录入 overlay，core.resolveKeyEntry 回答。 */
+export interface PendingKeyEntry { providerId: string; label: string; baseURL: string; model: string; modelId: string }
 
 /** 启动时算一次 spinner tip：递增会话计数→按冷却选一条→记录历史→持久化。返回 tip 文案或 null。 */
 export function computeSpinnerTip(
@@ -345,6 +347,7 @@ export interface ChatState {
   pendingAsk: PendingAsk | null
   pendingQuestion: PendingQuestion | null
   pendingPlanApproval: PendingPlanApproval | null
+  pendingKeyEntry: PendingKeyEntry | null
   usageLog: UsageRecord[]
   lastTokPerSec: number | null
   turnStartAt: number | null // 当前轮开始时间戳（spinner 计算耗时秒数；空闲为 null）
@@ -373,6 +376,9 @@ export interface ChatCore {
   resolveAsk(d: Decision): void // 权限弹窗回答
   resolveQuestion(answers: Answer[] | null): void // AskUserQuestion 弹窗回答
   resolvePlanApproval(approved: boolean): void // ExitPlanMode 计划审批回答
+  /** pendingKeyEntry 回答：传入 key → 存该 provider 的 key（不动 provider/model 字段）→ 重试 switchProvider；
+   *  传 undefined（取消）→ 只清挂起状态，不切换。 */
+  resolveKeyEntry(key: string | undefined): void
   resumeList(): { file: string; preview: string }[]
   resume(file: string): void
   customCommands: Map<string, { template: string; source: 'user' | 'project' }>
@@ -587,6 +593,7 @@ export function createChatCore(opts: {
   let busy = false
   let pendingAsk: PendingAsk | null = null
   let pendingQuestion: PendingQuestion | null = null
+  let pendingKeyEntry: PendingKeyEntry | null = null
   let lastTokPerSec: number | null = null
   let turnStartAt: number | null = null
   let turnOutTokens = 0
@@ -624,7 +631,7 @@ export function createChatCore(opts: {
   // 5.7 statusLine 输出（onChange 闭包按引用捕获 setState，运行期才调用，无 TDZ）
   let statusLineOutput: string | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
   })
   let state = snap()
   const setState = (): void => {
@@ -1457,7 +1464,10 @@ export function createChatCore(opts: {
       return
     }
     if (!providerKeyReady(preset, settings)) {
-      notice('error', `${providerLabel(targetId)} 未配置 API key，无法切换。设环境变量 ${preset.apiKeyEnv}，或在 ${SETTINGS_FILE} 的 providers.${targetId}.apiKey 配置。`)
+      // 不再硬报错——挂起 pendingKeyEntry，UI 弹该 provider 的单步 key 录入 overlay；
+      // 录好后 resolveKeyEntry 存 key + 重试本函数（targetId/id 不变，此时 providerKeyReady 已为 true）。
+      pendingKeyEntry = { providerId: preset.id, label: providerLabel(targetId), baseURL: preset.baseURL, model: preset.models.smart, modelId: id }
+      setState()
       return
     }
     if (!opts.unmount) { notice('error', `切换到 ${providerLabel(targetId)} 需要重启，当前环境不支持。`); return }
@@ -2355,6 +2365,23 @@ export function createChatCore(opts: {
       }
       setState()
       p.resolve(approved)
+    },
+    resolveKeyEntry: (key: string | undefined) => {
+      if (!pendingKeyEntry) return
+      const target = pendingKeyEntry
+      pendingKeyEntry = null
+      if (!key) { setState(); return } // 取消：只清挂起，不切换
+      try {
+        saveOnboardingKeys({ providerKeys: { [target.providerId]: key } }) // 只存 key，不碰 provider/model——那是 switchProvider 的职责
+      } catch (e: any) {
+        notice('error', `保存 key 失败：${e?.message ?? e}`)
+        return
+      }
+      try {
+        const fresh = loadSettings(cwd, opts.flagSettingsPath)
+        if (fresh.providers) settings.providers = fresh.providers // 内存 settings 即时见新 key，下面重试才能通过 providerKeyReady
+      } catch { /* 读取失败沿用旧值，尽力而为 */ }
+      switchProvider(target.providerId, target.modelId)
     },
     resumeList: () => {
       // 后台会话按文件建标签索引；fork 出的会话文件通常也在 listSessions 里，

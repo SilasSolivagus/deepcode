@@ -132,6 +132,31 @@ function KeyInputStep(props: {
   )
 }
 
+/** /model 切到未配 key 的 provider 时的就地录入：单 provider，无 provider 选择/搜索/vision 步。
+ *  只验证+回传 key——是否写盘、是否继续切换由调用方（useChat.resolveKeyEntry）决定，本组件不碰 settings。 */
+export function SoloKeyEntry(props: {
+  label: string
+  baseURL: string
+  model: string
+  onDone: (key: string) => void
+  onCancel: () => void
+}) {
+  useInput((_input, key) => { if (key.escape) props.onCancel() })
+  return (
+    <Box flexDirection="column" paddingX={1}>
+      <Text color={T.accent} bold>🐳 切换到 {props.label}</Text>
+      <Text dimColor>尚未配置 API key，录入后立即切换（Esc 取消）</Text>
+      <KeyInputStep
+        title={`${props.label} API key`}
+        hint="粘贴 key，回车验证"
+        optional={false}
+        validate={(k) => validateLlmKey({ apiKeyEnvOrKey: k, baseURL: props.baseURL, model: props.model })}
+        onDone={(k) => { if (k) props.onDone(k); else props.onCancel() }}
+      />
+    </Box>
+  )
+}
+
 export function Setup(props: { onDone: () => void; onCancel?: () => void; initial?: Partial<OnboardingKeys> }) {
   const [step, setStep] = useState<Step>('provider')
   const [summary, setSummary] = useState<string[]>([])
