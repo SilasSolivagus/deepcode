@@ -49,7 +49,7 @@ import {
   isContextOverflowError,
 } from '../compact.js'
 import { PrecomputeRegistry, PRECOMPUTE_BUFFER_FRACTION } from '../precompute.js'
-import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold } from '../tokenEstimate.js'
+import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold, resolveContextWindow } from '../tokenEstimate.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext, parseLoopCommand, LOOP_GUIDANCE } from '../commands.js'
 import { generateRecap } from '../recap.js'
@@ -609,7 +609,7 @@ export function createChatCore(opts: {
     return thr ? Math.min(100, Math.round((lastPromptTokens / thr) * 100)) : 0
   }
   const contextUsed = () => lastPromptTokens
-  const contextWindow = () => effectiveThreshold(model, settings.compactTokens)
+  const contextWindow = () => resolveContextWindow(model)
   const tokenBudgetGet = () => tokenBudget
   const budgetUsedGet = () => budgetUsed
 
