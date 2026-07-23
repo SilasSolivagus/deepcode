@@ -29,6 +29,7 @@ import { scanMemoryFiles } from '../memdir/memoryScan.js'
 import { listPromotionCandidates, promoteCandidate } from '../services/memory/promote.js'
 import { parseFrontmatter } from '../agentsLoader.js'
 import { loadSettings, loadRawUserSettings, saveRawUserSettings, saveOnboardingKeys, addUserAllowRule, removeUserAllowRuleByValue, removeUserDenyRuleByValue, removeUserAskRuleByValue, SETTINGS_FILE } from '../config.js'
+import { isAuthError } from '../api.js'
 import type { Settings, OnboardingKeys } from '../config.js'
 import { loadAppState, saveAppState } from '../tipsState.js'
 import { selectTip, recordTipShown } from './tips.js'
@@ -1243,6 +1244,17 @@ export function createChatCore(opts: {
       if (step.value === 'aborted') notice('warn', '[已中断]')
       if (step.value === 'max_turns') notice('error', '[达到最大轮数熔断]')
     } catch (e: any) {
+      // Task 7：鉴权失效（401/invalid_api_key 等）优雅失败——不当普通错误报，弹当前 provider 的就地 key 重录 overlay。
+      // 非鉴权错误（含 429/5xx/网络超时）维持原有 notice 报错不变。
+      const reportTurnError = (err: any): void => {
+        if (isAuthError(err)) {
+          const label = providerLabel(activePreset.id)
+          notice('error', `当前 ${label} 的 API key 失效或无效，请重新配置`)
+          pendingKeyEntry = { providerId: activePreset.id, label, baseURL: activePreset.baseURL, model: activePreset.models.smart, modelId: model }
+        } else {
+          notice('error', `[错误] ${err?.message ?? err}`)
+        }
+      }
       // Task 8 反应式兜底：send 期间抛「上下文超长」
       // 且本轮尚未重试过 → microcompact 甩掉旧工具输出后重跑一次（单发，防死循环）。
       if (isContextOverflowError(e) && !overflowRetried) {
@@ -1253,10 +1265,10 @@ export function createChatCore(opts: {
           lastPromptTokens = 0; baselineLen = 0
           notice('warn', `[context 超长] microcompact 甩掉 ~${mc.tokensSaved} tok 后重试`)
           try { const step2 = await drive(); if (step2.value === 'aborted') notice('warn', '[已中断]') }
-          catch (e2: any) { notice('error', `[错误] ${e2?.message ?? e2}`) } // mc 后仍超 → 报错（下轮主动 mc 兜）
-        } else notice('error', `[错误] ${e?.message ?? e}`) // 无可甩 → 照常报错，不重试
+          catch (e2: any) { reportTurnError(e2) } // mc 后仍超 → 报错（下轮主动 mc 兜）
+        } else reportTurnError(e) // 无可甩 → 照常报错，不重试
       } else {
-        notice('error', `[错误] ${e?.message ?? e}`)
+        reportTurnError(e)
       }
     } finally {
       // 悬空 assistant 块 final flush（seal 前，保证 close_segment 先于 seal，避免 flush 的 patch 落在已 seal 块外的时序问题）
@@ -2375,6 +2387,14 @@ export function createChatCore(opts: {
         saveOnboardingKeys({ providerKeys: { [target.providerId]: key } }) // 只存 key，不碰 provider/model——那是 switchProvider 的职责
       } catch (e: any) {
         notice('error', `保存 key 失败：${e?.message ?? e}`)
+        return
+      }
+      // Task 7：当前 provider 就地鉴权恢复（运行中 401/invalid_api_key 触发），provider 未变——不走 switchProvider 的
+      // 重启式切换，直接热改已建好的 client.apiKey（OpenAI SDK 每次请求读取该字段），下次发送即用新 key，无需重启。
+      if (target.providerId === activePreset.id) {
+        opts.client.apiKey = key
+        notice('info', `${target.label} 的 API key 已更新，可重新发送`)
+        setState()
         return
       }
       try {
