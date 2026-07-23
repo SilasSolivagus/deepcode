@@ -131,8 +131,8 @@ export function FullscreenApp(props: {
       else setLastSigint(now)
     }
     // Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !workflowsMode && !fleetMode && !rewindStep && !skillsMode && memPending === null) {
-      void core.send('/cycle-mode')
+    if (key.shift && key.tab && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !workflowsMode && !fleetMode && !rewindStep && !skillsMode && memPending === null) {
+      core.cycleMode()
     }
   })
 

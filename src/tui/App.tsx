@@ -112,8 +112,8 @@ export function App(props: {
       if (now - lastSigint < 2000) void flushThenExit(() => core.flushMemory(), exit, () => core.notice('info', '正在保存记忆…'))
       else setLastSigint(now)
     }
-    if (key.shift && key.tab && !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep && !workflowsMode && !fleetMode && !skillsMode && memPending === null) {
-      void core.send('/cycle-mode')
+    if (key.shift && key.tab && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep && !workflowsMode && !fleetMode && !skillsMode && memPending === null) {
+      core.cycleMode()
     }
   })
 
