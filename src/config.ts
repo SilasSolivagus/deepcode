@@ -6,7 +6,7 @@ import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks
 import { loadLayeredSettings } from './settingsLayers.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
 import { resolveNotifChannel, type NotifChannel } from './notify.js'
-import { anyProviderKeyReady, type CustomProvider, type ModelMeta } from './providers.js'
+import { anyProviderKeyReady, type CustomProvider, type ModelMeta, type ProviderId } from './providers.js'
 import type { PermissionMode } from './permissions.js'
 
 export interface McpStdioServerConfig {
@@ -373,6 +373,49 @@ export function saveApiKey(key: string): void {
   saveRawUserSettings(s)
   try { fs.chmodSync(FILE, 0o600) } catch { /* 尽力 */ }
   if (s.hooks) void runHooks('Setup', { hook_event_name: 'Setup', cwd: process.cwd(), trigger: hadKey ? 'maintenance' : 'init' }, s.hooks).catch(() => {})
+}
+
+/** 首跑向导收集的 key 集合（per-provider，从不写遗留全局 apiKey）。 */
+export type OnboardingKeys = {
+  provider?: ProviderId
+  model?: string
+  providerKeys?: Partial<Record<'deepseek' | 'glm' | 'kimi' | 'custom', string>>
+  custom?: { baseURL: string; models: { fast: string; smart: string } }
+  search?: { bocha?: string; tavily?: string }
+  visionGlmKey?: string
+}
+
+/** 向导写 key：RMW 覆盖 user 层，per-provider 字段深合并（不动兄弟 provider/webSearch 源，不写全局 apiKey）。
+ *  空/未传字段跳过，不覆盖既有值。 */
+export function saveOnboardingKeys(k: OnboardingKeys): void {
+  const s = loadRawUserSettings()
+
+  if (k.provider) s.provider = k.provider
+  if (k.model) s.model = k.model
+
+  const providers = (s.providers ?? {}) as Record<string, any>
+  if (k.providerKeys) {
+    for (const [id, key] of Object.entries(k.providerKeys)) {
+      if (!key) continue
+      providers[id] = { ...(providers[id] ?? {}), apiKey: key }
+    }
+  }
+  if (k.custom) {
+    providers.custom = { ...(providers.custom ?? {}), baseURL: k.custom.baseURL, models: k.custom.models }
+  }
+  if (k.visionGlmKey) {
+    providers.glm = { ...(providers.glm ?? {}), apiKey: k.visionGlmKey }
+  }
+  if (Object.keys(providers).length) s.providers = providers as Settings['providers']
+
+  if (k.search) {
+    const webSearch = (s.webSearch ?? {}) as Record<string, any>
+    if (k.search.bocha) webSearch.bocha = { ...(webSearch.bocha ?? {}), apiKey: k.search.bocha }
+    if (k.search.tavily) webSearch.tavily = { ...(webSearch.tavily ?? {}), apiKey: k.search.tavily }
+    if (Object.keys(webSearch).length) s.webSearch = webSearch as WebSearchSettings
+  }
+
+  saveRawUserSettings(s)
 }
 
 /** 往 user scope allow 列表加规则（raw RMW，不触其它 scope）。返回更新后的 user allow 数组。 */
