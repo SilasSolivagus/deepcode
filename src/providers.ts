@@ -139,7 +139,7 @@ export function availablePresets(settings: Settings): ProviderPreset[] {
 export type ProviderId = NonNullable<Settings['provider']>
 
 /**
- * 全局 settings.apiKey 是单 provider 时代的遗留（首跑向导 saveApiKey 写的就是它），**归属 deepseek**。
+ * 全局 settings.apiKey 是单 provider 时代的遗留（首跑向导曾经只写这个字段），**归属 deepseek**。
  * custom 是用户自建端点、key 也由他自己配，沿用全局 key 属于他自己的选择，故一并认。
  * 但绝不能把它当作**别的内置厂商**（glm 及将来新增）的 key——那会把这家的密钥发到另一家的端点（凭证外泄 + 401）。
  * 认「归属」而非认「当前 active」：否则向导装机的用户切到 GLM 后就再也切不回 deepseek（单向门）。

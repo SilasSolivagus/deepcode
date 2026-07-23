@@ -366,15 +366,6 @@ export function hasApiKey(): boolean {
   return anyProviderKeyReady(loadSettings())
 }
 
-export function saveApiKey(key: string): void {
-  const s = loadRawUserSettings()
-  const hadKey = !!s.apiKey
-  s.apiKey = key || undefined
-  saveRawUserSettings(s)
-  try { fs.chmodSync(FILE, 0o600) } catch { /* 尽力 */ }
-  if (s.hooks) void runHooks('Setup', { hook_event_name: 'Setup', cwd: process.cwd(), trigger: hadKey ? 'maintenance' : 'init' }, s.hooks).catch(() => {})
-}
-
 /** 首跑向导收集的 key 集合（per-provider，从不写遗留全局 apiKey）。 */
 export type OnboardingKeys = {
   provider?: ProviderId
@@ -389,6 +380,7 @@ export type OnboardingKeys = {
  *  空/未传字段跳过，不覆盖既有值。 */
 export function saveOnboardingKeys(k: OnboardingKeys): void {
   const s = loadRawUserSettings()
+  const hadKey = !!s.apiKey || Object.values(s.providers ?? {}).some(p => !!(p as { apiKey?: string } | undefined)?.apiKey)
 
   if (k.provider) s.provider = k.provider
   if (k.model) s.model = k.model
@@ -416,6 +408,7 @@ export function saveOnboardingKeys(k: OnboardingKeys): void {
   }
 
   saveRawUserSettings(s)
+  if (s.hooks) void runHooks('Setup', { hook_event_name: 'Setup', cwd: process.cwd(), trigger: hadKey ? 'maintenance' : 'init' }, s.hooks).catch(() => {})
 }
 
 /** 往 user scope allow 列表加规则（raw RMW，不触其它 scope）。返回更新后的 user allow 数组。 */

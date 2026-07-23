@@ -1,10 +1,15 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // 同 hasApiKey.test.ts：src/config.ts 模块加载时就计算 DIR = homedir()/.deepcode，
 // 必须在 import 之前把 node:os 的 homedir mock 到临时目录，保证 hermetic。
+// mock runHooks 捕获调用（同 config.test.ts 的模式）。
+const hookCalls: Array<{ event: string; payload: any }> = []
 vi.mock('../src/hooks.js', async orig => ({
   ...(await orig() as any),
-  runHooks: vi.fn(async () => ({ block: false, preventContinuation: false, stop: false, results: [] })),
+  runHooks: vi.fn(async (event: string, payload: any) => {
+    hookCalls.push({ event, payload })
+    return { block: false, preventContinuation: false, stop: false, results: [] }
+  }),
 }))
 
 vi.mock('node:os', async importOriginal => {
@@ -90,5 +95,49 @@ describe('saveOnboardingKeys：per-provider key 写 user 层（RMW，不写全�
     expect(raw.providers.deepseek.apiKey).toBe('sk-existing')
     expect(raw.providers.glm.apiKey).toBe('zk-existing')
     expect(raw.webSearch.bocha.apiKey).toBe('bocha-existing')
+  })
+})
+
+describe('saveOnboardingKeys Setup hook', () => {
+  beforeEach(() => { hookCalls.length = 0 })
+
+  it('已配置 hooks 且此前无任何 key → Setup(trigger=init) 触发', async () => {
+    writeSettings({ hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } })
+    saveOnboardingKeys({ provider: 'glm', providerKeys: { glm: 'zk' } })
+    await new Promise(r => setImmediate(r))
+    const setup = hookCalls.find(c => c.event === 'Setup')
+    expect(setup).toBeTruthy()
+    expect(setup!.payload.trigger).toBe('init')
+  })
+
+  it('未配置 hooks → 不触发 Setup', async () => {
+    writeSettings({})
+    saveOnboardingKeys({ provider: 'glm', providerKeys: { glm: 'zk' } })
+    await new Promise(r => setImmediate(r))
+    expect(hookCalls.find(c => c.event === 'Setup')).toBeFalsy()
+  })
+
+  it('已有落盘 key（per-provider）再改 → Setup(trigger=maintenance)', async () => {
+    writeSettings({
+      providers: { deepseek: { apiKey: 'sk-old' } },
+      hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] },
+    })
+    saveOnboardingKeys({ provider: 'glm', providerKeys: { glm: 'zk' } })
+    await new Promise(r => setImmediate(r))
+    const setup = hookCalls.find(c => c.event === 'Setup')
+    expect(setup).toBeTruthy()
+    expect(setup!.payload.trigger).toBe('maintenance')
+  })
+
+  it('已有落盤全局 apiKey（遗留字段）再改 → Setup(trigger=maintenance)', async () => {
+    writeSettings({
+      apiKey: 'sk-old-legacy',
+      hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] },
+    })
+    saveOnboardingKeys({ provider: 'glm', providerKeys: { glm: 'zk' } })
+    await new Promise(r => setImmediate(r))
+    const setup = hookCalls.find(c => c.event === 'Setup')
+    expect(setup).toBeTruthy()
+    expect(setup!.payload.trigger).toBe('maintenance')
   })
 })

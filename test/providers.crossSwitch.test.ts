@@ -53,7 +53,7 @@ describe('providerKeyReady（镜像 api.ts createClient 的取 key 顺序）', (
     expect(providerKeyReady(BUILTIN_PROVIDERS.glm, base)).toBe(false)
   })
 
-  // C1：全局 settings.apiKey 是单 provider 时代的遗留（首跑向导 config.ts saveApiKey 写的就是它）。
+  // C1：全局 settings.apiKey 是单 provider 时代的遗留（首跑向导曾经只写这个字段）。
   // 若把它当作别家 provider 的 key，切过去后 createClient 会把这家的密钥发给另一家的端点（凭证外泄 + 401）。
   it('全局 settings.apiKey 不能让「别家」provider 显示 ready', () => {
     vi.stubEnv('ZHIPUAI_API_KEY', '')
