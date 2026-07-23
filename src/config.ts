@@ -6,7 +6,7 @@ import { HOOK_EVENTS, type HooksConfig, type HookEvent, runHooks } from './hooks
 import { loadLayeredSettings } from './settingsLayers.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
 import { resolveNotifChannel, type NotifChannel } from './notify.js'
-import type { CustomProvider, ModelMeta } from './providers.js'
+import { anyProviderKeyReady, type CustomProvider, type ModelMeta } from './providers.js'
 import type { PermissionMode } from './permissions.js'
 
 export interface McpStdioServerConfig {
@@ -363,7 +363,7 @@ export function saveRawUserSettings(s: Settings): void {
 }
 
 export function hasApiKey(): boolean {
-  return !!(process.env.DEEPSEEK_API_KEY ?? loadRawUserSettings().apiKey)
+  return anyProviderKeyReady(loadSettings())
 }
 
 export function saveApiKey(key: string): void {

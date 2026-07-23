@@ -155,6 +155,11 @@ export function providerKeyReady(preset: ProviderPreset, settings: Settings): bo
   return legacyGlobalKeyApplies(preset) && Boolean(settings.apiKey)
 }
 
+/** 任意内置 provider（含配置齐全的 custom）的 key 已就绪——只要配了其中一家就不算「未配置」。 */
+export function anyProviderKeyReady(settings: Settings): boolean {
+  return availablePresets(settings).some(p => providerKeyReady(p, settings))
+}
+
 /**
  * 模型 id 明确归属于「另一个」provider 时返回那个 provider id，否则 undefined。
  * client 在启动时按 active preset 建好（baseURL+key 固定），用别家的 model id 发请求会被静默打到错误端点，故需识别。

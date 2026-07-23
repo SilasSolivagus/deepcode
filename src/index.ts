@@ -26,6 +26,8 @@ const permIdx = argv.indexOf('--permission-mode')
 const permMode = permIdx >= 0 ? argv[permIdx + 1] : undefined
 const modelIdx = argv.indexOf('--model')
 const modelFlag = modelIdx >= 0 ? argv[modelIdx + 1] : undefined
+// headless/piped 路径无法像交互式那样跑首跑向导，报错须直接告诉用户怎么办。
+const NO_KEY_MSG = '未配置任何模型 API key。请直接运行 `deepcode`（交互式）完成首次配置，或设置环境变量 DEEPSEEK_API_KEY / ZHIPUAI_API_KEY / MOONSHOT_API_KEY。'
 
 try {
   if (bgRun) {
@@ -39,6 +41,7 @@ try {
   } else if (pIdx !== -1) {
     const prompt = argv[pIdx + 1]
     if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--json] [--yolo]')
+    if (!hasApiKey()) throw new Error(NO_KEY_MSG)
     const client = createClient(flagSettingsPath)
     const { runHeadless } = await import('./headless.js')
     const r = await runHeadless({ client, prompt, yolo, flagSettingsPath })
@@ -54,6 +57,7 @@ try {
     for await (const c of process.stdin) chunks.push(c)
     const prompt = Buffer.concat(chunks).toString('utf8').trim()
     if (!prompt) throw new Error('stdin 为空。交互模式请直接运行 deepcode，或用 -p "<任务>"')
+    if (!hasApiKey()) throw new Error(NO_KEY_MSG)
     const client = createClient(flagSettingsPath)
     const { runHeadless } = await import('./headless.js')
     const r = await runHeadless({ client, prompt, yolo, flagSettingsPath })
