@@ -15,9 +15,13 @@ describe('MaskedInput', () => {
   it('masked 只显 •，不回显明文', async () => {
     const { stdin, lastFrame } = render(<MaskedInput masked onSubmit={() => {}} />)
     await wait(0)
-    stdin.write('sk-secret'); await wait()
-    expect(lastFrame()).not.toContain('sk-secret')
-    expect(lastFrame()).toContain('•')
+    const secret = 'sk-secret' // 9 字符
+    stdin.write(secret); await wait()
+    expect(lastFrame()).not.toContain(secret)
+    // 断言 • 的数量与明文长度一致（而非仅「含至少一个 •」），
+    // 否则 MaskedInput.tsx 里空→非空跳变的 key 重挂载 workaround 被误删时
+    // （ink 5.2.1 bug 导致首次多字符 update 塌缩成 1 个字符）测试仍会误判通过。
+    expect(lastFrame()).toContain('•'.repeat(secret.length))
   })
   it('粘贴带尾换行 → 不提交，只进值', async () => {
     const onSubmit = vi.fn()
