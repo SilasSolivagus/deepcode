@@ -35,9 +35,9 @@ describe('makeWebSearchTool', () => {
     const out = await tool.call({ query: 'q' }, ctx)
     expect(out).toContain('https://b.com')
   })
-  it('两源都无 key → 错误提示', async () => {
+  it('两源都无 key 且 anysearch 未开 → 错误提示', async () => {
     const tool = makeWebSearchTool({ config: {}, fetchJson: makeFetch([], []) })
-    expect(await tool.call({ query: 'q' }, ctx)).toContain('未配置任何搜索源')
+    expect(await tool.call({ query: 'q' }, ctx)).toContain('未配置')
   })
   it('一源 reject 一源 fulfill → 返回 fulfilled', async () => {
     const fetchJson = makeFetch([], [{ title: 'T', url: 'https://t.com', content: 's' }], 'bocha')
@@ -80,7 +80,7 @@ describe('resolveWebSearchConfig', () => {
   const base = { permissions: { allow: [] }, compactTokens: 1, costWarnCNY: 1 } as any
   it('从 settings 取', () => {
     const c = resolveWebSearchConfig({ ...base, webSearch: { bocha: { apiKey: 'sk' }, tavily: { apiKey: 'tv' } } })
-    expect(c).toEqual({ bocha: 'sk', tavily: 'tv' })
+    expect(c).toEqual({ bocha: 'sk', tavily: 'tv', anysearch: { enabled: true } })
   })
   it('env 覆盖 settings', () => {
     const old = process.env.BOCHA_API_KEY
@@ -90,7 +90,7 @@ describe('resolveWebSearchConfig', () => {
       expect(c.bocha).toBe('env-sk')
     } finally { if (old === undefined) delete process.env.BOCHA_API_KEY; else process.env.BOCHA_API_KEY = old }
   })
-  it('无配置 → 空对象', () => {
-    expect(resolveWebSearchConfig(base)).toEqual({})
+  it('无配置 → 仅 anysearch 默认开启', () => {
+    expect(resolveWebSearchConfig(base)).toEqual({ anysearch: { enabled: true } })
   })
 })

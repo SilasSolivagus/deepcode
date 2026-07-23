@@ -31,6 +31,7 @@ export interface WebSearchSettings {
   tavily?: { apiKey?: string }
   /** 向后兼容字段，双源并查不使用。 */
   provider?: string
+  anysearch?: { enabled?: boolean; apiKey?: string }
 }
 
 export interface Settings {
@@ -324,6 +325,13 @@ export function parseWebSearchConfig(raw: unknown): WebSearchSettings | undefine
   const b = pick(r.bocha); if (b) out.bocha = b
   const t = pick(r.tavily); if (t) out.tavily = t
   if (typeof r.provider === 'string') out.provider = r.provider
+  const a = r.anysearch
+  if (a && typeof a === 'object' && !Array.isArray(a)) {
+    const ar = a as Record<string, unknown>
+    const enabled = typeof ar.enabled === 'boolean' ? ar.enabled : true // 缺省开；显式 false 保留
+    const apiKey = typeof ar.apiKey === 'string' && ar.apiKey ? ar.apiKey : undefined
+    out.anysearch = apiKey ? { enabled, apiKey } : { enabled }
+  }
   return Object.keys(out).length ? out : undefined
 }
 
