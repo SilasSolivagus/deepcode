@@ -1506,13 +1506,10 @@ export function createChatCore(opts: {
     if (nextMode === 'plan') prePlanMode = permMode
     permMode = nextMode
     session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
-    // 跑动中（流式渲染高频）绝不 push transcript 通知：每帧都会 clone/map 越来越长的 transcript
-    // 数组 → O(N²) 分配 → 堆爆 OOM（真机冒烟挖出）。模式已在页脚实时显示，跑动中只 setState 刷新页脚；
-    // 空闲时才留一行切换反馈（notice 内部已 setState，无需再调）。
-    if (busy) setState()
-    else notice('info', permMode === 'plan'
-      ? 'plan 模式：只读探索 + 写计划，完成后调用 ExitPlanMode 请审批'
-      : `已切换到 ${permMode} 模式`)
+    // 模式切换绝不 push transcript 通知（无论 busy/idle）：Shift+Tab 可长按连发，每条 notice 增长 transcript，
+    // 每帧 render 都 clone/map 整个数组 → O(N²) 分配 → 堆爆 OOM（真机冒烟两次证实，含空闲长按）。
+    // 模式已在状态栏页脚 [model | mode] 实时显示；这里只 setState 刷新页脚。照 CC（切模式不刷屏）。
+    setState()
     refreshStatusLine()
   }
 

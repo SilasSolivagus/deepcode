@@ -1,8 +1,9 @@
 // test/useChat.cycleMode.test.ts
-// Task 5：真机冒烟挖出的 O(N²) OOM 回归测试——cycleMode() 跑动中（busy）绝不 push transcript
-// 通知（页脚已实时显示模式），只在空闲时保留一行反馈。用「闸门」把一轮 turn 卡在 busy 态，
-// 断言跑动中反复 cycleMode() 不增长 transcript 里的 notice 数；turn 结束后 idle 时 cycleMode()
-// 仍保留一条 notice（不能把 idle 分支也一并砍掉，否则该断言会失败——非恒真）。
+// Task 6：cycleMode() 改 footer-only——彻底修 O(N²) OOM（取代 Task 5 的 busy-gate 半修）。
+// Task 5 只堵了跑动中（busy）的 notice，空闲长按 Shift+Tab 仍走 idle 分支 notice → transcript
+// 无界增长 → 每帧 render clone/map 整个数组 → O(N²) 分配 → 堆爆（真机冒烟两次证实）。
+// 新不变量：cycleMode 无论 idle 还是 busy 都绝不 push 模式相关的 transcript notice（模式只在页脚
+// 实时显示），但仍必须真正前进 permMode（不能沦为 no-op）。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -51,10 +52,30 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true })
 })
 
-const noticeCount = (transcript: any[]): number => transcript.filter(i => i.kind === 'notice').length
+// 模式相关的 notice：文本含「切换」或「plan 模式」（typed /plan·/accept·/dontask 各自的 notice
+// 不会被 cycleMode 触发，此过滤只为不误伤其他无关 notice）。
+const modeNoticeCount = (transcript: any[]): number =>
+  transcript.filter(i => i.kind === 'notice' && (i.text?.includes('切换') || i.text?.includes('plan 模式'))).length
 
-describe('cycleMode busy 不 push transcript 通知（O(N²) OOM 回归）', () => {
-  it('跑动中反复 cycleMode 不增长 notice；idle 时 cycleMode 仍保留一条', async () => {
+describe('cycleMode footer-only（O(N²) OOM 彻底修复回归）', () => {
+  it('空闲长按 cycleMode：不 push 模式 notice，但 permMode 真的前进', () => {
+    const core = createChatCore({ client: {} as any, yolo: false, cwd: sessionDir, sessionDir, home, onState: () => {} })
+
+    const before = modeNoticeCount(core.state.transcript)
+    const modeBefore = core.permMode()
+    // 循环长度为 5（default→auto→acceptEdits→plan→dontAsk→default），故意选不是 5 的倍数的次数，
+    // 避免刚好转一圈又落回原模式，误判成 no-op。
+    for (let i = 0; i < 22; i++) core.cycleMode()
+    const after = modeNoticeCount(core.state.transcript)
+    const modeAfter = core.permMode()
+
+    expect(after).toBe(before) // footer-only：空闲长按不刷屏
+    expect(modeAfter).not.toBe(modeBefore) // 不是 no-op：模式确实前进了
+
+    core.dispose()
+  })
+
+  it('跑动中反复 cycleMode：同样不 push 模式 notice', async () => {
     const core = createChatCore({ client: {} as any, yolo: false, cwd: sessionDir, sessionDir, home, onState: () => {} })
 
     const p = core.send('任务')
@@ -64,21 +85,14 @@ describe('cycleMode busy 不 push transcript 通知（O(N²) OOM 回归）', () 
     })
     expect(core.state.busy).toBe(true)
 
-    const before = noticeCount(core.state.transcript)
-    core.cycleMode()
-    core.cycleMode()
-    core.cycleMode()
-    const during = noticeCount(core.state.transcript)
+    const before = modeNoticeCount(core.state.transcript)
+    for (let i = 0; i < 20; i++) core.cycleMode()
+    const during = modeNoticeCount(core.state.transcript)
     expect(during).toBe(before) // 跑动中不增长
 
     release!()
     await p
     expect(core.state.busy).toBe(false)
-
-    const idleBefore = noticeCount(core.state.transcript)
-    core.cycleMode()
-    const idleAfter = noticeCount(core.state.transcript)
-    expect(idleAfter).toBe(idleBefore + 1) // 空闲时仍保留一条反馈（防止把 idle 分支也砍掉的恒真陷阱）
 
     core.dispose()
   })
