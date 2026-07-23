@@ -28,8 +28,9 @@ import { formatMemory, formatMemoryView } from '../memory.js'
 import { scanMemoryFiles } from '../memdir/memoryScan.js'
 import { listPromotionCandidates, promoteCandidate } from '../services/memory/promote.js'
 import { parseFrontmatter } from '../agentsLoader.js'
-import { loadSettings, loadRawUserSettings, saveRawUserSettings, addUserAllowRule, removeUserAllowRuleByValue, removeUserDenyRuleByValue, removeUserAskRuleByValue, SETTINGS_FILE } from '../config.js'
-import type { Settings } from '../config.js'
+import { loadSettings, loadRawUserSettings, saveRawUserSettings, saveOnboardingKeys, addUserAllowRule, removeUserAllowRuleByValue, removeUserDenyRuleByValue, removeUserAskRuleByValue, SETTINGS_FILE } from '../config.js'
+import { isAuthError } from '../api.js'
+import type { Settings, OnboardingKeys } from '../config.js'
 import { loadAppState, saveAppState } from '../tipsState.js'
 import { selectTip, recordTipShown } from './tips.js'
 import { formatPermissionRules, resolveRuleRemoval } from '../permissionsView.js'
@@ -246,6 +247,8 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
 export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; resolve: (d: Decision) => void }
 export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
 export interface PendingPlanApproval { plan: string; allowedPrompts?: AllowedPrompt[]; resolve: (approved: boolean) => void }
+/** /model 选中一个未配 key 的 provider 时挂起：UI 弹单 provider key 录入 overlay，core.resolveKeyEntry 回答。 */
+export interface PendingKeyEntry { providerId: string; label: string; baseURL: string; model: string; modelId: string }
 
 /** 启动时算一次 spinner tip：递增会话计数→按冷却选一条→记录历史→持久化。返回 tip 文案或 null。 */
 export function computeSpinnerTip(
@@ -345,6 +348,7 @@ export interface ChatState {
   pendingAsk: PendingAsk | null
   pendingQuestion: PendingQuestion | null
   pendingPlanApproval: PendingPlanApproval | null
+  pendingKeyEntry: PendingKeyEntry | null
   usageLog: UsageRecord[]
   lastTokPerSec: number | null
   turnStartAt: number | null // 当前轮开始时间戳（spinner 计算耗时秒数；空闲为 null）
@@ -373,6 +377,9 @@ export interface ChatCore {
   resolveAsk(d: Decision): void // 权限弹窗回答
   resolveQuestion(answers: Answer[] | null): void // AskUserQuestion 弹窗回答
   resolvePlanApproval(approved: boolean): void // ExitPlanMode 计划审批回答
+  /** pendingKeyEntry 回答：传入 key → 存该 provider 的 key（不动 provider/model 字段）→ 重试 switchProvider；
+   *  传 undefined（取消）→ 只清挂起状态，不切换。 */
+  resolveKeyEntry(key: string | undefined): void
   resumeList(): { file: string; preview: string }[]
   resume(file: string): void
   customCommands: Map<string, { template: string; source: 'user' | 'project' }>
@@ -420,6 +427,11 @@ export interface ChatCore {
   anyRunningWork(): boolean
   /** 当前 provider 展示名（横幅用；展示组件不自己读磁盘）。 */
   providerName(): string
+  /** /setup 向导 initial 预填：当前 provider + custom 后端定义（无遮罩 key，Setup 本身不回显 key）。 */
+  existingKeysSummary(): Partial<OnboardingKeys>
+  /** /setup 完成后调用：重读 webSearch key 到内存工具配置，使新加 key 免重启即时生效。
+   *  主 provider 自身的 key/切换不在此路径（客户端已固化，仍需 /model 或重启）。 */
+  reloadSettings(): void
   /** /tui 切换 carry-flags 用 getters */
   yolo(): boolean
   permMode(): PermissionMode
@@ -446,7 +458,7 @@ export function nextPermMode(cur: PermissionMode, disableAuto: boolean): Permiss
 const EXTRACT_DRAIN_TIMEOUT_MS = 30000
 
 const HELP_TEXT =
-  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/auto 或 Shift+Tab：auto 模式（分类器自动判 run/ask/block，只读免审）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/dontask dontAsk 模式（读放行/写自动拒，不弹窗；Shift+Tab 循环含此档）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cd <路径> 迁移会话主工作目录（刷新环境/项目记忆/技能，与 /add-dir 互补）\n/cost   本会话花费明细\n/recap  一句话回顾当前会话（目标+下一步）\n/goal <条件> 设置会话级停止前自检目标；无参报告进行中目标；/goal clear 清除\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看生效的指令文件与全局记忆抽屉；/memory rm <编号> <文件名> 删除某条全局记忆（文件名以列表为准，防止列表变化后删错）；/memory promote 列出可升格到全局的存量记忆；/memory promote <编号> <文件名> 升格某条\n/pause-memory（别名 /memory-pause、/toggle-memory）暂停/恢复本会话记忆读写\n/reload-skills 重扫并热加载本会话新增/改动的技能\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（rm/deny-rm/ask-rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/tui <inline|fullscreen> 切换渲染器（重启并恢复当前会话）\n/focus  切换 focus 视图（全屏下折叠工具结果，只在全屏渲染器可用）\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/background 或 /bg [prompt] 把会话送到后台并释放终端\n/stop [id] 列出/停止后台会话\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
+  '/model  无参打开模型选择器；/model <名> 直接切到指定模型\n/setup  重新配置 API key（LLM/搜索/图片识别，主 provider 切换仍用 /model）\n/think  thinking 模式开关\n/effort 思考档位 low/medium/high/off\n/accept acceptEdits 模式开关（Edit/Write 免确认，Bash 仍确认）\n/auto 或 Shift+Tab：auto 模式（分类器自动判 run/ask/block，只读免审）\n/plan   plan 模式开关（只读探索+写计划，ExitPlanMode 请用户审批）\n/dontask dontAsk 模式（读放行/写自动拒，不弹窗；Shift+Tab 循环含此档）\n/add-dir <路径> 添加工作目录白名单（plan 模式围栏扩展）\n/cd <路径> 迁移会话主工作目录（刷新环境/项目记忆/技能，与 /add-dir 互补）\n/cost   本会话花费明细\n/recap  一句话回顾当前会话（目标+下一步）\n/goal <条件> 设置会话级停止前自检目标；无参报告进行中目标；/goal clear 清除\n/context 上下文占比与上次 usage\n/stats  本会话统计（轮数/工具/token/缓存/花费）\n/copy   复制上条回复到剪贴板\n/memory 查看生效的指令文件与全局记忆抽屉；/memory rm <编号> <文件名> 删除某条全局记忆（文件名以列表为准，防止列表变化后删错）；/memory promote 列出可升格到全局的存量记忆；/memory promote <编号> <文件名> 升格某条\n/pause-memory（别名 /memory-pause、/toggle-memory）暂停/恢复本会话记忆读写\n/reload-skills 重扫并热加载本会话新增/改动的技能\n/compact 手动压缩对话历史\n/clear  清空对话（开新会话文件，花费累计保留）\n/resume 列出并恢复本目录历史会话\n/rewind 回退到某轮之前（仅对话/仅代码/两者）\n/fork   分叉当前对话到新会话继续（原会话冻结，新会话标题加 (Branch)）\n/rename <名> 给当前会话命名（显示在 /resume 列表）\n/export 导出对话到 markdown 文件\n/permissions 查看/删除已保存权限规则（rm/deny-rm/ask-rm <编号>）\n/init   分析项目生成 DEEPCODE.md\n/keybindings 查看快捷键\n/tui <inline|fullscreen> 切换渲染器（重启并恢复当前会话）\n/focus  切换 focus 视图（全屏下折叠工具结果，只在全屏渲染器可用）\n/output-style 选择输出风格（default/Explanatory/Learning/自定义）\n/background 或 /bg [prompt] 把会话送到后台并释放终端\n/stop [id] 列出/停止后台会话\n/commit 生成并创建 git commit（预跑 git 状态+遵循仓库风格，带 Co-Authored-By: deepcode）\n/commit-push-pr 提交+推送+创建或更新 PR（## Summary/## Test plan，需 gh CLI）\n/exit   退出\n自定义命令：~/.deepcode/commands/*.md 或 <项目>/.deepcode/commands/*.md（$ARGUMENTS 占位）'
 
 export function createChatCore(opts: {
   client: OpenAI
@@ -582,6 +594,7 @@ export function createChatCore(opts: {
   let busy = false
   let pendingAsk: PendingAsk | null = null
   let pendingQuestion: PendingQuestion | null = null
+  let pendingKeyEntry: PendingKeyEntry | null = null
   let lastTokPerSec: number | null = null
   let turnStartAt: number | null = null
   let turnOutTokens = 0
@@ -619,7 +632,7 @@ export function createChatCore(opts: {
   // 5.7 statusLine 输出（onChange 闭包按引用捕获 setState，运行期才调用，无 TDZ）
   let statusLineOutput: string | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
   })
   let state = snap()
   const setState = (): void => {
@@ -821,6 +834,8 @@ export function createChatCore(opts: {
       setState()
     })
 
+  // /setup 加改搜索 key 后即时生效：webSearchConfig 保持同一对象引用，reloadSettings 原地 Object.assign 更新。
+  const webSearchConfig = resolveWebSearchConfig(settings)
   const tools = [
     // allTools 中的静态 exitPlanModeTool 替换为工厂版（含审批回调）
     ...allTools.filter(t => t.name !== 'ExitPlanMode'),
@@ -851,7 +866,7 @@ export function createChatCore(opts: {
       client: opts.client,
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
     }),
-    makeWebSearchTool({ config: resolveWebSearchConfig(settings) }),
+    makeWebSearchTool({ config: webSearchConfig }),
     makeAskUserQuestionTool({ ask: questionAsk }),
     makeSkillTool(() => skills, {
       client: opts.client,
@@ -1229,6 +1244,17 @@ export function createChatCore(opts: {
       if (step.value === 'aborted') notice('warn', '[已中断]')
       if (step.value === 'max_turns') notice('error', '[达到最大轮数熔断]')
     } catch (e: any) {
+      // Task 7：鉴权失效（401/invalid_api_key 等）优雅失败——不当普通错误报，弹当前 provider 的就地 key 重录 overlay。
+      // 非鉴权错误（含 429/5xx/网络超时）维持原有 notice 报错不变。
+      const reportTurnError = (err: any): void => {
+        if (isAuthError(err)) {
+          const label = providerLabel(activePreset.id)
+          notice('error', `当前 ${label} 的 API key 失效或无效，请重新配置`)
+          pendingKeyEntry = { providerId: activePreset.id, label, baseURL: activePreset.baseURL, model: activePreset.models.smart, modelId: model }
+        } else {
+          notice('error', `[错误] ${err?.message ?? err}`)
+        }
+      }
       // Task 8 反应式兜底：send 期间抛「上下文超长」
       // 且本轮尚未重试过 → microcompact 甩掉旧工具输出后重跑一次（单发，防死循环）。
       if (isContextOverflowError(e) && !overflowRetried) {
@@ -1239,10 +1265,10 @@ export function createChatCore(opts: {
           lastPromptTokens = 0; baselineLen = 0
           notice('warn', `[context 超长] microcompact 甩掉 ~${mc.tokensSaved} tok 后重试`)
           try { const step2 = await drive(); if (step2.value === 'aborted') notice('warn', '[已中断]') }
-          catch (e2: any) { notice('error', `[错误] ${e2?.message ?? e2}`) } // mc 后仍超 → 报错（下轮主动 mc 兜）
-        } else notice('error', `[错误] ${e?.message ?? e}`) // 无可甩 → 照常报错，不重试
+          catch (e2: any) { reportTurnError(e2) } // mc 后仍超 → 报错（下轮主动 mc 兜）
+        } else reportTurnError(e) // 无可甩 → 照常报错，不重试
       } else {
-        notice('error', `[错误] ${e?.message ?? e}`)
+        reportTurnError(e)
       }
     } finally {
       // 悬空 assistant 块 final flush（seal 前，保证 close_segment 先于 seal，避免 flush 的 patch 落在已 seal 块外的时序问题）
@@ -1450,7 +1476,10 @@ export function createChatCore(opts: {
       return
     }
     if (!providerKeyReady(preset, settings)) {
-      notice('error', `${providerLabel(targetId)} 未配置 API key，无法切换。设环境变量 ${preset.apiKeyEnv}，或在 ${SETTINGS_FILE} 的 providers.${targetId}.apiKey 配置。`)
+      // 不再硬报错——挂起 pendingKeyEntry，UI 弹该 provider 的单步 key 录入 overlay；
+      // 录好后 resolveKeyEntry 存 key + 重试本函数（targetId/id 不变，此时 providerKeyReady 已为 true）。
+      pendingKeyEntry = { providerId: preset.id, label: providerLabel(targetId), baseURL: preset.baseURL, model: preset.models.smart, modelId: id }
+      setState()
       return
     }
     if (!opts.unmount) { notice('error', `切换到 ${providerLabel(targetId)} 需要重启，当前环境不支持。`); return }
@@ -1591,6 +1620,11 @@ export function createChatCore(opts: {
         notice('info', `已切换到 ${model}`)
       }
       refreshStatusLine() // 5.7 模型变化触发 statusLine 刷新
+      return
+    }
+    if (line === '/setup') {
+      // 向导需要交互式 ink render，TUI 里由 App/FullscreenApp 拦截打开 overlay；此处仅兜底不误发模型。
+      notice('info', '/setup 需要交互式 TUI 界面，请在前台 TUI 会话中运行')
       return
     }
     if (line === '/think') {
@@ -2344,6 +2378,31 @@ export function createChatCore(opts: {
       setState()
       p.resolve(approved)
     },
+    resolveKeyEntry: (key: string | undefined) => {
+      if (!pendingKeyEntry) return
+      const target = pendingKeyEntry
+      pendingKeyEntry = null
+      if (!key) { setState(); return } // 取消：只清挂起，不切换
+      try {
+        saveOnboardingKeys({ providerKeys: { [target.providerId]: key } }) // 只存 key，不碰 provider/model——那是 switchProvider 的职责
+      } catch (e: any) {
+        notice('error', `保存 key 失败：${e?.message ?? e}`)
+        return
+      }
+      // Task 7：当前 provider 就地鉴权恢复（运行中 401/invalid_api_key 触发），provider 未变——不走 switchProvider 的
+      // 重启式切换，直接热改已建好的 client.apiKey（OpenAI SDK 每次请求读取该字段），下次发送即用新 key，无需重启。
+      if (target.providerId === activePreset.id) {
+        opts.client.apiKey = key
+        notice('info', `${target.label} 的 API key 已更新，可重新发送`)
+        setState()
+        return
+      }
+      try {
+        const fresh = loadSettings(cwd, opts.flagSettingsPath)
+        if (fresh.providers) settings.providers = fresh.providers // 内存 settings 即时见新 key，下面重试才能通过 providerKeyReady
+      } catch { /* 读取失败沿用旧值，尽力而为 */ }
+      switchProvider(target.providerId, target.modelId)
+    },
     resumeList: () => {
       // 后台会话按文件建标签索引；fork 出的会话文件通常也在 listSessions 里，
       // 故对同一文件优先显示 [bg <state>] 标签（覆盖普通预览），不再被去重吞掉。
@@ -2445,6 +2504,21 @@ export function createChatCore(opts: {
     hasTranscript,
     anyRunningWork,
     providerName: () => providerLabel(activePreset.id),
+    existingKeysSummary: () => {
+      const out: Partial<OnboardingKeys> = { provider: activePreset.id as ProviderId }
+      const custom = settings.providers?.custom
+      if (activePreset.id === 'custom' && custom?.baseURL && custom.models) {
+        out.custom = { baseURL: custom.baseURL, models: custom.models }
+      }
+      return out
+    },
+    reloadSettings: () => {
+      try {
+        const fresh = loadSettings(cwd, opts.flagSettingsPath)
+        Object.assign(webSearchConfig, resolveWebSearchConfig(fresh))
+        if (fresh.providers) settings.providers = fresh.providers
+      } catch { /* 读取失败保留旧值，不阻断 */ }
+    },
     yolo: () => opts.yolo,
     permMode: () => permMode,
     model: () => model,

@@ -27,6 +27,7 @@ import { QuestionDialog } from './components/QuestionDialog.js'
 import { SelectList } from './components/SelectList.js'
 import { Spinner } from './components/Spinner.js'
 import { StatusFooter } from './components/StatusFooter.js'
+import { Setup, SoloKeyEntry } from './setup.js'
 import { clamp, page, applyFollow, nextStuck, scrollInfo } from './scroll.js'
 import { onWheel } from './wheel.js'
 import { useThemeControl, themeNames, BLOCK_GAP, GUTTER } from './theme.js'
@@ -63,6 +64,7 @@ export function FullscreenApp(props: {
   const [draft, setDraft] = useState('')
   const [resumeMode, setResumeMode] = useState(false)
   const [modelPickerMode, setModelPickerMode] = useState(false)
+  const [setupMode, setSetupMode] = useState(false)
   const [outputStyleMode, setOutputStyleMode] = useState(false)
   const [themeMode, setThemeMode] = useState(false)
   const { themeName, setThemeName } = useThemeControl()
@@ -100,17 +102,17 @@ export function FullscreenApp(props: {
   }, [])
 
   useEffect(() => {
-    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || resumeMode || modelPickerMode || outputStyleMode || themeMode || workflowsMode || fleetMode || rewindStep || skillsMode || memPending !== null) {
+    if (state.pendingAsk || state.pendingQuestion || state.pendingPlanApproval || state.pendingKeyEntry || resumeMode || modelPickerMode || setupMode || outputStyleMode || themeMode || workflowsMode || fleetMode || rewindStep || skillsMode || memPending !== null) {
       setDraft(''); setValueOverride(undefined); justPickedRef.current = null
     }
-  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, resumeMode, modelPickerMode, outputStyleMode, themeMode, workflowsMode, fleetMode, rewindStep, skillsMode, memPending !== null])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!state.pendingAsk, !!state.pendingQuestion, !!state.pendingPlanApproval, !!state.pendingKeyEntry, resumeMode, modelPickerMode, setupMode, outputStyleMode, themeMode, workflowsMode, fleetMode, rewindStep, skillsMode, memPending !== null])  // eslint-disable-line react-hooks/exhaustive-deps
 
   useInput((input, key) => {
     if (key.escape && workflowsMode) { setWorkflowsMode(false); return }
     // 双击 Esc（≤600ms）= 回退选择器（CC rewind 入口），仅在纯空闲+输入框为空时；单 Esc 仍归 InputBox。
     if (key.escape) {
-      const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion
-        && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !rewindStep
+      const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !state.pendingKeyEntry
+        && !resumeMode && !modelPickerMode && !setupMode && !outputStyleMode && !themeMode && !rewindStep
         && !workflowsMode && !fleetMode && !skillsMode && memPending === null && draft === ''
       if (idle) {
         const now = Date.now()
@@ -131,7 +133,7 @@ export function FullscreenApp(props: {
       else setLastSigint(now)
     }
     // Shift+Tab 循环权限模式（default→acceptEdits→plan→default）。
-    if (key.shift && key.tab && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !resumeMode && !modelPickerMode && !outputStyleMode && !themeMode && !workflowsMode && !fleetMode && !rewindStep && !skillsMode && memPending === null) {
+    if (key.shift && key.tab && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !state.pendingKeyEntry && !resumeMode && !modelPickerMode && !setupMode && !outputStyleMode && !themeMode && !workflowsMode && !fleetMode && !rewindStep && !skillsMode && memPending === null) {
       core.cycleMode()
     }
   })
@@ -239,6 +241,7 @@ export function FullscreenApp(props: {
     }
     if (text === '/resume') { setResumeMode(true); return }
     if (text === '/model') { setModelPickerMode(true); return }
+    if (text === '/setup') { setSetupMode(true); return }
     if (text === '/output-style') { setOutputStyleMode(true); return }
     if (text === '/theme') { setThemeMode(true); return }
     if (text === '/rewind') { setRewindStep('point'); return }
@@ -339,6 +342,14 @@ export function FullscreenApp(props: {
           ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
           : state.pendingPlanApproval
           ? <PlanApprovalDialog pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
+          : state.pendingKeyEntry
+          ? <SoloKeyEntry
+              label={state.pendingKeyEntry.label}
+              baseURL={state.pendingKeyEntry.baseURL}
+              model={state.pendingKeyEntry.model}
+              onDone={(key) => core.resolveKeyEntry(key)}
+              onCancel={() => core.resolveKeyEntry(undefined)}
+            />
           : resumeMode
             ? <SelectList
                 items={core.resumeList().map(s => s.preview)}
@@ -350,6 +361,12 @@ export function FullscreenApp(props: {
                 items={core.modelList().map(m => m.label)}
                 onPick={i => { const m = core.modelList()[i]; core.applyModel(m.id, m.providerId); setModelPickerMode(false) }}
                 onCancel={() => setModelPickerMode(false)}
+              />
+            : setupMode
+            ? <Setup
+                initial={core.existingKeysSummary()}
+                onDone={() => { setSetupMode(false); core.reloadSettings() }}
+                onCancel={() => setSetupMode(false)}
               />
             : outputStyleMode
             ? <SelectList

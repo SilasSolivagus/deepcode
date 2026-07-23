@@ -80,6 +80,20 @@ export class Assembler {
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504])
 const RETRYABLE_CODES = new Set(['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EPIPE'])
 
+const AUTH_PATTERNS = [/invalid_api_key/i, /invalid api key/i, /authentication/i, /unauthorized/i]
+/** provider「鉴权失效」错误保守判定：HTTP 401/403 或 body 命中 invalid_api_key/authentication/Unauthorized 等措辞。
+ *  有明确 status 时以 status 为准直接短路——429/5xx 绝不误判为鉴权失效（否则限流会被反复弹重录 key）。
+ *  deepseek/glm/kimi 均走 OpenAI SDK，401/403 会被 SDK 归一成 APIError 子类的 .status，故这里优先认 .status。 */
+export function isAuthError(err: unknown): boolean {
+  if (err == null || typeof err !== 'object') return false
+  const status = (err as any).status ?? (err as any).response?.status
+  if (typeof status === 'number') return status === 401 || status === 403
+  const code = (err as any).code ?? (err as any).error?.code
+  if (typeof code === 'string' && /invalid_api_key/i.test(code)) return true
+  const msg = String((err as any).message ?? (err as any).error?.message ?? '')
+  return AUTH_PATTERNS.some(re => re.test(msg))
+}
+
 const realSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
 export async function withRetry<T>(

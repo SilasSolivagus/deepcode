@@ -24,7 +24,7 @@ vi.mock('node:os', async importOriginal => {
 import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
-import { loadSettings, loadRawUserSettings, saveRawUserSettings, saveApiKey, hasApiKey, parseHooksConfig, parsePermissions, parseStringArray, addUserAllowRule, removeUserAllowRule } from '../src/config.js'
+import { loadSettings, loadRawUserSettings, saveRawUserSettings, hasApiKey, parseHooksConfig, parsePermissions, parseStringArray, addUserAllowRule, removeUserAllowRule } from '../src/config.js'
 
 const fakeHome = os.homedir()
 const settingsFile = path.join(fakeHome, '.deepcode', 'settings.json')
@@ -121,16 +121,22 @@ describe('settings 读写 round-trip', () => {
 })
 
 describe('apiKey 持久化', () => {
-  it('saveApiKey 写入并能读回，loadSettings 含 apiKey', () => {
-    saveApiKey('sk-test-123')
+  it('saveRawUserSettings 写入 apiKey 并能读回，loadSettings 含 apiKey', () => {
+    const s = loadRawUserSettings()
+    s.apiKey = 'sk-test-123'
+    saveRawUserSettings(s)
     expect(loadSettings().apiKey).toBe('sk-test-123')
   })
 
   it('hasApiKey：env 优先，否则看 settings', () => {
     delete process.env.DEEPSEEK_API_KEY
-    saveApiKey('sk-from-settings')
+    let s = loadRawUserSettings()
+    s.apiKey = 'sk-from-settings'
+    saveRawUserSettings(s)
     expect(hasApiKey()).toBe(true)
-    saveApiKey('')
+    s = loadRawUserSettings()
+    s.apiKey = undefined
+    saveRawUserSettings(s)
     expect(hasApiKey()).toBe(false)
     process.env.DEEPSEEK_API_KEY = 'sk-from-env'
     expect(hasApiKey()).toBe(true)
@@ -152,36 +158,6 @@ describe('parseHooksConfig', () => {
     const out = parseHooksConfig(raw)!
     expect((out as any).Bogus).toBeUndefined()
     expect(out.PreToolUse!.length).toBe(1)
-  })
-})
-
-describe('saveApiKey Setup hook', () => {
-  beforeEach(() => { hookCalls.length = 0 })
-
-  it('已配置 hooks 时写 key → Setup(trigger=init) 触发', async () => {
-    saveRawUserSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
-    saveApiKey('sk-test')
-    await new Promise(r => setImmediate(r))
-    const setup = hookCalls.find(c => c.event === 'Setup')
-    expect(setup).toBeTruthy()
-    expect(setup!.payload.trigger).toBe('init')
-  })
-
-  it('未配置 hooks 时写 key → 不触发 Setup', async () => {
-    saveRawUserSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2 } as any)
-    saveApiKey('sk-test2')
-    await new Promise(r => setImmediate(r))
-    expect(hookCalls.find(c => c.event === 'Setup')).toBeFalsy()
-  })
-
-  it('已有落盤 key 再改 → Setup(trigger=maintenance)', async () => {
-    saveRawUserSettings({ permissions: { allow: [] }, compactTokens: 200000, costWarnCNY: 2, apiKey: 'sk-old', hooks: { Setup: [{ hooks: [{ type: 'command', command: 'true' }] }] } } as any)
-    hookCalls.length = 0
-    saveApiKey('sk-changed')
-    await new Promise(r => setTimeout(r, 0))
-    const setup = hookCalls.find(c => c.event === 'Setup')
-    expect(setup).toBeTruthy()
-    expect(setup!.payload.trigger).toBe('maintenance')
   })
 })
 
