@@ -358,6 +358,7 @@ export function FullscreenApp(props: {
             ? <Setup
                 initial={core.existingKeysSummary()}
                 onDone={() => { setSetupMode(false); core.reloadSettings() }}
+                onCancel={() => setSetupMode(false)}
               />
             : outputStyleMode
             ? <SelectList

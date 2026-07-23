@@ -6,7 +6,7 @@
 //        → search（可选，Bocha/Tavily 各录各验）
 //        → vision（可选；provider===glm 时复用 llmKey 自动跳过）→ done（写盘 + 汇总）。
 import React, { useRef, useState } from 'react'
-import { render, Box, Text, useInput, useApp } from 'ink'
+import { render, Box, Text, useInput } from 'ink'
 import { saveOnboardingKeys, type OnboardingKeys } from '../config.js'
 import { validateLlmKey, validateSearchKey, validateVisionKey, type ValidateResult } from '../keyValidate.js'
 import { BUILTIN_PROVIDERS, providerLabel, type ProviderId } from '../providers.js'
@@ -132,8 +132,7 @@ function KeyInputStep(props: {
   )
 }
 
-export function Setup(props: { onDone: () => void; initial?: Partial<OnboardingKeys> }) {
-  const { exit } = useApp()
+export function Setup(props: { onDone: () => void; onCancel?: () => void; initial?: Partial<OnboardingKeys> }) {
   const [step, setStep] = useState<Step>('provider')
   const [summary, setSummary] = useState<string[]>([])
   const acc = useRef<Acc>({
@@ -176,7 +175,7 @@ export function Setup(props: { onDone: () => void; initial?: Partial<OnboardingK
     setStep('done')
   }
 
-  if (step === 'done') return <DoneStep summary={summary} onAny={() => { props.onDone(); exit() }} />
+  if (step === 'done') return <DoneStep summary={summary} onAny={() => { props.onDone() }} />
 
   switch (step) {
     case 'provider':
@@ -192,7 +191,7 @@ export function Setup(props: { onDone: () => void; initial?: Partial<OnboardingK
               acc.current.provider = id
               setStep(id === 'custom' ? 'customBaseURL' : 'llmKey')
             }}
-            onCancel={() => exit()}
+            onCancel={() => props.onCancel?.()}
           />
         </Box>
       )
@@ -284,6 +283,7 @@ function DoneStep(props: { summary: string[]; onAny: () => void }) {
 }
 
 export async function runSetup(): Promise<void> {
-  const { waitUntilExit } = render(<Setup onDone={() => {}} />, { exitOnCtrlC: true })
-  await waitUntilExit()
+  let inst: { unmount: () => void; waitUntilExit: () => Promise<void> }
+  inst = render(<Setup onDone={() => inst.unmount()} onCancel={() => inst.unmount()} />, { exitOnCtrlC: true }) as any
+  await inst.waitUntilExit()
 }
