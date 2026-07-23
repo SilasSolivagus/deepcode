@@ -31,6 +31,7 @@ export function PermissionDialog(props: {
     if (key.upArrow) { setIdx(i => Math.max(0, i - 1)); return }
     if (key.downArrow) { setIdx(i => Math.min(options.length - 1, i + 1)); return }
     if (key.return) { onDecide(options[idx].decision); return }
+    if (key.shift && key.tab) { onDecide('always'); return }
     if (key.escape) { onDecide('no'); return }
     const k = input.toLowerCase()
     if (k === 'y' || k === '1') { onDecide('yes'); return }
@@ -66,7 +67,7 @@ export function PermissionDialog(props: {
           {i + 1}. {opt.label}
         </Text>
       ))}
-      <Text dimColor>↑↓/数字 选择 · Enter 确认 · Esc 拒绝</Text>
+      <Text dimColor>↑↓/数字 选择 · Enter 确认 · Shift+Tab 允许并本会话不再问 · Esc 拒绝</Text>
     </Box>
   )
 }
