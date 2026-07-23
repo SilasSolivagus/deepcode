@@ -45,17 +45,16 @@ export function estimateMessagesTokens(messages: any[]): number {
   return Math.ceil(weighted)
 }
 
-import { activeModelMeta } from './providers.js'
+import { contextWindowFor } from './providers.js'
 
-export const CONTEXT_WINDOW_DEFAULT = 200_000
 const OUTPUT_RESERVE = 16_000
 const AUTOCOMPACT_BUFFER = 13_000
 
-/** 模型感知 context window：env 覆盖 → active provider meta（含 defaultMeta 兜底）。 */
+/** 模型感知 context window：env 覆盖 → 按模型归属 provider 解析（含 defaultMeta 兜底）。 */
 export function resolveContextWindow(model: string): number {
   const env = process.env.DEEPCODE_MAX_CONTEXT_TOKENS
   if (env) { const n = parseInt(env, 10); if (Number.isFinite(n) && n > 0) return n }
-  return activeModelMeta(model).contextWindow
+  return contextWindowFor(model)
 }
 
 /** compact 触发派生阈值 = window − 输出预留 − autocompact buffer。 */

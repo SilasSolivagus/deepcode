@@ -199,6 +199,15 @@ export function __resetProviderCache(): void { _cachedProvider = undefined }
 export function activeModelMeta(modelId: string): ModelMeta {
   return modelMeta(activeProvider(), modelId)
 }
+/** 按模型 id 的**归属** provider 解析 context window（不受当前 active provider 影响）。
+ *  归属靠 belongsToProvider 在内置 preset 里找；无人认领的未知 id 回落 active provider defaultMeta。
+ *  修复：active=glm 时显示 deepseek-v4-pro 曾误取 GLM defaultMeta(200k)。 */
+export function contextWindowFor(modelId: string): number {
+  for (const p of Object.values(BUILTIN_PROVIDERS)) {
+    if (belongsToProvider(p, modelId)) return modelMeta(p, modelId).contextWindow
+  }
+  return activeModelMeta(modelId).contextWindow
+}
 export function activeFastModel(): string {
   return activeProvider().models.fast
 }

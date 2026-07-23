@@ -49,7 +49,7 @@ import {
   isContextOverflowError,
 } from '../compact.js'
 import { PrecomputeRegistry, PRECOMPUTE_BUFFER_FRACTION } from '../precompute.js'
-import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold } from '../tokenEstimate.js'
+import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold, resolveContextWindow } from '../tokenEstimate.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext, parseLoopCommand, LOOP_GUIDANCE } from '../commands.js'
 import { generateRecap } from '../recap.js'
@@ -365,6 +365,7 @@ export interface ChatState {
 export interface ChatCore {
   state: ChatState
   send(line: string, attachments?: Attachment[]): Promise<void> // 斜杠命令本地处理；其余走 runLoop（含边界 reminders、落盘、自动 compact）
+  cycleMode(): void // Shift+Tab / /cycle-mode 共用：前进一档权限模式，不受 busy 门
   interrupt(): void // Esc
   steer(text: string, attachments?: Attachment[]): void // busy 时 Enter：入队 next；若 toolInFlight 则同时软中断
   steerPop(): string | undefined
@@ -609,7 +610,7 @@ export function createChatCore(opts: {
     return thr ? Math.min(100, Math.round((lastPromptTokens / thr) * 100)) : 0
   }
   const contextUsed = () => lastPromptTokens
-  const contextWindow = () => effectiveThreshold(model, settings.compactTokens)
+  const contextWindow = () => resolveContextWindow(model)
   const tokenBudgetGet = () => tokenBudget
   const budgetUsedGet = () => budgetUsed
 
@@ -1082,7 +1083,7 @@ export function createChatCore(opts: {
         maxToolResultChars: settings.maxToolResultChars,
         ctx,
         permission: {
-          mode: permMode,
+          get mode() { return permMode },
           rules: settings.permissions.allow,
           deny: resolveDenyList(settings.permissions.deny),
           cwd,
@@ -1498,6 +1499,20 @@ export function createChatCore(opts: {
     setState()
   }
 
+  // Shift+Tab / /cycle-mode 共用：前进一档权限模式。不受 busy 门（跑动 turn 中亦可切，配合 deps.permission.mode 活读即时生效）。
+  function cycleMode(): void {
+    if (opts.yolo) return // yolo 仅 --yolo 启动，不参与循环
+    const nextMode = nextPermMode(permMode, settings.disableAutoMode ?? false)
+    if (nextMode === 'plan') prePlanMode = permMode
+    permMode = nextMode
+    session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
+    // 模式切换绝不 push transcript 通知（无论 busy/idle）：Shift+Tab 可长按连发，每条 notice 增长 transcript，
+    // 每帧 render 都 clone/map 整个数组 → O(N²) 分配 → 堆爆 OOM（真机冒烟两次证实，含空闲长按）。
+    // 模式已在状态栏页脚 [model | mode] 实时显示；这里只 setState 刷新页脚。照 CC（切模式不刷屏）。
+    setState()
+    refreshStatusLine()
+  }
+
   /** 斜杠命令本地处理（/resume 由 UI 走 resumeList/resume，/exit 归 UI） */
   const send = async (line: string, attachments?: Attachment[]): Promise<void> => {
     line = line.trim()
@@ -1618,17 +1633,7 @@ export function createChatCore(opts: {
       return
     }
     if (line === '/cycle-mode') {
-      // Shift+Tab 用：default → auto → acceptEdits → plan → dontAsk → default 五态循环（disableAutoMode 时跳过 auto）。
-      if (opts.yolo) return // yolo 仅 --yolo 启动，不参与循环
-      const nextMode = nextPermMode(permMode, settings.disableAutoMode ?? false)
-      // 进入 plan 前记录当前模式，供 /plan 退出时恢复（与 /plan 命令保持一致）
-      if (nextMode === 'plan') prePlanMode = permMode
-      permMode = nextMode
-      session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
-      notice('info', permMode === 'plan'
-        ? 'plan 模式：只读探索 + 写计划，完成后调用 ExitPlanMode 请审批'
-        : `已切换到 ${permMode} 模式`)
-      refreshStatusLine() // 5.7 权限模式变化触发 statusLine 刷新
+      cycleMode()
       return
     }
     if (line === '/plan') {
@@ -2286,6 +2291,7 @@ export function createChatCore(opts: {
   return {
     get state() { return state },
     send,
+    cycleMode,
     interrupt: () => {
       // 若权限弹窗挂起（pendingAsk），checkPermission 内的 ask Promise 永不 resolve，
       // generator 永不返回，busy 永远 true——必须先拒绝掉再 abort，否则死锁。

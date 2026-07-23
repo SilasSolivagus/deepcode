@@ -30,7 +30,7 @@ vi.mock('../src/compact.js', async orig => ({
 
 import { createChatCore } from '../src/tui/useChat.js'
 import { summarize } from '../src/compact.js'
-import { effectiveThreshold } from '../src/tokenEstimate.js'
+import { resolveContextWindow } from '../src/tokenEstimate.js'
 
 // 240 个 ASCII 字符 → 估算 ceil(240*0.3)=72 token
 const BIG = 'x'.repeat(240)
@@ -95,10 +95,11 @@ describe('发送前预估触发 compact', () => {
 })
 
 describe('contextUsed / contextWindow 状态契约', () => {
-  it('初始 contextUsed=0，contextWindow=生效阈值', () => {
+  it('初始 contextUsed=0，contextWindow=归属 provider 真实窗口（不受 compactTokens 夹断）', () => {
     const core = mkCore()
     expect(core.state.contextUsed()).toBe(0)
-    expect(core.state.contextWindow()).toBe(effectiveThreshold('deepseek-v4-flash', 100))
+    // 未配置 model → 默认智能档 deepseek-v4-pro，真实窗口 1_000_000（Bug B 修复：显示分母不再被 compactTokens=100 夹断）
+    expect(core.state.contextWindow()).toBe(resolveContextWindow('deepseek-v4-pro'))
     core.dispose()
   })
 
@@ -113,12 +114,11 @@ describe('contextUsed / contextWindow 状态契约', () => {
     core.dispose()
   })
 
-  it('/model 切换后 contextWindow 跟随当前模型', async () => {
+  it('/model 切换后 contextWindow 跟随当前模型的真实窗口（不受 compactTokens 夹断）', async () => {
     const core = mkCore()
-    // compactTokens=100 始终是更紧上限，切到未知模型派生阈值仍远大于 100 → 仍取 100
     await core.send('/model some-unknown-model')
-    expect(core.state.contextWindow()).toBe(effectiveThreshold('some-unknown-model', 100))
-    expect(core.state.contextWindow()).toBe(100)
+    // 未知 model 回落 active provider(deepseek) defaultMeta，真实窗口 1_000_000；compactTokens=100 不再夹断显示分母
+    expect(core.state.contextWindow()).toBe(resolveContextWindow('some-unknown-model'))
     core.dispose()
   })
 })
