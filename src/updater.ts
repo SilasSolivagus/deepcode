@@ -3,6 +3,7 @@
 // 纯逻辑与副作用分离——副作用（网络/子进程/文件）全部经 deps 注入，便于单测。
 // 安全：包名为模块常量；升级命令固定 argv 数组，registry 返回的字符串绝不进命令行。
 
+import fs from 'node:fs'
 import path from 'node:path'
 
 /** npm 包名。硬编码常量，不从任何配置读取（杜绝注入面）。 */
@@ -110,4 +111,52 @@ export function detectInstall(
   if (p.includes(`${path.sep}pnpm${path.sep}`)) return { kind: 'foreign', upgradeCommand: `pnpm add -g ${PKG}@latest` }
   if (p.includes(`${path.sep}.bun${path.sep}`)) return { kind: 'foreign', upgradeCommand: `bun add -g ${PKG}@latest` }
   return { kind: 'foreign', upgradeCommand: NPM_CMD }
+}
+
+const STATE_FILE = 'update.json'
+const LOCK_FILE = 'update.lock'
+const LOCK_FRESH_MS = 600_000 // 10 分钟
+
+/** 读节流状态；无文件/损坏 → null。 */
+export function readUpdateState(dir: string): UpdateCheckState | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, STATE_FILE), 'utf8'))
+    if (!raw || typeof raw.lastCheckAt !== 'number') return null
+    return { lastCheckAt: raw.lastCheckAt, latest: typeof raw.latest === 'string' ? raw.latest : undefined }
+  } catch { return null }
+}
+
+/** 写节流状态；失败静默（只损失一次节流）。 */
+export function writeUpdateState(dir: string, s: UpdateCheckState): void {
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, STATE_FILE), JSON.stringify(s))
+  } catch { /* 忽略 */ }
+}
+
+function pidAliveDefault(pid: number): boolean {
+  try { process.kill(pid, 0); return true } catch { return false }
+}
+
+/** 抢升级锁：持有者进程存活且锁未过期 → false。写锁失败 → false（宁可不升也不并发跑 npm）。 */
+export function tryAcquireUpdateLock(
+  dir: string, now: number, isPidAlive: (pid: number) => boolean = pidAliveDefault,
+): boolean {
+  const p = path.join(dir, LOCK_FILE)
+  try {
+    const stat = fs.statSync(p)
+    const pid = parseInt(fs.readFileSync(p, 'utf8').trim(), 10)
+    if (Number.isFinite(pid) && isPidAlive(pid) && now - stat.mtimeMs < LOCK_FRESH_MS) return false
+  } catch { /* 无锁/读不出 → 可抢占 */ }
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(p, String(process.pid))
+    fs.utimesSync(p, new Date(now), new Date(now)) // mtime 与调用方时间尺度对齐
+    return true
+  } catch { return false }
+}
+
+/** 释放升级锁；失败静默（留给过期机制兜底）。 */
+export function releaseUpdateLock(dir: string): void {
+  try { fs.rmSync(path.join(dir, LOCK_FILE), { force: true }) } catch { /* 忽略 */ }
 }
