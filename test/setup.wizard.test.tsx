@@ -20,6 +20,24 @@ describe('Setup 多步向导', () => {
     vi.clearAllMocks()
   })
 
+  it('面板外壳 + 步骤条：标题与 4 步词渲染，随步骤前进仍可见', async () => {
+    vi.mocked(keyValidate.validateLlmKey).mockResolvedValue({ ok: true })
+    const { stdin, lastFrame } = render(<Setup onDone={() => {}} />)
+    await delay()
+
+    // provider 步：面板标题 + 步骤条 4 步词
+    expect(lastFrame()).toContain('首次配置')
+    expect(lastFrame()).toContain('选择模型')
+    expect(lastFrame()).toContain('密钥')
+    expect(lastFrame()).toContain('搜索')
+    expect(lastFrame()).toContain('图片')
+
+    stdin.write('\r') // provider：默认 DeepSeek → llmKey 步
+    await delay()
+    expect(lastFrame()).toContain('首次配置')
+    expect(lastFrame()).toContain('密钥')
+  })
+
   it('快乐路径：DeepSeek（默认）+ LLM key + 跳过搜索 + vision key → saveOnboardingKeys 调用形状正确', async () => {
     vi.mocked(keyValidate.validateLlmKey).mockResolvedValue({ ok: true })
     vi.mocked(keyValidate.validateVisionKey).mockResolvedValue({ ok: true })

@@ -11,11 +11,47 @@ import { saveOnboardingKeys, type OnboardingKeys } from '../config.js'
 import { validateLlmKey, validateSearchKey, validateVisionKey, type ValidateResult } from '../keyValidate.js'
 import { BUILTIN_PROVIDERS, providerLabel, type ProviderId } from '../providers.js'
 import { SelectList } from './components/SelectList.js'
+import { MaskedInput } from './components/MaskedInput.js'
 import { DEFAULT_THEME } from './theme.js'
 const T = DEFAULT_THEME
 
 const PROVIDER_ORDER: ProviderId[] = ['deepseek', 'glm', 'kimi', 'custom']
 const PROVIDER_ITEMS = ['DeepSeek（默认）', 'GLM', 'Kimi', '自定义']
+
+const STEP_LABELS = ['选择模型', '密钥', '搜索', '图片']
+
+/** 圆角 accent 面板外壳：各步内容套进去。title 缺省为向导标题；step 给时在标题下渲染步骤条。 */
+function WizardPanel(props: { title?: string; step?: 1 | 2 | 3 | 4; children: React.ReactNode }) {
+  return (
+    <Box borderStyle="round" borderColor={T.accent} paddingX={1} flexDirection="column">
+      <Text color={T.accent} bold>{props.title ?? '✦ deepcode · 首次配置'}</Text>
+      {props.step != null && <StepBar current={props.step} />}
+      <Text> </Text>
+      {props.children}
+    </Box>
+  )
+}
+
+/** 4 步进度条，单行 <Text> 拼接（防 flex row 错乱，镜像 Banner.tsx 做法）。
+ *  当前步 accent 高亮，已过步 ✓ 打勾，未到步 ○ 暗色。 */
+function StepBar(props: { current: 1 | 2 | 3 | 4 }) {
+  return (
+    <Text>
+      {STEP_LABELS.map((label, i) => {
+        const n = (i + 1) as 1 | 2 | 3 | 4
+        const isCurrent = n === props.current
+        const isDone = n < props.current
+        const mark = isDone ? '✓' : isCurrent ? '●' : '○'
+        const sep = i < STEP_LABELS.length - 1 ? '  ' : ''
+        return (
+          <Text key={label} color={isCurrent ? T.accent : undefined} dimColor={!isCurrent} bold={isCurrent}>
+            {mark} {label}{sep}
+          </Text>
+        )
+      })}
+    </Text>
+  )
+}
 
 type Step =
   | 'provider'
@@ -45,29 +81,15 @@ function presetFor(a: Acc): { baseURL: string; model: string } {
 
 /** 无校验的纯文本输入（自定义 provider 的 baseURL/fast/smart 三项）。 */
 function TextInputStep(props: { title: string; hint: string; onSubmit: (v: string) => void }) {
-  const [val, setVal] = useState('')
-  const ref = useRef('')
-  const set = (v: string) => { ref.current = v; setVal(v) }
-  useInput((input, key) => {
-    if (key.return) {
-      const v = ref.current.trim()
-      if (!v) return
-      props.onSubmit(v)
-      return
-    }
-    if (key.backspace || key.delete) { set(ref.current.slice(0, -1)); return }
-    if (key.ctrl || key.meta || key.tab) return
-    if (input) set(ref.current + input)
-  })
   return (
-    <Box flexDirection="column" paddingX={1}>
+    <>
       <Text color={T.accent} bold>{props.title}</Text>
       <Text dimColor>{props.hint}</Text>
       <Box borderStyle="round" borderColor={T.accent} borderLeft={false} borderRight={false} paddingX={1}>
         <Text color={T.accent}>{'❯ '}</Text>
-        <Text>{val}<Text inverse> </Text></Text>
+        <MaskedInput masked={false} onSubmit={(v) => { if (v) props.onSubmit(v) }} />
       </Box>
-    </Box>
+    </>
   )
 }
 
@@ -80,46 +102,40 @@ function KeyInputStep(props: {
   validate: (key: string) => Promise<ValidateResult>
   onDone: (key: string | undefined) => void
 }) {
-  const [val, setVal] = useState('')
   const [phase, setPhase] = useState<'input' | 'validating' | 'error'>('input')
   const [error, setError] = useState('')
-  const ref = useRef('')
-  const set = (v: string) => { ref.current = v; setVal(v) }
+  const lastRef = useRef('') // error 阶段 's 仍然保存' 用：记住上次提交的值
 
-  useInput((input, key) => {
-    if (phase === 'validating') return
-    if (phase === 'error') {
-      const k = input.toLowerCase()
-      if (k === 'r') { setPhase('input'); setError(''); set(''); return }
-      if (k === 's') { props.onDone(ref.current.trim() || undefined); return }
-      return
+  const handleSubmit = (v: string) => {
+    lastRef.current = v
+    if (!v) {
+      if (props.optional) props.onDone(undefined)
+      return // 必填步：空回车忽略
     }
-    if (key.return) {
-      const k = ref.current.trim()
-      if (!k) {
-        if (props.optional) props.onDone(undefined)
-        return // 必填步：空回车忽略
-      }
-      setPhase('validating')
-      props.validate(k).then(r => {
-        if (r.ok) props.onDone(k)
-        else { setError(r.error); setPhase('error') }
-      })
-      return
-    }
-    if (key.backspace || key.delete) { set(ref.current.slice(0, -1)); return }
-    if (key.ctrl || key.meta || key.tab) return
-    if (input) set(ref.current + input)
-  })
+    setPhase('validating')
+    props.validate(v).then(r => {
+      if (r.ok) props.onDone(v)
+      else { setError(r.error); setPhase('error') }
+    })
+  }
+
+  // 仅 error 阶段监听 r/s 单键；input 阶段的按键交给下方 MaskedInput 处理。
+  useInput((input) => {
+    const k = input.toLowerCase()
+    if (k === 'r') { setPhase('input'); setError('') }
+    else if (k === 's') { props.onDone(lastRef.current || undefined) }
+  }, { isActive: phase === 'error' })
 
   return (
-    <Box flexDirection="column" paddingX={1}>
+    <>
       <Text color={T.accent} bold>{props.title}</Text>
       <Text dimColor>{props.hint}</Text>
-      <Box borderStyle="round" borderColor={T.accent} borderLeft={false} borderRight={false} paddingX={1}>
-        <Text color={T.accent}>{'❯ '}</Text>
-        <Text>{'•'.repeat(val.length)}<Text inverse> </Text></Text>
-      </Box>
+      {phase === 'input' && (
+        <Box borderStyle="round" borderColor={T.accent} borderLeft={false} borderRight={false} paddingX={1}>
+          <Text color={T.accent}>{'❯ '}</Text>
+          <MaskedInput masked onSubmit={handleSubmit} />
+        </Box>
+      )}
       {phase === 'validating' && <Text color={T.warn}>验证中…</Text>}
       {phase === 'error' && (
         <Box flexDirection="column">
@@ -128,7 +144,7 @@ function KeyInputStep(props: {
         </Box>
       )}
       {phase === 'input' && <Text dimColor>{props.optional ? 'Enter 留空跳过 · Ctrl+C 取消' : 'Enter 确认 · Ctrl+C 取消'}</Text>}
-    </Box>
+    </>
   )
 }
 
@@ -143,8 +159,7 @@ export function SoloKeyEntry(props: {
 }) {
   useInput((_input, key) => { if (key.escape) props.onCancel() })
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Text color={T.accent} bold>🐳 切换到 {props.label}</Text>
+    <WizardPanel title={`🐳 切换到 ${props.label}`}>
       <Text dimColor>尚未配置 API key，录入后立即切换（Esc 取消）</Text>
       <KeyInputStep
         title={`${props.label} API key`}
@@ -153,7 +168,7 @@ export function SoloKeyEntry(props: {
         validate={(k) => validateLlmKey({ apiKeyEnvOrKey: k, baseURL: props.baseURL, model: props.model })}
         onDone={(k) => { if (k) props.onDone(k); else props.onCancel() }}
       />
-    </Box>
+    </WizardPanel>
   )
 }
 
@@ -205,9 +220,7 @@ export function Setup(props: { onDone: () => void; onCancel?: () => void; initia
   switch (step) {
     case 'provider':
       return (
-        <Box flexDirection="column" paddingX={1}>
-          <Text color={T.accent} bold>🐳 欢迎使用 deepcode</Text>
-          <Text> </Text>
+        <WizardPanel step={1}>
           <Text>首次使用，先选 LLM provider：</Text>
           <SelectList
             items={PROVIDER_ITEMS}
@@ -218,80 +231,94 @@ export function Setup(props: { onDone: () => void; onCancel?: () => void; initia
             }}
             onCancel={() => props.onCancel?.()}
           />
-        </Box>
+        </WizardPanel>
       )
     case 'customBaseURL':
       return (
-        <TextInputStep
-          key={step}
-          title="自定义 provider · baseURL"
-          hint="OpenAI 兼容 API 地址，例如 https://api.example.com/v1"
-          onSubmit={(v) => { acc.current.customBaseURL = v; setStep('customFast') }}
-        />
+        <WizardPanel step={1}>
+          <TextInputStep
+            key={step}
+            title="自定义 provider · baseURL"
+            hint="OpenAI 兼容 API 地址，例如 https://api.example.com/v1"
+            onSubmit={(v) => { acc.current.customBaseURL = v; setStep('customFast') }}
+          />
+        </WizardPanel>
       )
     case 'customFast':
       return (
-        <TextInputStep
-          key={step}
-          title="自定义 provider · fast 模型 id"
-          hint="日常快档模型 id"
-          onSubmit={(v) => { acc.current.customFast = v; setStep('customSmart') }}
-        />
+        <WizardPanel step={1}>
+          <TextInputStep
+            key={step}
+            title="自定义 provider · fast 模型 id"
+            hint="日常快档模型 id"
+            onSubmit={(v) => { acc.current.customFast = v; setStep('customSmart') }}
+          />
+        </WizardPanel>
       )
     case 'customSmart':
       return (
-        <TextInputStep
-          key={step}
-          title="自定义 provider · smart 模型 id"
-          hint="重活/编码模型 id"
-          onSubmit={(v) => { acc.current.customSmart = v; setStep('llmKey') }}
-        />
+        <WizardPanel step={1}>
+          <TextInputStep
+            key={step}
+            title="自定义 provider · smart 模型 id"
+            hint="重活/编码模型 id"
+            onSubmit={(v) => { acc.current.customSmart = v; setStep('llmKey') }}
+          />
+        </WizardPanel>
       )
     case 'llmKey': {
       const preset = presetFor(acc.current)
       return (
-        <KeyInputStep
-          key={step}
-          title={`${providerLabel(acc.current.provider)} API key`}
-          hint="粘贴 key，回车验证"
-          optional={false}
-          validate={(k) => validateLlmKey({ apiKeyEnvOrKey: k, baseURL: preset.baseURL, model: preset.model })}
-          onDone={(k) => { acc.current.llmKey = k; setStep('search-bocha') }}
-        />
+        <WizardPanel step={2}>
+          <KeyInputStep
+            key={step}
+            title={`${providerLabel(acc.current.provider)} API key`}
+            hint="粘贴 key，回车验证"
+            optional={false}
+            validate={(k) => validateLlmKey({ apiKeyEnvOrKey: k, baseURL: preset.baseURL, model: preset.model })}
+            onDone={(k) => { acc.current.llmKey = k; setStep('search-bocha') }}
+          />
+        </WizardPanel>
       )
     }
     case 'search-bocha':
       return (
-        <KeyInputStep
-          key={step}
-          title="搜索 · Bocha（可选）"
-          hint="open.bochaai.com 申请 key；Enter 留空跳过"
-          optional
-          validate={(k) => validateSearchKey('bocha', k)}
-          onDone={(k) => { if (k) acc.current.bocha = k; setStep('search-tavily') }}
-        />
+        <WizardPanel step={3}>
+          <KeyInputStep
+            key={step}
+            title="搜索 · Bocha（可选）"
+            hint="open.bochaai.com 申请 key；Enter 留空跳过"
+            optional
+            validate={(k) => validateSearchKey('bocha', k)}
+            onDone={(k) => { if (k) acc.current.bocha = k; setStep('search-tavily') }}
+          />
+        </WizardPanel>
       )
     case 'search-tavily':
       return (
-        <KeyInputStep
-          key={step}
-          title="搜索 · Tavily（可选）"
-          hint="tavily.com 申请 key；Enter 留空跳过"
-          optional
-          validate={(k) => validateSearchKey('tavily', k)}
-          onDone={(k) => { if (k) acc.current.tavily = k; afterSearch() }}
-        />
+        <WizardPanel step={3}>
+          <KeyInputStep
+            key={step}
+            title="搜索 · Tavily（可选）"
+            hint="tavily.com 申请 key；Enter 留空跳过"
+            optional
+            validate={(k) => validateSearchKey('tavily', k)}
+            onDone={(k) => { if (k) acc.current.tavily = k; afterSearch() }}
+          />
+        </WizardPanel>
       )
     case 'vision':
       return (
-        <KeyInputStep
-          key={step}
-          title="图片识别（可选）"
-          hint="图片识别用 GLM，需智谱 ZHIPUAI_API_KEY（open.bigmodel.cn）；Enter 留空跳过"
-          optional
-          validate={(k) => validateVisionKey(k)}
-          onDone={(k) => { if (k) acc.current.visionKey = k; finish() }}
-        />
+        <WizardPanel step={4}>
+          <KeyInputStep
+            key={step}
+            title="图片识别（可选）"
+            hint="图片识别用 GLM，需智谱 ZHIPUAI_API_KEY（open.bigmodel.cn）；Enter 留空跳过"
+            optional
+            validate={(k) => validateVisionKey(k)}
+            onDone={(k) => { if (k) acc.current.visionKey = k; finish() }}
+          />
+        </WizardPanel>
       )
   }
 }
@@ -299,11 +326,11 @@ export function Setup(props: { onDone: () => void; onCancel?: () => void; initia
 function DoneStep(props: { summary: string[]; onAny: () => void }) {
   useInput(() => { props.onAny() })
   return (
-    <Box flexDirection="column" paddingX={1}>
+    <WizardPanel>
       <Text color={T.ok} bold>✓ 配置完成</Text>
       {props.summary.map((line, i) => <Text key={i}>{line}</Text>)}
       <Text dimColor>按任意键继续</Text>
-    </Box>
+    </WizardPanel>
   )
 }
 
