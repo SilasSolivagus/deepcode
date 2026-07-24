@@ -48,6 +48,15 @@ describe('MaskedInput', () => {
     stdin.write('\r'); await wait()
     expect(onSubmit).toHaveBeenCalledWith('sk-x')
   })
+  it('粘贴内嵌 TAB/DEL 控制字符被剥（保留 \\n 供取首行）', async () => {
+    const onSubmit = vi.fn()
+    const { stdin } = render(<MaskedInput masked onSubmit={onSubmit} />)
+    await wait(0)
+    // 走缓冲粘贴路径（>20 字符）：内嵌 \t(\x09) 与 DEL(\x7f) 须被剥，\n 仍用于取首行
+    stdin.write('sk-key\twith\x7fctrl-chars-inside-x\nsecond-line'); await wait()
+    stdin.write('\r'); await wait()
+    expect(onSubmit).toHaveBeenCalledWith('sk-keywithctrl-chars-inside-x')
+  })
   it('Esc → onCancel', async () => {
     const onCancel = vi.fn()
     const { stdin } = render(<MaskedInput masked onSubmit={() => {}} onCancel={onCancel} />)
