@@ -287,7 +287,7 @@ export function Setup(props: { onDone: () => void; onCancel?: () => void; initia
           <KeyInputStep
             key={step}
             title="搜索 · Bocha（可选）"
-            hint="open.bochaai.com 申请 key；Enter 留空跳过；留空跳过也能匿名搜（内置兜底）"
+            hint="open.bochaai.com 申请 key；留空跳过也能匿名搜（内置兜底）"
             optional
             validate={(k) => validateSearchKey('bocha', k)}
             onDone={(k) => { if (k) acc.current.bocha = k; setStep('search-tavily') }}
