@@ -129,7 +129,11 @@ export function detectInstall(
     if (p.startsWith(pkgDir + path.sep)) {
       const nodeModulesDir = path.join(npmPrefix, 'lib', 'node_modules')
       const scopeDir = path.dirname(pkgDir)
-      if (isWritable(nodeModulesDir) && isWritable(scopeDir)) return { kind: 'npm-global', upgradeCommand: NPM_CMD }
+      // 与上面 hasGitDir 同样吞掉探测异常：detectInstall 在启动定时器回调里被调，
+      // 外泄异常会变成未捕获拒绝；探测失败按不可写处理（保守降级为只提示）。
+      let writable = false
+      try { writable = isWritable(nodeModulesDir) && isWritable(scopeDir) } catch { writable = false }
+      if (writable) return { kind: 'npm-global', upgradeCommand: NPM_CMD }
       return { kind: 'foreign', upgradeCommand: `sudo ${NPM_CMD}` }
     }
   }

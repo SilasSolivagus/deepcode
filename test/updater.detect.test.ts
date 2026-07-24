@@ -121,3 +121,17 @@ describe('detectInstall', () => {
     expect(r.kind).toBe('dev')
   })
 })
+
+describe('detectInstall 探测异常不外泄', () => {
+  it('isWritable 抛出时按不可写降级为 foreign，而不是把异常抛给调用方', () => {
+    const boom = () => { throw new Error('EIO') }
+    const r = detectInstall(
+      '/opt/homebrew/lib/node_modules/@silassolivagus/deepcode/dist/index.js',
+      '/opt/homebrew',
+      () => false,
+      boom,
+    )
+    expect(r.kind).toBe('foreign')
+    expect(r.upgradeCommand.startsWith('sudo ')).toBe(true)
+  })
+})
