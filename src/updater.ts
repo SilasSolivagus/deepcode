@@ -147,16 +147,24 @@ export function tryAcquireUpdateLock(
     const stat = fs.statSync(p)
     const pid = parseInt(fs.readFileSync(p, 'utf8').trim(), 10)
     if (Number.isFinite(pid) && isPidAlive(pid) && now - stat.mtimeMs < LOCK_FRESH_MS) return false
-  } catch { /* 无锁/读不出 → 可抢占 */ }
+    // 锁已过期或持有者已死：清掉旧锁，下面走排他创建
+    try { fs.rmSync(p, { force: true }) } catch { /* 忽略 */ }
+  } catch { /* 无锁/读不出 → 可抢占，继续走排他创建 */ }
   try {
     fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(p, String(process.pid))
+    // 'wx'：排他创建，文件已存在则抛 EEXIST——堵住"判定可抢占"与"写入"之间的竞态窗口
+    fs.writeFileSync(p, String(process.pid), { flag: 'wx' })
     fs.utimesSync(p, new Date(now), new Date(now)) // mtime 与调用方时间尺度对齐
     return true
   } catch { return false }
 }
 
-/** 释放升级锁；失败静默（留给过期机制兜底）。 */
+/** 释放升级锁：只删自己持有的锁；不是自己的（已被别的进程重新抢占）→ 不删，留给过期机制回收。失败静默。 */
 export function releaseUpdateLock(dir: string): void {
-  try { fs.rmSync(path.join(dir, LOCK_FILE), { force: true }) } catch { /* 忽略 */ }
+  const p = path.join(dir, LOCK_FILE)
+  try {
+    const pid = parseInt(fs.readFileSync(p, 'utf8').trim(), 10)
+    if (pid !== process.pid) return
+    fs.rmSync(p, { force: true })
+  } catch { /* 忽略：读不出/无文件 */ }
 }
