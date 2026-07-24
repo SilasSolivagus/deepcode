@@ -86,7 +86,7 @@ import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { buildCommitGuidance, buildCommitPushPrGuidance, resolveAttribution, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch, formatDiffView } from '../commitGuidance.js'
 import { formatSkillsList, formatHooksConfig, formatMcpStatus, formatStatus, formatDoctor } from '../infoCommands.js'
 import { VERSION } from '../version.js'
-import { startUpdateCheck, createUpdaterDeps, updatesDisabled, readUpdateState, type UpdateStatus } from '../updater.js'
+import { startUpdateCheck, createUpdaterDeps, updatesDisabled, readUpdateState, shouldCheck, compareVersions, detectInstallCheap, type UpdateStatus } from '../updater.js'
 import { expandTextPlaceholders, type Attachment, type ImageEntry, type TextEntry, type DocEntry } from './pasteFold.js'
 import { describeImage, GlmKeyMissingError } from '../imageDescribe.js'
 import { parseDocument, DocParseTimeoutError } from '../docParse.js'
@@ -794,17 +794,33 @@ export function createChatCore(opts: {
     fireSessionStart('startup')
   }
 
-  // 自动升级检查：延迟 2s fire-and-forget，不阻塞开场；失败全部内部吞掉
+  // 自动升级检查：延迟 2s fire-and-forget，不阻塞开场；失败全部内部吞掉。
+  // 节流闸提到 deps 构造之前（readUpdateState 是纯 fs 读，很便宜）：99% 的交互式启动都会被
+  // 24h 节流立刻挡掉，若仍无条件先构造 deps 会白跑两次同步子进程（npm prefix/registry，各约
+  // 80ms）阻塞 ink 事件循环。节流命中且缓存里已知有更新版时仍要展示提示，但只用零子进程的
+  // detectInstallCheap() 取文案，不构造 deps、不联网。
   if (!updatesDisabled(process.env)) {
-    const updateTimer = setTimeout(() => {
-      void startUpdateCheck(createUpdaterDeps({
-        dir: path.join(home, '.deepcode'),
-        currentVersion: VERSION,
-        autoUpdates: settings.autoUpdates,
-        onStatus: s => { updateStatus = s; setState() },
-      }))
-    }, 2000)
-    updateTimer.unref?.()
+    const updateDir = path.join(home, '.deepcode')
+    const cachedState = readUpdateState(updateDir)
+    if (!shouldCheck(cachedState, Date.now())) {
+      if (cachedState?.latest && compareVersions(cachedState.latest, VERSION) === 1) {
+        const cheap = detectInstallCheap()
+        if (cheap.kind !== 'dev') {
+          updateStatus = { phase: 'available', latest: cachedState.latest, command: cheap.upgradeCommand }
+          setState()
+        }
+      }
+    } else {
+      const updateTimer = setTimeout(() => {
+        void startUpdateCheck(createUpdaterDeps({
+          dir: updateDir,
+          currentVersion: VERSION,
+          autoUpdates: settings.autoUpdates,
+          onStatus: s => { updateStatus = s; setState() },
+        }))
+      }, 2000)
+      updateTimer.unref?.()
+    }
   }
 
   // —— 记忆提取器：每轮末 fire-and-forget onTurnEnd，退出/清空时 drain ——
@@ -2043,6 +2059,10 @@ export function createChatCore(opts: {
         notice('warn', '升级已被 DEEPCODE_DISABLE_UPDATES 关闭')
         return
       }
+      if (detectInstallCheap().kind === 'dev') {
+        notice('info', '当前是仓库工作副本，不检查升级')
+        return
+      }
       notice('info', '正在检查新版本…')
       void startUpdateCheck(createUpdaterDeps({
         dir: path.join(home, '.deepcode'),
@@ -2054,6 +2074,8 @@ export function createChatCore(opts: {
           if (s.phase === 'upgraded') notice('info', `已升级到 ${s.latest}，重启 deepcode 生效`)
           if (s.phase === 'available') notice('info', `有新版 ${s.latest}，运行：${s.command}`)
           if (s.phase === 'failed') notice('warn', `升级失败，请手动运行：${s.command}`)
+          if (s.phase === 'up-to-date') notice('info', `已是最新版 ${s.latest}`)
+          if (s.phase === 'check-failed') notice('warn', '检查新版本失败，请稍后重试')
         },
       }))
       return

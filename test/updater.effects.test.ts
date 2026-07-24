@@ -16,7 +16,7 @@ describe('resolveRegistry', () => {
 
 describe('fetchLatest', () => {
   it('返回 registry 的 version 字段', async () => {
-    const doFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ version: '0.9.3' }) })
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ version: '0.9.3' }) })
     await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBe('0.9.3')
     expect(doFetch).toHaveBeenCalledWith(
       `https://r.example/${PKG}/latest`,
@@ -24,8 +24,23 @@ describe('fetchLatest', () => {
     )
   })
 
+  it('恶意 registry 可重定向到内网地址 → redirect:error 拒绝跟随', async () => {
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ version: '0.9.3' }) })
+    await fetchLatest('https://r.example', 3000, doFetch as any)
+    expect(doFetch).toHaveBeenCalledWith(
+      `https://r.example/${PKG}/latest`,
+      expect.objectContaining({ redirect: 'error' }),
+    )
+  })
+
+  it('响应体超过 64KB → null（防恶意 registry 打爆内存/解析）', async () => {
+    const huge = JSON.stringify({ version: '0.9.3', pad: 'x'.repeat(70 * 1024) })
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => huge })
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
+  })
+
   it('非 200 → null', async () => {
-    const doFetch = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) })
+    const doFetch = vi.fn().mockResolvedValue({ ok: false, text: async () => '' })
     await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
   })
 
@@ -35,8 +50,28 @@ describe('fetchLatest', () => {
   })
 
   it('JSON 无 version 字段 → null', async () => {
-    const doFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ name: 'x' }) })
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ name: 'x' }) })
     await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
+  })
+
+  it('损坏的 JSON → null 而不抛', async () => {
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '{ 坏掉的' })
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
+  })
+
+  it('version 含 ESC 控制序列（终端注入）→ null', async () => {
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ version: '0.9.3\x1b[2J' }) })
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
+  })
+
+  it('version 超长数字串（非常规格式）→ null', async () => {
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ version: '9'.repeat(50) + '.0.0' }) })
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
+  })
+
+  it('version 是正常 semver（含预发布后缀）→ 正常返回', async () => {
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => JSON.stringify({ version: '1.2.3-beta.1' }) })
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBe('1.2.3-beta.1')
   })
 
   it('真正超时 → abort 触发, 返回 null', async () => {

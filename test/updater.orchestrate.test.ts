@@ -88,6 +88,48 @@ describe('startUpdateCheck', () => {
     expect(b.deps.fetchLatest).toHaveBeenCalled()
   })
 
+  it('节流命中但缓存里已知有更新版 → 仍发 available 提示，且不联网、不升级（Bug#3）', async () => {
+    writeUpdateState(dir, { lastCheckAt: NOW - 1000, latest: '0.9.5' })
+    const { deps, seen } = mk() // currentVersion: '0.9.2'
+    await startUpdateCheck(deps)
+    expect(deps.fetchLatest).not.toHaveBeenCalled()
+    expect(deps.runUpgrade).not.toHaveBeenCalled()
+    expect(seen).toEqual([{ phase: 'available', latest: '0.9.5', command: 'npm i -g @silassolivagus/deepcode@latest' }])
+  })
+
+  it('节流命中且缓存里没有更新版（或缓存版本不比当前新）→ 零提示', async () => {
+    writeUpdateState(dir, { lastCheckAt: NOW - 1000, latest: '0.9.2' })
+    const { deps, seen } = mk()
+    await startUpdateCheck(deps)
+    expect(deps.fetchLatest).not.toHaveBeenCalled()
+    expect(seen).toEqual([])
+  })
+
+  it('已是最新 → 终态 up-to-date（Bug#4：不再是零信息的 idle）', async () => {
+    const { deps, seen } = mk({ fetchLatest: vi.fn(async () => '0.9.2') })
+    await startUpdateCheck(deps)
+    expect(seen.at(-1)).toEqual({ phase: 'up-to-date', latest: '0.9.2' })
+  })
+
+  it('查询失败 → 终态 check-failed（Bug#4：不再是零信息的 idle）', async () => {
+    const { deps, seen } = mk({ fetchLatest: vi.fn(async () => null) })
+    await startUpdateCheck(deps)
+    expect(seen.at(-1)).toEqual({ phase: 'check-failed' })
+  })
+
+  it('onStatus 处理 upgraded 时抛出 → 不回滚成 idle（Bug#7）', async () => {
+    const seen: UpdateStatus[] = []
+    const { deps } = mk({
+      onStatus: s => {
+        seen.push(s)
+        if (s.phase === 'upgraded') throw new Error('consumer boom')
+      },
+    })
+    await expect(startUpdateCheck(deps)).resolves.toBeUndefined()
+    expect(seen.at(-1)).toEqual({ phase: 'upgraded', latest: '0.9.3' })
+    expect(seen.some(s => s.phase === 'idle')).toBe(false)
+  })
+
   it('查询失败 → 无终态提示，不抛异常', async () => {
     const { deps, seen } = mk({ fetchLatest: vi.fn(async () => null) })
     await expect(startUpdateCheck(deps)).resolves.toBeUndefined()

@@ -52,7 +52,7 @@ export interface InstallInfo {
   upgradeCommand: string
 }
 
-/** 升级状态。upgraded/failed 是终态，本次会话内不再变化。 */
+/** 升级状态。upgraded/failed/up-to-date/check-failed 是终态，本次会话内不再变化。 */
 export type UpdateStatus =
   | { phase: 'idle' }
   | { phase: 'checking' }
@@ -60,6 +60,8 @@ export type UpdateStatus =
   | { phase: 'upgrading'; latest: string }
   | { phase: 'upgraded'; latest: string }
   | { phase: 'failed'; command: string }
+  | { phase: 'up-to-date'; latest: string }
+  | { phase: 'check-failed' }
 
 /** 页脚文案。过程态返回 null（不渲染，避免开场闪烁）。 */
 export function formatUpdateStatus(s: UpdateStatus): string | null {
@@ -87,11 +89,15 @@ export function autoUpgradeAllowed(env: NodeJS.ProcessEnv, autoUpdates: boolean 
 
 const NPM_CMD = `npm i -g ${PKG}@latest`
 
-/** 判定当前运行副本的安装形态。execPath 应为已解符号链接的绝对路径。 */
+/** 判定当前运行副本的安装形态。execPath 应为已解符号链接的绝对路径。
+ *  isWritable 只在判出 npm-global 时用来复核安装目录是否真的可写
+ *  （sudo npm i -g 装到 root 属主的目录时，普通用户进程判成 npm-global 却写不动，会
+ *  一直静默重试 EACCES；不可写就降级成 foreign，提示带 sudo 的命令，只提示不碰磁盘）。 */
 export function detectInstall(
   execPath: string,
   npmPrefix: string | null,
   hasGitDir: (dir: string) => boolean,
+  isWritable: (dir: string) => boolean,
 ): InstallInfo {
   const p = path.resolve(execPath)
   // 1) dev：从自身开始逐级向上最多 5 层，任一级有 .git → 仓库工作副本，完全静默
@@ -105,11 +111,16 @@ export function detectInstall(
     if (parent === dir) break
     dir = parent
   }
-  // 2) npm-global：落在 <prefix>/lib/node_modules/<PKG>/ 内（Windows 无 lib 段）
+  // 2) npm-global：落在 <prefix>/lib/node_modules/<PKG>/ 内。
+  //    （Windows 上 npm 就是 npm.cmd；Node ≥18.20/20.12 起不带 shell:true 无法 spawn .cmd，
+  //     npmPrefix() 在 Windows 恒为 null，本分支天然走不到——自动升级路径目前不支持 Windows，
+  //     安全降级为只提示，故这里不再判 Windows 专属子路径，避免误导性死代码。）
   if (npmPrefix) {
     const posix = path.join(npmPrefix, 'lib', 'node_modules', PKG) + path.sep
-    const win = path.join(npmPrefix, 'node_modules', PKG) + path.sep
-    if (p.startsWith(posix) || p.startsWith(win)) return { kind: 'npm-global', upgradeCommand: NPM_CMD }
+    if (p.startsWith(posix)) {
+      if (isWritable(npmPrefix)) return { kind: 'npm-global', upgradeCommand: NPM_CMD }
+      return { kind: 'foreign', upgradeCommand: `sudo ${NPM_CMD}` }
+    }
   }
   // 3) foreign：按路径线索给对应包管理器命令，判不出回落通用 npm
   if (p.includes(`${path.sep}pnpm${path.sep}`)) return { kind: 'foreign', upgradeCommand: `pnpm add -g ${PKG}@latest` }
@@ -187,6 +198,10 @@ export function resolveRegistry(readNpmConfig: () => string | null): string {
   } catch { return DEFAULT_REGISTRY }
 }
 
+/** 版本号白名单：不匹配即视为不可信（可能是恶意 registry 塞入的控制字符/超长串），拒绝落盘与展示。 */
+const VERSION_WHITELIST_RE = /^\d{1,6}\.\d{1,6}\.\d{1,6}(?:[-+][\w.-]{0,64})?$/
+const MAX_RESPONSE_BYTES = 64 * 1024
+
 /** 查最新版本号；任何失败静默返回 null。 */
 export async function fetchLatest(
   registry: string, timeoutMs = 3000, doFetch: typeof fetch = fetch,
@@ -194,10 +209,16 @@ export async function fetchLatest(
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), timeoutMs)
   try {
-    const res = await doFetch(`${registry}/${PKG}/latest`, { signal: ac.signal })
+    // redirect:'error'：恶意 registry 可能把响应重定向到内网地址，绝不跟随
+    const res = await doFetch(`${registry}/${PKG}/latest`, { signal: ac.signal, redirect: 'error' })
     if (!res.ok) return null
-    const body: any = await res.json()
-    return typeof body?.version === 'string' ? body.version : null
+    const text = await res.text()
+    if (text.length > MAX_RESPONSE_BYTES) return null // 恶意超大响应体，拒绝解析
+    let body: any
+    try { body = JSON.parse(text) } catch { return null }
+    const v = body?.version
+    if (typeof v !== 'string') return null
+    return VERSION_WHITELIST_RE.test(v) ? v : null
   } catch { return null } finally { clearTimeout(timer) }
 }
 
@@ -244,11 +265,31 @@ function npmPrefix(): string | null {
   } catch { return null }
 }
 
-/** 读 npm 配置的 registry；失败 → null（则回落官方源）。 */
+/** 读 npm 配置的 registry；失败 → null（则回落官方源）。
+ *  必须带 -g：不带 -g 时 execFileSync 继承 process.cwd()，若该目录（用户打开的仓库）带恶意
+ *  .npmrc 的 registry 字段，会被劫持——我们做的是全局安装，语义上也该查全局 registry。 */
 function npmRegistry(): string | null {
   try {
-    return execFileSync('npm', ['config', 'get', 'registry'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null
+    return execFileSync('npm', ['config', 'get', 'registry', '-g'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null
   } catch { return null }
+}
+
+function defaultHasGitDir(dir: string): boolean {
+  try { return fs.existsSync(path.join(dir, '.git')) } catch { return false }
+}
+
+function currentExecPath(): string {
+  let execPath = process.argv[1] ?? ''
+  try { execPath = fs.realpathSync(execPath) } catch { /* 保留原值 */ }
+  return execPath
+}
+
+/** 零子进程的安装形态粗判：只用 fs 检查，不查 npm prefix（传 null）。npm-global 因缺 prefix
+ *  判不出、会归到 foreign（但 foreign 的通用命令与 npm-global 的命令文本相同，不影响展示）。
+ *  用于「只是要展示提示文案，不需要精确到能否自动升级」的零成本场景（节流命中时的展示/
+ *  /update 命令里判断 dev 是否要静默）——真要精确判定 npm-global 仍须走 createUpdaterDeps。 */
+export function detectInstallCheap(): InstallInfo {
+  return detectInstall(currentExecPath(), null, defaultHasGitDir, () => false)
 }
 
 /** 组装生产用 deps：解析安装形态与 registry，绑定真实 fetch/spawn。不产生任何可见副作用。 */
@@ -259,18 +300,16 @@ export function createUpdaterDeps(o: {
   onStatus: (s: UpdateStatus) => void
   force?: boolean
 }): UpdaterDeps {
-  let execPath = process.argv[1] ?? ''
-  try { execPath = fs.realpathSync(execPath) } catch { /* 保留原值 */ }
-  const hasGitDir = (dir: string) => {
-    try { return fs.existsSync(path.join(dir, '.git')) } catch { return false }
-  }
-  // 先用不需要 npm prefix 的方式判 dev（传 null 时 detectInstall 不会判出 npm-global）——
+  // 先用零子进程的粗判（传 null prefix，detectInstall 不会判出 npm-global）——
   // 命中 dev 就直接返回，一次子进程都不跑。只有非 dev 才值得花两次 execFileSync 去探
   // npm prefix/registry；此时须用真实 prefix 重新判定形态，才能正确识别 npm 全局安装。
-  let install = detectInstall(execPath, null, hasGitDir)
+  let install = detectInstallCheap()
   let registry = DEFAULT_REGISTRY
   if (install.kind !== 'dev') {
-    install = detectInstall(execPath, npmPrefix(), hasGitDir)
+    const isWritable = (dir: string): boolean => {
+      try { fs.accessSync(dir, fs.constants.W_OK); return true } catch { return false }
+    }
+    install = detectInstall(currentExecPath(), npmPrefix(), defaultHasGitDir, isWritable)
     registry = resolveRegistry(npmRegistry)
   }
   return {
@@ -290,33 +329,50 @@ export function createUpdaterDeps(o: {
 
 /** 编排：节流闸 → 查询 → 比较 → 自动升级/仅提示。全程 fail-safe，绝不抛出。 */
 export async function startUpdateCheck(deps: UpdaterDeps): Promise<void> {
+  // settled：一旦发出过 'checking' 以外的状态，外层 catch 就不再把它回滚成 idle
+  // （Bug#7：消费端处理某个已发出状态时抛出，不该把页脚已展示的内容抹掉）。
+  let settled = false
+  const emit = (s: UpdateStatus): void => {
+    if (s.phase !== 'checking') settled = true
+    deps.onStatus(s)
+  }
   try {
     if (updatesDisabled(deps.env)) return
     if (deps.install.kind === 'dev') return
     const now = deps.now()
-    if (!deps.force && !shouldCheck(readUpdateState(deps.dir), now)) return
+    const state = readUpdateState(deps.dir)
+    if (!deps.force && !shouldCheck(state, now)) {
+      // 节流命中：不联网、不升级，只在缓存里已知有更新时才提示（Bug#3：此前直接 return 会把
+      // 「有新版」的提示整个吞掉——pnpm/bun/foreign 等只提示形态一天只有一次机会看到它）
+      if (state?.latest && compareVersions(state.latest, deps.currentVersion) === 1) {
+        emit({ phase: 'available', latest: state.latest, command: deps.install.upgradeCommand })
+      }
+      return
+    }
 
-    deps.onStatus({ phase: 'checking' })
+    emit({ phase: 'checking' })
     const latest = await deps.fetchLatest(deps.registry)
-    if (!latest) { deps.onStatus({ phase: 'idle' }); return }
+    if (!latest) { emit({ phase: 'check-failed' }); return }
     writeUpdateState(deps.dir, { lastCheckAt: now, latest })
-    if (compareVersions(latest, deps.currentVersion) !== 1) { deps.onStatus({ phase: 'idle' }); return }
+    if (compareVersions(latest, deps.currentVersion) !== 1) { emit({ phase: 'up-to-date', latest }); return }
 
     const canAuto = deps.install.kind === 'npm-global' && autoUpgradeAllowed(deps.env, deps.autoUpdates)
     const available: UpdateStatus = { phase: 'available', latest, command: deps.install.upgradeCommand }
-    if (!canAuto) { deps.onStatus(available); return }
+    if (!canAuto) { emit(available); return }
 
-    if (!tryAcquireUpdateLock(deps.dir, now)) { deps.onStatus(available); return }
+    if (!tryAcquireUpdateLock(deps.dir, now)) { emit(available); return }
     try {
-      deps.onStatus({ phase: 'upgrading', latest })
+      emit({ phase: 'upgrading', latest })
       let ok = false
       try { ok = await deps.runUpgrade() } catch { ok = false }
-      deps.onStatus(ok ? { phase: 'upgraded', latest } : { phase: 'failed', command: deps.install.upgradeCommand })
+      emit(ok ? { phase: 'upgraded', latest } : { phase: 'failed', command: deps.install.upgradeCommand })
     } finally {
       releaseUpdateLock(deps.dir)
     }
   } catch {
-    // 任何意外都不影响会话
-    try { deps.onStatus({ phase: 'idle' }) } catch { /* 忽略 */ }
+    // 任何意外都不影响会话；但已发出过有意义状态的不再回滚成 idle（Bug#7）
+    if (!settled) {
+      try { deps.onStatus({ phase: 'idle' }) } catch { /* 忽略 */ }
+    }
   }
 }
