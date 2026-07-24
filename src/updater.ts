@@ -168,3 +168,48 @@ export function releaseUpdateLock(dir: string): void {
     fs.rmSync(p, { force: true })
   } catch { /* 忽略：读不出/无文件 */ }
 }
+
+const DEFAULT_REGISTRY = 'https://registry.npmjs.org'
+const UPGRADE_TIMEOUT_MS = 300_000 // 5 分钟
+
+/** 解析 registry：尊重用户 npm 配置（国内镜像），强制 http/https 白名单，异常回落官方源。 */
+export function resolveRegistry(readNpmConfig: () => string | null): string {
+  try {
+    const raw = (readNpmConfig() ?? '').trim()
+    if (!raw) return DEFAULT_REGISTRY
+    const u = new URL(raw)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return DEFAULT_REGISTRY
+    return raw.replace(/\/+$/, '')
+  } catch { return DEFAULT_REGISTRY }
+}
+
+/** 查最新版本号；任何失败静默返回 null。 */
+export async function fetchLatest(
+  registry: string, timeoutMs = 3000, doFetch: typeof fetch = fetch,
+): Promise<string | null> {
+  const ac = new AbortController()
+  const timer = setTimeout(() => ac.abort(), timeoutMs)
+  try {
+    const res = await doFetch(`${registry}/${PKG}/latest`, { signal: ac.signal })
+    if (!res.ok) return null
+    const body: any = await res.json()
+    return typeof body?.version === 'string' ? body.version : null
+  } catch { return null } finally { clearTimeout(timer) }
+}
+
+export type SpawnLike = (cmd: string, args: string[], opts: { stdio: 'ignore' }) => {
+  on(ev: 'close' | 'error', cb: (arg: any) => void): void
+  kill(): void
+}
+
+/** 跑 npm 全局升级。固定 argv 数组，无 shell，无字符串拼接。成功 → true。 */
+export async function runUpgrade(spawnFn: SpawnLike, timeoutMs = UPGRADE_TIMEOUT_MS): Promise<boolean> {
+  return new Promise<boolean>(resolve => {
+    let done = false
+    const finish = (ok: boolean) => { if (!done) { done = true; clearTimeout(timer); resolve(ok) } }
+    const child = spawnFn('npm', ['i', '-g', `${PKG}@latest`], { stdio: 'ignore' })
+    const timer = setTimeout(() => { try { child.kill() } catch { /* 忽略 */ } finish(false) }, timeoutMs)
+    child.on('close', (code: number) => finish(code === 0))
+    child.on('error', () => finish(false))
+  })
+}

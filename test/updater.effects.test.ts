@@ -1,0 +1,75 @@
+import { describe, it, expect, vi } from 'vitest'
+import { resolveRegistry, fetchLatest, runUpgrade, PKG } from '../src/updater.js'
+
+describe('resolveRegistry', () => {
+  it('用 npm config 的 registry', () => {
+    expect(resolveRegistry(() => 'https://registry.npmmirror.com/')).toBe('https://registry.npmmirror.com')
+  })
+  it('取不到时回落官方源', () => {
+    expect(resolveRegistry(() => null)).toBe('https://registry.npmjs.org')
+  })
+  it('非 http/https 一律回落官方源', () => {
+    expect(resolveRegistry(() => 'file:///etc/passwd')).toBe('https://registry.npmjs.org')
+    expect(resolveRegistry(() => '不是URL')).toBe('https://registry.npmjs.org')
+  })
+})
+
+describe('fetchLatest', () => {
+  it('返回 registry 的 version 字段', async () => {
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ version: '0.9.3' }) })
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBe('0.9.3')
+    expect(doFetch).toHaveBeenCalledWith(
+      `https://r.example/${PKG}/latest`,
+      expect.objectContaining({ signal: expect.anything() }),
+    )
+  })
+
+  it('非 200 → null', async () => {
+    const doFetch = vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) })
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
+  })
+
+  it('网络异常 → null 而不抛', async () => {
+    const doFetch = vi.fn().mockRejectedValue(new Error('ECONNRESET'))
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
+  })
+
+  it('JSON 无 version 字段 → null', async () => {
+    const doFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ name: 'x' }) })
+    await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
+  })
+})
+
+describe('runUpgrade', () => {
+  it('用固定 argv 数组调 npm，退出码 0 → true', async () => {
+    const spawnFn = vi.fn((_c: string, _a: string[], _o: any) => ({
+      on(ev: string, cb: (arg: any) => void) { if (ev === 'close') setTimeout(() => cb(0), 0) },
+      kill() {},
+    }))
+    await expect(runUpgrade(spawnFn as any)).resolves.toBe(true)
+    expect(spawnFn).toHaveBeenCalledWith('npm', ['i', '-g', `${PKG}@latest`], { stdio: 'ignore' })
+  })
+
+  it('非 0 退出码 → false', async () => {
+    const spawnFn = vi.fn(() => ({
+      on(ev: string, cb: (arg: any) => void) { if (ev === 'close') setTimeout(() => cb(1), 0) },
+      kill() {},
+    }))
+    await expect(runUpgrade(spawnFn as any)).resolves.toBe(false)
+  })
+
+  it('spawn error → false 而不抛', async () => {
+    const spawnFn = vi.fn(() => ({
+      on(ev: string, cb: (arg: any) => void) { if (ev === 'error') setTimeout(() => cb(new Error('ENOENT')), 0) },
+      kill() {},
+    }))
+    await expect(runUpgrade(spawnFn as any)).resolves.toBe(false)
+  })
+
+  it('超时 → kill 子进程并 false', async () => {
+    const kill = vi.fn()
+    const spawnFn = vi.fn(() => ({ on() {}, kill }))
+    await expect(runUpgrade(spawnFn as any, 10)).resolves.toBe(false)
+    expect(kill).toHaveBeenCalled()
+  })
+})
