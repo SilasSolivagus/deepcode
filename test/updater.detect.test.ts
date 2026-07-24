@@ -28,6 +28,31 @@ describe('detectInstall', () => {
     expect(r.upgradeCommand).toBe('sudo npm i -g @silassolivagus/deepcode@latest')
   })
 
+  it('prefix 顶层可写但 lib/node_modules 不可写（sudo npm i -g 装到 root 属主，homebrew/nvm 前缀本身归用户）→ foreign，不能只查 prefix 顶层', () => {
+    // 只有 prefix 顶层可写；真正的写入点 lib/node_modules 及 scope 目录都不可写
+    const isWritable = (dir: string) => dir === '/opt/homebrew'
+    const r = detectInstall(
+      '/opt/homebrew/lib/node_modules/@silassolivagus/deepcode/dist/index.js',
+      '/opt/homebrew',
+      noGit,
+      isWritable,
+    )
+    expect(r.kind).toBe('foreign')
+    expect(r.upgradeCommand).toBe('sudo npm i -g @silassolivagus/deepcode@latest')
+  })
+
+  it('prefix 顶层不可写但 lib/node_modules 与 scope 目录都可写（sudo chown -R 修过 npm EACCES 后，/usr/local 顶层仍归 root）→ npm-global', () => {
+    const isWritable = (dir: string) =>
+      dir === '/opt/homebrew/lib/node_modules' || dir === '/opt/homebrew/lib/node_modules/@silassolivagus'
+    const r = detectInstall(
+      '/opt/homebrew/lib/node_modules/@silassolivagus/deepcode/dist/index.js',
+      '/opt/homebrew',
+      noGit,
+      isWritable,
+    )
+    expect(r.kind).toBe('npm-global')
+  })
+
   it('仓库工作副本内（某级目录有 .git） → dev', () => {
     const hasGit = (dir: string) => dir === '/Users/x/loop/deepcode'
     const r = detectInstall('/Users/x/loop/deepcode/dist/index.js', '/opt/homebrew', hasGit, writable)

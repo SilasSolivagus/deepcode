@@ -112,13 +112,24 @@ export function detectInstall(
     dir = parent
   }
   // 2) npm-global：落在 <prefix>/lib/node_modules/<PKG>/ 内。
+  //    可写性检查目标 = npm 实际会写入的目录：<prefix>/lib/node_modules 本身，
+  //    与 scope 目录 <prefix>/lib/node_modules/<scope>（scoped 包替换需要 scope 目录可写）。
+  //    不查 prefix 顶层——两个方向都会错：sudo npm i -g 常见组合是 prefix 顶层归用户
+  //    （homebrew/nvm 前缀本来就归用户）而 lib/node_modules 归 root，只查 prefix 顶层会漏判；
+  //    反过来 `sudo chown -R $(whoami) .../lib/node_modules`（npm EACCES 全网最高票修法）后
+  //    lib/node_modules 归用户，但 macOS Catalina 起 /usr/local 顶层本身归 root，只查 prefix
+  //    顶层会把这批能装的用户误判成 foreign。走到这条分支的前置条件是当前可执行文件路径落在
+  //    <prefix>/lib/node_modules/<PKG>/ 内，故该目录及其父级（scope 目录）必然存在，不用像
+  //    <prefix>/bin 那样担心目录不存在导致 isWritable 误判成不可写。
   //    （Windows 上 npm 就是 npm.cmd；Node ≥18.20/20.12 起不带 shell:true 无法 spawn .cmd，
   //     npmPrefix() 在 Windows 恒为 null，本分支天然走不到——自动升级路径目前不支持 Windows，
   //     安全降级为只提示，故这里不再判 Windows 专属子路径，避免误导性死代码。）
   if (npmPrefix) {
-    const posix = path.join(npmPrefix, 'lib', 'node_modules', PKG) + path.sep
-    if (p.startsWith(posix)) {
-      if (isWritable(npmPrefix)) return { kind: 'npm-global', upgradeCommand: NPM_CMD }
+    const pkgDir = path.join(npmPrefix, 'lib', 'node_modules', PKG)
+    if (p.startsWith(pkgDir + path.sep)) {
+      const nodeModulesDir = path.join(npmPrefix, 'lib', 'node_modules')
+      const scopeDir = path.dirname(pkgDir)
+      if (isWritable(nodeModulesDir) && isWritable(scopeDir)) return { kind: 'npm-global', upgradeCommand: NPM_CMD }
       return { kind: 'foreign', upgradeCommand: `sudo ${NPM_CMD}` }
     }
   }
@@ -137,7 +148,9 @@ export function readUpdateState(dir: string): UpdateCheckState | null {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(dir, STATE_FILE), 'utf8'))
     if (!raw || typeof raw.lastCheckAt !== 'number') return null
-    return { lastCheckAt: raw.lastCheckAt, latest: typeof raw.latest === 'string' ? raw.latest : undefined }
+    // 与写侧同一白名单：/doctor 会把 latest 插值进终端，读侧必须独立校验（写侧唯一不能是唯一防线）。
+    const latest = typeof raw.latest === 'string' && VERSION_WHITELIST_RE.test(raw.latest) ? raw.latest : undefined
+    return { lastCheckAt: raw.lastCheckAt, latest }
   } catch { return null }
 }
 
@@ -242,6 +255,20 @@ export async function runUpgrade(spawnFn: SpawnLike, timeoutMs = UPGRADE_TIMEOUT
   })
 }
 
+/** 节流命中时的提示判定：缓存版本比当前新且安装形态非 dev → available；否则 null。
+ *  供 useChat 启动路径与 startUpdateCheck 节流分支共用，避免同一条规则实现两遍而漂移
+ *  （这个仓库有过 App/FullscreenApp 双组件不同步的先例）。 */
+export function throttledPrompt(
+  state: UpdateCheckState | null,
+  currentVersion: string,
+  install: InstallInfo,
+): UpdateStatus | null {
+  if (install.kind === 'dev') return null
+  if (!state?.latest) return null
+  if (compareVersions(state.latest, currentVersion) !== 1) return null
+  return { phase: 'available', latest: state.latest, command: install.upgradeCommand }
+}
+
 export interface UpdaterDeps {
   /** 状态与锁所在目录（生产传 ~/.deepcode）。 */
   dir: string
@@ -344,9 +371,8 @@ export async function startUpdateCheck(deps: UpdaterDeps): Promise<void> {
     if (!deps.force && !shouldCheck(state, now)) {
       // 节流命中：不联网、不升级，只在缓存里已知有更新时才提示（Bug#3：此前直接 return 会把
       // 「有新版」的提示整个吞掉——pnpm/bun/foreign 等只提示形态一天只有一次机会看到它）
-      if (state?.latest && compareVersions(state.latest, deps.currentVersion) === 1) {
-        emit({ phase: 'available', latest: state.latest, command: deps.install.upgradeCommand })
-      }
+      const prompt = throttledPrompt(state, deps.currentVersion, deps.install)
+      if (prompt) emit(prompt)
       return
     }
 

@@ -86,7 +86,7 @@ import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { buildCommitGuidance, buildCommitPushPrGuidance, resolveAttribution, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch, formatDiffView } from '../commitGuidance.js'
 import { formatSkillsList, formatHooksConfig, formatMcpStatus, formatStatus, formatDoctor } from '../infoCommands.js'
 import { VERSION } from '../version.js'
-import { startUpdateCheck, createUpdaterDeps, updatesDisabled, readUpdateState, shouldCheck, compareVersions, detectInstallCheap, type UpdateStatus } from '../updater.js'
+import { startUpdateCheck, createUpdaterDeps, updatesDisabled, readUpdateState, shouldCheck, throttledPrompt, detectInstallCheap, type UpdateStatus } from '../updater.js'
 import { expandTextPlaceholders, type Attachment, type ImageEntry, type TextEntry, type DocEntry } from './pasteFold.js'
 import { describeImage, GlmKeyMissingError } from '../imageDescribe.js'
 import { parseDocument, DocParseTimeoutError } from '../docParse.js'
@@ -803,13 +803,8 @@ export function createChatCore(opts: {
     const updateDir = path.join(home, '.deepcode')
     const cachedState = readUpdateState(updateDir)
     if (!shouldCheck(cachedState, Date.now())) {
-      if (cachedState?.latest && compareVersions(cachedState.latest, VERSION) === 1) {
-        const cheap = detectInstallCheap()
-        if (cheap.kind !== 'dev') {
-          updateStatus = { phase: 'available', latest: cachedState.latest, command: cheap.upgradeCommand }
-          setState()
-        }
-      }
+      const prompt = throttledPrompt(cachedState, VERSION, detectInstallCheap())
+      if (prompt) { updateStatus = prompt; setState() }
     } else {
       const updateTimer = setTimeout(() => {
         void startUpdateCheck(createUpdaterDeps({

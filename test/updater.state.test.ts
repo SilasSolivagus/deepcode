@@ -34,6 +34,28 @@ describe('update state', () => {
     fs.writeFileSync(f, 'x') // 用文件当目录 → 写必失败
     expect(() => writeUpdateState(f, { lastCheckAt: 1 })).not.toThrow()
   })
+
+  it('latest 含 ESC 控制序列 → 读回 undefined（/doctor 会把 latest 插值进终端，读侧须与写侧同一白名单）', () => {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'update.json'),
+      JSON.stringify({ lastCheckAt: 1, latest: '1.0.0\x1b]0;pwned\x07' }),
+    )
+    const s = readUpdateState(dir)
+    expect(s?.lastCheckAt).toBe(1)
+    expect(s?.latest).toBeUndefined()
+  })
+
+  it('latest 超长串 → 读回 undefined', () => {
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(
+      path.join(dir, 'update.json'),
+      JSON.stringify({ lastCheckAt: 1, latest: '9'.repeat(5000) }),
+    )
+    const s = readUpdateState(dir)
+    expect(s?.lastCheckAt).toBe(1)
+    expect(s?.latest).toBeUndefined()
+  })
 })
 
 describe('update lock', () => {
