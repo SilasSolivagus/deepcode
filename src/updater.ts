@@ -3,6 +3,8 @@
 // 纯逻辑与副作用分离——副作用（网络/子进程/文件）全部经 deps 注入，便于单测。
 // 安全：包名为模块常量；升级命令固定 argv 数组，registry 返回的字符串绝不进命令行。
 
+import path from 'node:path'
+
 /** npm 包名。硬编码常量，不从任何配置读取（杜绝注入面）。 */
 export const PKG = '@silassolivagus/deepcode'
 
@@ -39,4 +41,40 @@ export function shouldCheck(state: UpdateCheckState | null, now: number, interva
   const last = state.lastCheckAt
   if (typeof last !== 'number' || !Number.isFinite(last) || last <= 0 || last > now) return true
   return now - last >= intervalMs
+}
+
+export type InstallKind = 'npm-global' | 'foreign' | 'dev'
+export interface InstallInfo {
+  kind: InstallKind
+  /** 展示给用户的升级命令文本（非执行用；执行永远走固定 argv 数组）。 */
+  upgradeCommand: string
+}
+
+const NPM_CMD = `npm i -g ${PKG}@latest`
+
+/** 判定当前运行副本的安装形态。execPath 应为已解符号链接的绝对路径。 */
+export function detectInstall(
+  execPath: string,
+  npmPrefix: string | null,
+  hasGitDir: (dir: string) => boolean,
+): InstallInfo {
+  const p = path.resolve(execPath)
+  // 1) dev：从所在目录逐级向上最多 5 层，任一级有 .git → 仓库工作副本，完全静默
+  let dir = path.dirname(p)
+  for (let i = 0; i < 5; i++) {
+    try { if (hasGitDir(dir)) return { kind: 'dev', upgradeCommand: NPM_CMD } } catch { /* 探测失败当作没有 */ }
+    const parent = path.dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  // 2) npm-global：落在 <prefix>/lib/node_modules/<PKG>/ 内（Windows 无 lib 段）
+  if (npmPrefix) {
+    const posix = path.join(npmPrefix, 'lib', 'node_modules', PKG) + path.sep
+    const win = path.join(npmPrefix, 'node_modules', PKG) + path.sep
+    if (p.startsWith(posix) || p.startsWith(win)) return { kind: 'npm-global', upgradeCommand: NPM_CMD }
+  }
+  // 3) foreign：按路径线索给对应包管理器命令，判不出回落通用 npm
+  if (p.includes(`${path.sep}pnpm${path.sep}`)) return { kind: 'foreign', upgradeCommand: `pnpm add -g ${PKG}@latest` }
+  if (p.includes(`${path.sep}.bun${path.sep}`)) return { kind: 'foreign', upgradeCommand: `bun add -g ${PKG}@latest` }
+  return { kind: 'foreign', upgradeCommand: NPM_CMD }
 }
