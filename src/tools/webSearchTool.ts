@@ -55,7 +55,8 @@ export function makeWebSearchTool(deps: { config: WebSearchConfig; fetchJson?: F
     description:
       `搜索网络获取最新信息（当前事件、知识截止后的资料、最新文档），返回标题/链接/摘要。` +
       `回答后必须在末尾加 "Sources:" 段，用 markdown 超链接 [标题](URL) 列出用到的来源（强制）。` +
-      `支持 allowed_domains/blocked_domains 域名过滤（二选一）。搜索查询请用正确年份（当前 ${year}）。`,
+      `支持 allowed_domains/blocked_domains 域名过滤（二选一）。搜索查询请用正确年份（当前 ${year}）。` +
+      `未配 key 时用内置匿名搜索兜底。`,
     inputSchema: schema,
     isReadOnly: false,
     needsPermission: () => 'WebSearch',
