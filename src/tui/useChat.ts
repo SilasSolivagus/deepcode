@@ -86,6 +86,7 @@ import { createStatusLineRunner, execStatusLineCommand } from '../statusLine.js'
 import { buildCommitGuidance, buildCommitPushPrGuidance, resolveAttribution, buildCommitContext, buildPrContext, isEmptyDiff, resolveBaseBranch, formatDiffView } from '../commitGuidance.js'
 import { formatSkillsList, formatHooksConfig, formatMcpStatus, formatStatus, formatDoctor } from '../infoCommands.js'
 import { VERSION } from '../version.js'
+import { startUpdateCheck, createUpdaterDeps, updatesDisabled, readUpdateState, type UpdateStatus } from '../updater.js'
 import { expandTextPlaceholders, type Attachment, type ImageEntry, type TextEntry, type DocEntry } from './pasteFold.js'
 import { describeImage, GlmKeyMissingError } from '../imageDescribe.js'
 import { parseDocument, DocParseTimeoutError } from '../docParse.js'
@@ -364,6 +365,7 @@ export interface ChatState {
   tokenBudget(): number | null // 2.1 sticky token 预算目标（null=未设）
   budgetUsed(): number // 2.1 本次/上次 send 累计输出 token（状态栏 budget 段分子）
   statusLineOutput: string | null // 5.7 自定义状态栏命令输出缓存（null=无/未设）
+  updateStatus: UpdateStatus | null // 自动升级状态（null=无）
 }
 
 export interface ChatCore {
@@ -631,8 +633,10 @@ export function createChatCore(opts: {
   const listeners = new Set<() => void>()
   // 5.7 statusLine 输出（onChange 闭包按引用捕获 setState，运行期才调用，无 TDZ）
   let statusLineOutput: string | null = null
+  // 自动升级状态（后台异步写入，照 statusLineOutput 同样的闭包捕获 setState 范式）
+  let updateStatus: UpdateStatus | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput, updateStatus,
   })
   let state = snap()
   const setState = (): void => {
@@ -788,6 +792,19 @@ export function createChatCore(opts: {
     taskList.bind(sessionIdFromFile(session.file))
     currentTitle = null
     fireSessionStart('startup')
+  }
+
+  // 自动升级检查：延迟 2s fire-and-forget，不阻塞开场；失败全部内部吞掉
+  if (!updatesDisabled(process.env)) {
+    const updateTimer = setTimeout(() => {
+      void startUpdateCheck(createUpdaterDeps({
+        dir: path.join(home, '.deepcode'),
+        currentVersion: VERSION,
+        autoUpdates: settings.autoUpdates,
+        onStatus: s => { updateStatus = s; setState() },
+      }))
+    }, 2000)
+    updateTimer.unref?.()
   }
 
   // —— 记忆提取器：每轮末 fire-and-forget onTurnEnd，退出/清空时 drain ——
@@ -2021,6 +2038,26 @@ export function createChatCore(opts: {
       ))
       return
     }
+    if (line === '/update') {
+      if (updatesDisabled(process.env)) {
+        notice('warn', '升级已被 DEEPCODE_DISABLE_UPDATES 关闭')
+        return
+      }
+      notice('info', '正在检查新版本…')
+      void startUpdateCheck(createUpdaterDeps({
+        dir: path.join(home, '.deepcode'),
+        currentVersion: VERSION,
+        autoUpdates: settings.autoUpdates,
+        force: true,
+        onStatus: s => {
+          updateStatus = s; setState()
+          if (s.phase === 'upgraded') notice('info', `已升级到 ${s.latest}，重启 deepcode 生效`)
+          if (s.phase === 'available') notice('info', `有新版 ${s.latest}，运行：${s.command}`)
+          if (s.phase === 'failed') notice('warn', `升级失败，请手动运行：${s.command}`)
+        },
+      }))
+      return
+    }
     if (line === '/doctor') {
       const prov = activeProvider()
       const hasKey = !!(process.env[prov.apiKeyEnv] || settings.apiKey)
@@ -2032,6 +2069,7 @@ export function createChatCore(opts: {
         { name: 'provider', ok: true, detail: `${prov.id} · ${model}` },
         { name: 'git', ok: git.code === 0, detail: git.output.trim() || '未找到 git' },
         { name: 'Node', ok: true, detail: process.version },
+        { name: '版本', ok: true, detail: `v${VERSION}${readUpdateState(path.join(home, '.deepcode'))?.latest ? ` · 已知最新 ${readUpdateState(path.join(home, '.deepcode'))!.latest}` : ''}` },
         { name: '工作目录可写', ok: cwdWritable, detail: cwd },
         { name: 'settings 解析', ok: true, detail: '正常' },
       ]))

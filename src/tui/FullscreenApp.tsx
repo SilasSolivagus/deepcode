@@ -474,6 +474,7 @@ export function FullscreenApp(props: {
           effortLevel={state.effortLevel}
           toolCounts={toolCounts}
           statusLineOutput={state.statusLineOutput}
+          updateStatus={state.updateStatus}
           focus={isFullscreenComponent && core.focusMode()}
         />
       </Box>
