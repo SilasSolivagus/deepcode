@@ -119,4 +119,12 @@ describe('startUpdateCheck', () => {
     await startUpdateCheck(deps)
     expect(fs.existsSync(path.join(dir, 'update.lock'))).toBe(false)
   })
+
+  it('onStatus 在 upgrading 阶段抛异常 → 锁仍被释放，不外溢', async () => {
+    const { deps } = mk({
+      onStatus: s => { if (s.phase === 'upgrading') throw new Error('boom') },
+    })
+    await expect(startUpdateCheck(deps)).resolves.toBeUndefined()
+    expect(fs.existsSync(path.join(dir, 'update.lock'))).toBe(false)
+  })
 })

@@ -252,10 +252,14 @@ export async function startUpdateCheck(deps: UpdaterDeps): Promise<void> {
     if (!canAuto) { deps.onStatus(available); return }
 
     if (!tryAcquireUpdateLock(deps.dir, now)) { deps.onStatus(available); return }
-    deps.onStatus({ phase: 'upgrading', latest })
-    let ok = false
-    try { ok = await deps.runUpgrade() } catch { ok = false } finally { releaseUpdateLock(deps.dir) }
-    deps.onStatus(ok ? { phase: 'upgraded', latest } : { phase: 'failed', command: deps.install.upgradeCommand })
+    try {
+      deps.onStatus({ phase: 'upgrading', latest })
+      let ok = false
+      try { ok = await deps.runUpgrade() } catch { ok = false }
+      deps.onStatus(ok ? { phase: 'upgraded', latest } : { phase: 'failed', command: deps.install.upgradeCommand })
+    } finally {
+      releaseUpdateLock(deps.dir)
+    }
   } catch {
     // 任何意外都不影响会话
     try { deps.onStatus({ phase: 'idle' }) } catch { /* 忽略 */ }
