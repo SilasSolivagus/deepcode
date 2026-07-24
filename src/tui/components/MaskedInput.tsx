@@ -11,7 +11,6 @@ const PASTE_MIN_LEN = 20
 
 export function MaskedInput(props: {
   masked: boolean
-  placeholder?: string
   onSubmit: (value: string) => void
   onCancel?: () => void
 }) {
@@ -29,7 +28,7 @@ export function MaskedInput(props: {
   const sanitize = (s: string) => s
     .replace(/\x1b?\[20[01]~/g, '')
     // eslint-disable-next-line no-control-regex
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
+    .replace(/[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]/g, '')
 
   const flush = () => {
     if (pasteTimerRef.current) { clearTimeout(pasteTimerRef.current); pasteTimerRef.current = null }
@@ -69,13 +68,11 @@ export function MaskedInput(props: {
 
   return (
     <Box>
-      {value === '' && props.placeholder
-        ? <Text><Text inverse> </Text><Text dimColor>{props.placeholder}</Text></Text>
-        // key 按「空/非空」二值切换（而非随每次按键变化）：ink 5.2.1 在 ink-testing-library 下对
-        // 「同一 Text 节点内容从空串直接跳到多字符串」的首次 update 有渲染 bug（只吐出 1 个字符，
-        // 实测反复验证），逐字符递增 update 不受影响；用 key 只在「空→非空」这一次跳变强制重挂载，
-        // 规避 bug 且不影响后续正常输入性能。
-        : <Text key={value === '' ? 'empty' : 'value'}>{shown}<Text inverse> </Text></Text>}
+      {/* key 按「空/非空」二值切换（而非随每次按键变化）：ink 5.2.1 在 ink-testing-library 下对
+          「同一 Text 节点内容从空串直接跳到多字符串」的首次 update 有渲染 bug（只吐出 1 个字符，
+          实测反复验证），逐字符递增 update 不受影响；用 key 只在「空→非空」这一次跳变强制重挂载，
+          规避 bug 且不影响后续正常输入性能。 */}
+      <Text key={value === '' ? 'empty' : 'value'}>{shown}<Text inverse> </Text></Text>
     </Box>
   )
 }

@@ -119,12 +119,16 @@ function KeyInputStep(props: {
     })
   }
 
-  // 仅 error 阶段监听 r/s 单键；input 阶段的按键交给下方 MaskedInput 处理。
+  // error 阶段监听 r/s 单键；input 阶段的按键交给下方 MaskedInput 处理。
+  // isActive 覆盖 error+validating（MaskedInput 未挂载的两个阶段），而非只 error：
+  // 保证 validating 阶段仍有一个 useInput 挂载着，ink 的 raw mode 引用计数不掉到 0
+  // （降为 0 会 setRawMode(false)，终端回到 cooked 回显，验证等待期间用户按键会明文回显）。
   useInput((input) => {
+    if (phase !== 'error') return
     const k = input.toLowerCase()
     if (k === 'r') { setPhase('input'); setError('') }
     else if (k === 's') { props.onDone(lastRef.current || undefined) }
-  }, { isActive: phase === 'error' })
+  }, { isActive: phase !== 'input' })
 
   return (
     <>
@@ -300,7 +304,7 @@ export function Setup(props: { onDone: () => void; onCancel?: () => void; initia
           <KeyInputStep
             key={step}
             title="搜索 · Tavily（可选）"
-            hint="tavily.com 申请 key；Enter 留空跳过"
+            hint="tavily.com 申请 key"
             optional
             validate={(k) => validateSearchKey('tavily', k)}
             onDone={(k) => { if (k) acc.current.tavily = k; afterSearch() }}
@@ -313,7 +317,7 @@ export function Setup(props: { onDone: () => void; onCancel?: () => void; initia
           <KeyInputStep
             key={step}
             title="图片识别（可选）"
-            hint="图片识别用 GLM，需智谱 ZHIPUAI_API_KEY（open.bigmodel.cn）；Enter 留空跳过"
+            hint="图片识别用 GLM，需智谱 ZHIPUAI_API_KEY（open.bigmodel.cn）"
             optional
             validate={(k) => validateVisionKey(k)}
             onDone={(k) => { if (k) acc.current.visionKey = k; finish() }}
