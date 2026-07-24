@@ -94,8 +94,11 @@ export function detectInstall(
   hasGitDir: (dir: string) => boolean,
 ): InstallInfo {
   const p = path.resolve(execPath)
-  // 1) dev：从所在目录逐级向上最多 5 层，任一级有 .git → 仓库工作副本，完全静默
-  let dir = path.dirname(p)
+  // 1) dev：从自身开始逐级向上最多 5 层，任一级有 .git → 仓库工作副本，完全静默
+  //    从 p 自身起步（而非 path.dirname(p)）：execPath 若解析成目录本身（如 process.argv[1]
+  //    为空时 fs.realpathSync('') 静默落成 cwd），不能被 dirname 跳过而漏检。
+  //    对正常的文件路径，这只是多一次必然为 false 的无害检查。
+  let dir = p
   for (let i = 0; i < 5; i++) {
     try { if (hasGitDir(dir)) return { kind: 'dev', upgradeCommand: NPM_CMD } } catch { /* 探测失败当作没有 */ }
     const parent = path.dirname(dir)

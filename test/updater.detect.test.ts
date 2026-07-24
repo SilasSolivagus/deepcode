@@ -71,4 +71,10 @@ describe('detectInstall', () => {
     const r = detectInstall('/repo/dist/index.js', '/repo', hasGit)
     expect(r.kind).toBe('dev')
   })
+
+  it('execPath 本身是目录且该目录自身含 .git → dev（回归：process.argv[1] 为空时 realpathSync 静默解析成 cwd 目录）', () => {
+    const hasGit = (dir: string) => dir === '/Users/x/loop/deepcode'
+    const r = detectInstall('/Users/x/loop/deepcode', '/opt/homebrew', hasGit)
+    expect(r.kind).toBe('dev')
+  })
 })
