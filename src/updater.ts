@@ -50,6 +50,25 @@ export interface InstallInfo {
   upgradeCommand: string
 }
 
+/** 升级状态。upgraded/failed 是终态，本次会话内不再变化。 */
+export type UpdateStatus =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'available'; latest: string; command: string }
+  | { phase: 'upgrading'; latest: string }
+  | { phase: 'upgraded'; latest: string }
+  | { phase: 'failed'; command: string }
+
+/** 页脚文案。过程态返回 null（不渲染，避免开场闪烁）。 */
+export function formatUpdateStatus(s: UpdateStatus): string | null {
+  switch (s.phase) {
+    case 'upgraded': return `✦ 已升至 ${s.latest} · 重启生效`
+    case 'available': return `✦ 有新版 ${s.latest} · ${s.command}`
+    case 'failed': return `✦ 升级失败 · ${s.command}`
+    default: return null
+  }
+}
+
 const NPM_CMD = `npm i -g ${PKG}@latest`
 
 /** 判定当前运行副本的安装形态。execPath 应为已解符号链接的绝对路径。 */
