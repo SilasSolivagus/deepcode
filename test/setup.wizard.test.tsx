@@ -20,13 +20,15 @@ describe('Setup 多步向导', () => {
     vi.clearAllMocks()
   })
 
-  it('面板外壳 + 步骤条：标题与 4 步词渲染，随步骤前进仍可见', async () => {
+  it('双列品牌布局：左品牌列（版本/欢迎/© Silas）+ 右列步骤条，随步骤前进仍可见', async () => {
     vi.mocked(keyValidate.validateLlmKey).mockResolvedValue({ ok: true })
     const { stdin, lastFrame } = render(<Setup onDone={() => {}} />)
     await delay()
 
-    // provider 步：面板标题 + 步骤条 4 步词
-    expect(lastFrame()).toContain('首次配置')
+    // provider 步：左品牌列 + 右列步骤条 4 步词
+    expect(lastFrame()).toContain('deepcode v')
+    expect(lastFrame()).toContain('欢迎使用')
+    expect(lastFrame()).toContain('© Silas')
     expect(lastFrame()).toContain('选择模型')
     expect(lastFrame()).toContain('密钥')
     expect(lastFrame()).toContain('搜索')
@@ -34,7 +36,7 @@ describe('Setup 多步向导', () => {
 
     stdin.write('\r') // provider：默认 DeepSeek → llmKey 步
     await delay()
-    expect(lastFrame()).toContain('首次配置')
+    expect(lastFrame()).toContain('deepcode v')
     expect(lastFrame()).toContain('密钥')
   })
 

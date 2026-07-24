@@ -16,7 +16,7 @@ const LOGO = [
 ]
 
 // 可见宽度：CJK/全角/emoji 计 2 列，其余 1 列
-function dispWidth(s: string): number {
+export function dispWidth(s: string): number {
   let w = 0
   for (const ch of s) {
     const c = ch.codePointAt(0) ?? 0
@@ -28,7 +28,7 @@ function dispWidth(s: string): number {
   }
   return w
 }
-const padTo = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - dispWidth(s)))
+export const padTo = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - dispWidth(s)))
 const leftPad = (s: string, n: number) => ' '.repeat(Math.max(0, n)) + s
 
 // 把绝对路径里的 home 前缀缩成 ~（如 ~/loop 显示）

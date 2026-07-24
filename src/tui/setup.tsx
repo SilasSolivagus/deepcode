@@ -12,7 +12,9 @@ import { validateLlmKey, validateSearchKey, validateVisionKey, type ValidateResu
 import { BUILTIN_PROVIDERS, providerLabel, type ProviderId } from '../providers.js'
 import { SelectList } from './components/SelectList.js'
 import { MaskedInput } from './components/MaskedInput.js'
+import { dispWidth, padTo } from './components/Banner.js'
 import { DEFAULT_THEME } from './theme.js'
+import { VERSION } from '../version.js'
 const T = DEFAULT_THEME
 
 const PROVIDER_ORDER: ProviderId[] = ['deepseek', 'glm', 'kimi', 'custom']
@@ -20,12 +22,47 @@ const PROVIDER_ITEMS = ['DeepSeek（默认）', 'GLM', 'Kimi', '自定义']
 
 const STEP_LABELS = ['选择模型', '密钥', '搜索', '图片']
 
-/** 圆角 accent 面板外壳：各步内容套进去。title 缺省为向导标题；step 给时在标题下渲染步骤条。 */
-function WizardPanel(props: { title?: string; step?: 1 | 2 | 3 | 4; children: React.ReactNode }) {
+// 左品牌列（镜像欢迎 Banner）：版本/欢迎语/logo/落款，纯文本手工等宽，避免 ink row 布局阶梯错乱。
+type BrandLine = { text: string; color?: string; dim?: boolean; bold?: boolean }
+const BRAND_LINES: BrandLine[] = [
+  { text: `✦ deepcode v${VERSION}`, color: T.accent, bold: true },
+  { text: '欢迎使用！', bold: true },
+  { text: '' },
+  { text: '      ✦', color: T.accent },
+  { text: '    ❯ ▌', color: T.accent },
+  { text: '' },
+  { text: '配置完 /setup 可改', dim: true },
+  { text: '© Silas', dim: true },
+]
+const BRAND_W = Math.max(...BRAND_LINES.map(l => dispWidth(l.text)))
+
+/** 双列圆角面板：左品牌列（固定宽，纯文本）+ 右内容列（真组件树，step 给时在顶部渲染步骤条）。
+ *  alignItems="flex-start" 防止两列高度不等时把外框撑歪；分隔线用右列的 borderLeft 天然随内容高度伸缩。 */
+function WizardPanel(props: { step?: 1 | 2 | 3 | 4; children: React.ReactNode }) {
+  return (
+    <Box borderStyle="round" borderColor={T.accent} flexDirection="row" alignItems="flex-start">
+      <Box flexDirection="column" paddingX={1}>
+        {BRAND_LINES.map((l, i) => (
+          <Text key={i} color={l.color} dimColor={l.dim} bold={l.bold}>{padTo(l.text, BRAND_W)}</Text>
+        ))}
+      </Box>
+      <Box
+        flexDirection="column" flexGrow={1} paddingX={1} minHeight={BRAND_LINES.length}
+        borderStyle="single" borderTop={false} borderBottom={false} borderRight={false} borderColor={T.accent}
+      >
+        {props.step != null && <StepBar current={props.step} />}
+        <Text> </Text>
+        {props.children}
+      </Box>
+    </Box>
+  )
+}
+
+/** SoloKeyEntry 专用单面板外壳（不变）：会话中 key 录入 overlay，非首跑向导，保持原单列观感。 */
+function SoloPanel(props: { title: string; children: React.ReactNode }) {
   return (
     <Box borderStyle="round" borderColor={T.accent} paddingX={1} flexDirection="column">
-      <Text color={T.accent} bold>{props.title ?? '✦ deepcode · 首次配置'}</Text>
-      {props.step != null && <StepBar current={props.step} />}
+      <Text color={T.accent} bold>{props.title}</Text>
       <Text> </Text>
       {props.children}
     </Box>
@@ -163,7 +200,7 @@ export function SoloKeyEntry(props: {
 }) {
   useInput((_input, key) => { if (key.escape) props.onCancel() })
   return (
-    <WizardPanel title={`🐳 切换到 ${props.label}`}>
+    <SoloPanel title={`🐳 切换到 ${props.label}`}>
       <Text dimColor>尚未配置 API key，录入后立即切换（Esc 取消）</Text>
       <KeyInputStep
         title={`${props.label} API key`}
@@ -172,7 +209,7 @@ export function SoloKeyEntry(props: {
         validate={(k) => validateLlmKey({ apiKeyEnvOrKey: k, baseURL: props.baseURL, model: props.model })}
         onDone={(k) => { if (k) props.onDone(k); else props.onCancel() }}
       />
-    </WizardPanel>
+    </SoloPanel>
   )
 }
 
