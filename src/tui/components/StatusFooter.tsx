@@ -5,6 +5,7 @@
 import React from 'react'
 import { Box, Text } from 'ink'
 import { useTheme, DEFAULT_THEME } from '../theme.js'
+import { formatUpdateStatus, type UpdateStatus } from '../../updater.js'
 
 export function contextBarColor(pct: number, theme: typeof DEFAULT_THEME = DEFAULT_THEME): string {
   if (pct >= 95) return theme.err
@@ -41,6 +42,7 @@ export function StatusFooter(props: {
   toolCounts: Array<{ name: string; n: number }>
   statusLineOutput?: string | null // 5.7 自定义状态栏命令输出（null/undefined=不显示）
   focus?: boolean // Task6：focus 视图徽标（仅全屏 + focusMode 时由父层置 true）
+  updateStatus?: UpdateStatus | null // 自动升级状态（null/过程态=不显示）
 }) {
   const T = useTheme()
   const usedPct = props.contextWindow > 0 ? (props.contextUsed / props.contextWindow) * 100 : 0
@@ -103,6 +105,11 @@ export function StatusFooter(props: {
         )}
         <Text dimColor>/ 看命令 · @ 引用文件 · ! 跑 shell</Text>
       </Box>
+
+      {(() => {
+        const t = props.updateStatus ? formatUpdateStatus(props.updateStatus) : null
+        return t ? <Text color={T.accent}>{t}</Text> : null
+      })()}
     </Box>
   )
 }
