@@ -69,6 +69,20 @@ export function formatUpdateStatus(s: UpdateStatus): string | null {
   }
 }
 
+const on = (v: string | undefined): boolean => !!v && v !== '0' && v !== 'false'
+
+/** 全关开关：不查询、不提示、/update 直接拒。 */
+export function updatesDisabled(env: NodeJS.ProcessEnv): boolean {
+  return on(env.DEEPCODE_DISABLE_UPDATES)
+}
+
+/** 是否允许后台自动升级（仍会检查与提示）。 */
+export function autoUpgradeAllowed(env: NodeJS.ProcessEnv, autoUpdates: boolean | undefined): boolean {
+  if (updatesDisabled(env)) return false
+  if (on(env.DEEPCODE_DISABLE_AUTOUPDATER)) return false
+  return autoUpdates !== false
+}
+
 const NPM_CMD = `npm i -g ${PKG}@latest`
 
 /** 判定当前运行副本的安装形态。execPath 应为已解符号链接的绝对路径。 */
