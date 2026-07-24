@@ -198,7 +198,7 @@ export async function fetchLatest(
 }
 
 export type SpawnLike = (cmd: string, args: string[], opts: { stdio: 'ignore' }) => {
-  on(ev: 'close' | 'error', cb: (arg: any) => void): void
+  on(ev: 'close' | 'error', cb: (arg: number | Error) => void): void
   kill(): void
 }
 
@@ -206,10 +206,13 @@ export type SpawnLike = (cmd: string, args: string[], opts: { stdio: 'ignore' })
 export async function runUpgrade(spawnFn: SpawnLike, timeoutMs = UPGRADE_TIMEOUT_MS): Promise<boolean> {
   return new Promise<boolean>(resolve => {
     let done = false
-    const finish = (ok: boolean) => { if (!done) { done = true; clearTimeout(timer); resolve(ok) } }
-    const child = spawnFn('npm', ['i', '-g', `${PKG}@latest`], { stdio: 'ignore' })
-    const timer = setTimeout(() => { try { child.kill() } catch { /* 忽略 */ } finish(false) }, timeoutMs)
-    child.on('close', (code: number) => finish(code === 0))
-    child.on('error', () => finish(false))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = (ok: boolean) => { if (!done) { done = true; if (timer) clearTimeout(timer); resolve(ok) } }
+    try {
+      const child = spawnFn('npm', ['i', '-g', `${PKG}@latest`], { stdio: 'ignore' })
+      timer = setTimeout(() => { try { child.kill() } catch { /* 忽略 */ } finish(false) }, timeoutMs)
+      child.on('close', (code: number | Error) => finish(code === 0))
+      child.on('error', () => finish(false))
+    } catch { finish(false) }
   })
 }

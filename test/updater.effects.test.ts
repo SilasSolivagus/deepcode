@@ -38,6 +38,25 @@ describe('fetchLatest', () => {
     const doFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ name: 'x' }) })
     await expect(fetchLatest('https://r.example', 3000, doFetch as any)).resolves.toBeNull()
   })
+
+  it('真正超时 → abort 触发, 返回 null', async () => {
+    vi.useFakeTimers()
+    try {
+      let capturedSignal: AbortSignal | undefined
+      const doFetch = vi.fn((_url: string, opts: { signal: AbortSignal }) => {
+        capturedSignal = opts.signal
+        return new Promise((_resolve, reject) => {
+          opts.signal.addEventListener('abort', () => reject(new Error('AbortError')))
+        })
+      })
+      const promise = fetchLatest('https://r.example', 3000, doFetch as any)
+      await vi.advanceTimersByTimeAsync(3000)
+      await expect(promise).resolves.toBeNull()
+      expect(capturedSignal?.aborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('runUpgrade', () => {
@@ -71,5 +90,10 @@ describe('runUpgrade', () => {
     const spawnFn = vi.fn(() => ({ on() {}, kill }))
     await expect(runUpgrade(spawnFn as any, 10)).resolves.toBe(false)
     expect(kill).toHaveBeenCalled()
+  })
+
+  it('spawnFn 同步抛出（EAGAIN/EMFILE 等资源耗尽）→ false 而不是 rejected promise', async () => {
+    const spawnFn = vi.fn(() => { throw new Error('EAGAIN') })
+    await expect(runUpgrade(spawnFn as any)).resolves.toBe(false)
   })
 })
