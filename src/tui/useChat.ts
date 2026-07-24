@@ -2069,7 +2069,10 @@ export function createChatCore(opts: {
         { name: 'provider', ok: true, detail: `${prov.id} · ${model}` },
         { name: 'git', ok: git.code === 0, detail: git.output.trim() || '未找到 git' },
         { name: 'Node', ok: true, detail: process.version },
-        { name: '版本', ok: true, detail: `v${VERSION}${readUpdateState(path.join(home, '.deepcode'))?.latest ? ` · 已知最新 ${readUpdateState(path.join(home, '.deepcode'))!.latest}` : ''}` },
+        { name: '版本', ok: true, detail: (() => {
+          const latest = readUpdateState(path.join(home, '.deepcode'))?.latest
+          return `v${VERSION}${latest ? ` · 已知最新 ${latest}` : ''}`
+        })() },
         { name: '工作目录可写', ok: cwdWritable, detail: cwd },
         { name: 'settings 解析', ok: true, detail: '正常' },
       ]))

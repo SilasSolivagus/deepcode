@@ -261,9 +261,18 @@ export function createUpdaterDeps(o: {
 }): UpdaterDeps {
   let execPath = process.argv[1] ?? ''
   try { execPath = fs.realpathSync(execPath) } catch { /* 保留原值 */ }
-  const install = detectInstall(execPath, npmPrefix(), dir => {
+  const hasGitDir = (dir: string) => {
     try { return fs.existsSync(path.join(dir, '.git')) } catch { return false }
-  })
+  }
+  // 先用不需要 npm prefix 的方式判 dev（传 null 时 detectInstall 不会判出 npm-global）——
+  // 命中 dev 就直接返回，一次子进程都不跑。只有非 dev 才值得花两次 execFileSync 去探
+  // npm prefix/registry；此时须用真实 prefix 重新判定形态，才能正确识别 npm 全局安装。
+  let install = detectInstall(execPath, null, hasGitDir)
+  let registry = DEFAULT_REGISTRY
+  if (install.kind !== 'dev') {
+    install = detectInstall(execPath, npmPrefix(), hasGitDir)
+    registry = resolveRegistry(npmRegistry)
+  }
   return {
     dir: o.dir,
     env: process.env,
@@ -271,7 +280,7 @@ export function createUpdaterDeps(o: {
     currentVersion: o.currentVersion,
     install,
     autoUpdates: o.autoUpdates,
-    registry: resolveRegistry(npmRegistry),
+    registry,
     fetchLatest: reg => fetchLatest(reg),
     runUpgrade: () => runUpgrade(spawn as unknown as SpawnLike),
     onStatus: o.onStatus,
