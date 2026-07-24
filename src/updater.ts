@@ -5,6 +5,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawn, execFileSync } from 'node:child_process'
 
 /** npm 包名。硬编码常量，不从任何配置读取（杜绝注入面）。 */
 export const PKG = '@silassolivagus/deepcode'
@@ -231,6 +232,48 @@ export interface UpdaterDeps {
   onStatus: (s: UpdateStatus) => void
   /** true = 绕过 24h 节流（/update 手动触发）。 */
   force?: boolean
+}
+
+/** 查 npm 全局 prefix；失败 → null（则不判 npm-global，退化为只提示）。 */
+function npmPrefix(): string | null {
+  try {
+    return execFileSync('npm', ['prefix', '-g'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null
+  } catch { return null }
+}
+
+/** 读 npm 配置的 registry；失败 → null（则回落官方源）。 */
+function npmRegistry(): string | null {
+  try {
+    return execFileSync('npm', ['config', 'get', 'registry'], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null
+  } catch { return null }
+}
+
+/** 组装生产用 deps：解析安装形态与 registry，绑定真实 fetch/spawn。不产生任何可见副作用。 */
+export function createUpdaterDeps(o: {
+  dir: string
+  currentVersion: string
+  autoUpdates: boolean | undefined
+  onStatus: (s: UpdateStatus) => void
+  force?: boolean
+}): UpdaterDeps {
+  let execPath = process.argv[1] ?? ''
+  try { execPath = fs.realpathSync(execPath) } catch { /* 保留原值 */ }
+  const install = detectInstall(execPath, npmPrefix(), dir => {
+    try { return fs.existsSync(path.join(dir, '.git')) } catch { return false }
+  })
+  return {
+    dir: o.dir,
+    env: process.env,
+    now: () => Date.now(),
+    currentVersion: o.currentVersion,
+    install,
+    autoUpdates: o.autoUpdates,
+    registry: resolveRegistry(npmRegistry),
+    fetchLatest: reg => fetchLatest(reg),
+    runUpgrade: () => runUpgrade(spawn as unknown as SpawnLike),
+    onStatus: o.onStatus,
+    force: o.force,
+  }
 }
 
 /** 编排：节流闸 → 查询 → 比较 → 自动升级/仅提示。全程 fail-safe，绝不抛出。 */
