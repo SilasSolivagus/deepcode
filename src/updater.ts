@@ -216,3 +216,48 @@ export async function runUpgrade(spawnFn: SpawnLike, timeoutMs = UPGRADE_TIMEOUT
     } catch { finish(false) }
   })
 }
+
+export interface UpdaterDeps {
+  /** 状态与锁所在目录（生产传 ~/.deepcode）。 */
+  dir: string
+  env: NodeJS.ProcessEnv
+  now: () => number
+  currentVersion: string
+  install: InstallInfo
+  autoUpdates: boolean | undefined
+  registry: string
+  fetchLatest: (registry: string) => Promise<string | null>
+  runUpgrade: () => Promise<boolean>
+  onStatus: (s: UpdateStatus) => void
+  /** true = 绕过 24h 节流（/update 手动触发）。 */
+  force?: boolean
+}
+
+/** 编排：节流闸 → 查询 → 比较 → 自动升级/仅提示。全程 fail-safe，绝不抛出。 */
+export async function startUpdateCheck(deps: UpdaterDeps): Promise<void> {
+  try {
+    if (updatesDisabled(deps.env)) return
+    if (deps.install.kind === 'dev') return
+    const now = deps.now()
+    if (!deps.force && !shouldCheck(readUpdateState(deps.dir), now)) return
+
+    deps.onStatus({ phase: 'checking' })
+    const latest = await deps.fetchLatest(deps.registry)
+    if (!latest) { deps.onStatus({ phase: 'idle' }); return }
+    writeUpdateState(deps.dir, { lastCheckAt: now, latest })
+    if (compareVersions(latest, deps.currentVersion) !== 1) { deps.onStatus({ phase: 'idle' }); return }
+
+    const canAuto = deps.install.kind === 'npm-global' && autoUpgradeAllowed(deps.env, deps.autoUpdates)
+    const available: UpdateStatus = { phase: 'available', latest, command: deps.install.upgradeCommand }
+    if (!canAuto) { deps.onStatus(available); return }
+
+    if (!tryAcquireUpdateLock(deps.dir, now)) { deps.onStatus(available); return }
+    deps.onStatus({ phase: 'upgrading', latest })
+    let ok = false
+    try { ok = await deps.runUpgrade() } catch { ok = false } finally { releaseUpdateLock(deps.dir) }
+    deps.onStatus(ok ? { phase: 'upgraded', latest } : { phase: 'failed', command: deps.install.upgradeCommand })
+  } catch {
+    // 任何意外都不影响会话
+    try { deps.onStatus({ phase: 'idle' }) } catch { /* 忽略 */ }
+  }
+}
