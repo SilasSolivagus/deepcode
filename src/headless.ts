@@ -22,6 +22,7 @@ import { makeHookRuntime } from './hookRuntime.js'
 import { initMcpTools } from './mcp.js'
 import { createMcpRegistry } from './mcpRegistry.js'
 import { loadSkills } from './skillsLoader.js'
+import { headlessToolArg } from './headlessTrace.js'
 import { makeSkillTool } from './tools/skill.js'
 import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
@@ -177,7 +178,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   try {
     while (!(step = await gen.next()).done) {
       const ev = step.value
-      if (ev.type === 'tool_start') process.stderr.write(`⏺ ${ev.name}(${ev.desc.slice(0, 100)})\n`)
+      if (ev.type === 'tool_start') process.stderr.write(`⏺ ${ev.name}(${headlessToolArg(ev.name, ev.desc)})\n`)
       if (ev.type === 'turn_end') { turns++; addUsage(ev.usage) }
     }
   } finally {
