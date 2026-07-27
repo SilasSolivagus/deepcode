@@ -1,52 +1,46 @@
 // src/tui/toolArg.ts
-// 纯函数：从工具调用的原始 JSON 参数串提取主参数，用于 ⏺ Name(arg) 渲染。
-// 无副作用（不碰 fs / ink），便于单测。
+// 纯函数：从工具调用的原始 JSON 参数串提取主参数。无副作用（不碰 fs / ink），便于单测。
+// 拆两层：extractToolArg（提取标识字段，无截断）+ clean（折叠控制字符 + 可传上限截断）。
+// formatToolArg（TUI）= clean∘extract，截 60；headless 侧另用 clean(…, 500)（见 headlessTrace.ts）。
 const MAX = 60
 
-/** 折叠换行/控制字符为空格，截断到 60 字符（超出加 …）。*/
-function clean(s: string): string {
+/** 折叠换行/控制字符为空格，超 maxLen 截断加 …（缺省 60）。*/
+export function clean(s: string, maxLen = MAX): string {
   const collapsed = s.replace(/[\n\r\t]+/g, ' ').replace(/[\x00-\x1f\x7f-\x9f]+/g, ' ').trim()
-  return collapsed.length > MAX ? collapsed.slice(0, MAX) + '…' : collapsed
+  return collapsed.length > maxLen ? collapsed.slice(0, maxLen) + '…' : collapsed
 }
 
-export function formatToolArg(name: string, desc: string): string {
+/** 按工具类型提取标识主参数，不截断。JSON 解析失败返回原 desc。 */
+export function extractToolArg(name: string, desc: string): string {
   let args: Record<string, unknown>
   try {
     args = JSON.parse(desc)
   } catch {
-    // JSON 解析失败：降级为原文截断
-    return clean(desc)
+    return desc
   }
-
-  let raw: string
   switch (name) {
     case 'Read':
     case 'Edit':
     case 'Write':
-      raw = String(args.file_path ?? '')
-      break
+      return String(args.file_path ?? '')
     case 'Bash':
-      raw = String(args.command ?? '')
-      break
+      return String(args.command ?? '')
     case 'Grep':
     case 'Glob':
-      raw = String(args.pattern ?? '')
-      break
+      return String(args.pattern ?? '')
     case 'Agent':
-      raw = String(args.description ?? '')
-      break
+      return String(args.description ?? '')
     case 'TaskCreate':
-      raw = String(args.subject ?? '')
-      break
+      return String(args.subject ?? '')
     case 'TaskUpdate':
-      raw = `#${String(args.taskId ?? '')}${args.status ? ` → ${args.status}` : ''}`
-      break
+      return `#${String(args.taskId ?? '')}${args.status ? ` → ${args.status}` : ''}`
     default: {
-      // 未知工具：取第一个字符串值字段
       const first = Object.values(args).find(v => typeof v === 'string')
-      raw = typeof first === 'string' ? first : ''
+      return typeof first === 'string' ? first : ''
     }
   }
+}
 
-  return clean(raw)
+export function formatToolArg(name: string, desc: string): string {
+  return clean(extractToolArg(name, desc), MAX)
 }
