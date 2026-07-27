@@ -15,10 +15,16 @@ vi.mock('node:child_process', async importOriginal => {
   const actual = await importOriginal<typeof import('node:child_process')>()
   return { ...actual, execFileSync: execFileSyncMock }
 })
+// dev 判定还要求「那一级的 package.json 就是本包」（防 npm prefix/用户仓库带 .git 被误判成
+// dev 而静默失效），故除 .git 探测外还要让 package.json 读起来像本包。
 vi.mock('node:fs', async importOriginal => {
   const actual = await importOriginal<typeof import('node:fs')>()
   const existsSync = () => true
-  return { ...actual, existsSync, default: { ...(actual as any).default, existsSync } }
+  const readFileSync = ((p: any, ...rest: any[]) =>
+    String(p).endsWith('package.json')
+      ? JSON.stringify({ name: '@silassolivagus/deepcode' })
+      : (actual as any).readFileSync(p, ...rest)) as typeof actual.readFileSync
+  return { ...actual, existsSync, readFileSync, default: { ...(actual as any).default, existsSync, readFileSync } }
 })
 
 import { createUpdaterDeps } from '../src/updater.js'

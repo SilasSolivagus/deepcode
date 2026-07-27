@@ -103,15 +103,23 @@ export function detectInstall(
   npmPrefix: string | null,
   hasGitDir: (dir: string) => boolean,
   isWritable: (dir: string) => boolean,
+  pkgNameIn: (dir: string) => string | null,
 ): InstallInfo {
   const p = path.resolve(execPath)
-  // 1) dev：从自身开始逐级向上最多 5 层，任一级有 .git → 仓库工作副本，完全静默
+  // 1) dev：从自身开始逐级向上最多 5 层，某级既有 .git 又有本包的 package.json → 仓库工作副本，完全静默
   //    从 p 自身起步（而非 path.dirname(p)）：execPath 若解析成目录本身（如 process.argv[1]
   //    为空时 fs.realpathSync('') 静默落成 cwd），不能被 dirname 跳过而漏检。
   //    对正常的文件路径，这只是多一次必然为 false 的无害检查。
+  //    只认 .git 不够：npm prefix 落在 git 仓库里很常见（macOS 上 /opt/homebrew 自身就是
+  //    git 仓库；家目录/dotfiles 进 git 的也不少），会把正经全局安装误判成 dev，
+  //    升级子系统全程静默失效且不报错。故还要求那一级的 package.json 就是本包。
+  //    package.json 读不出来时保守判非 dev——最坏只是在开发副本里多看一行「有新版」提示，
+  //    比反过来（用户装的版本永远不提示升级）代价小得多。
   let dir = p
   for (let i = 0; i < 5; i++) {
-    try { if (hasGitDir(dir)) return { kind: 'dev', upgradeCommand: NPM_CMD } } catch { /* 探测失败当作没有 */ }
+    try {
+      if (hasGitDir(dir) && pkgNameIn(dir) === PKG) return { kind: 'dev', upgradeCommand: NPM_CMD }
+    } catch { /* 探测失败当作没有 */ }
     const parent = path.dirname(dir)
     if (parent === dir) break
     dir = parent
@@ -314,6 +322,17 @@ function defaultHasGitDir(dir: string): boolean {
   try { return fs.existsSync(path.join(dir, '.git')) } catch { return false }
 }
 
+/** 读某目录 package.json 的 name；不存在/损坏/无权限 → null（调用方按「不是本包」处理）。
+ *  只读 name 字段，且限制读取体积，避免撞上巨型或恶意文件。 */
+function defaultPkgNameIn(dir: string): string | null {
+  try {
+    const raw = fs.readFileSync(path.join(dir, 'package.json'), 'utf8')
+    if (raw.length > 1024 * 1024) return null
+    const name = JSON.parse(raw)?.name
+    return typeof name === 'string' ? name : null
+  } catch { return null }
+}
+
 function currentExecPath(): string {
   let execPath = process.argv[1] ?? ''
   try { execPath = fs.realpathSync(execPath) } catch { /* 保留原值 */ }
@@ -325,7 +344,7 @@ function currentExecPath(): string {
  *  用于「只是要展示提示文案，不需要精确到能否自动升级」的零成本场景（节流命中时的展示/
  *  /update 命令里判断 dev 是否要静默）——真要精确判定 npm-global 仍须走 createUpdaterDeps。 */
 export function detectInstallCheap(): InstallInfo {
-  return detectInstall(currentExecPath(), null, defaultHasGitDir, () => false)
+  return detectInstall(currentExecPath(), null, defaultHasGitDir, () => false, defaultPkgNameIn)
 }
 
 /** 组装生产用 deps：解析安装形态与 registry，绑定真实 fetch/spawn。不产生任何可见副作用。 */
@@ -345,7 +364,7 @@ export function createUpdaterDeps(o: {
     const isWritable = (dir: string): boolean => {
       try { fs.accessSync(dir, fs.constants.W_OK); return true } catch { return false }
     }
-    install = detectInstall(currentExecPath(), npmPrefix(), defaultHasGitDir, isWritable)
+    install = detectInstall(currentExecPath(), npmPrefix(), defaultHasGitDir, isWritable, defaultPkgNameIn)
     registry = resolveRegistry(npmRegistry)
   }
   return {
