@@ -13,6 +13,11 @@ export const PKG = '@silassolivagus/deepcode'
 /** 版本检查节流间隔：24 小时。 */
 export const CHECK_INTERVAL_MS = 86_400_000
 
+/** 版本查询超时。真机实测国内网络冷进程连 registry.npmjs.org 要 1.8~8.2 秒，
+ *  给得太紧会几乎必然 abort——页脚永远不提示、/update 恒报「检查失败」。
+ *  查询在后台跑（`void startUpdateCheck`），等久点没有任何可见代价。 */
+export const CHECK_TIMEOUT_MS = 15_000
+
 /** 解析 x.y.z（忽略 +build 后缀）；含预发布标记或格式非法 → null。 */
 function parseVersion(v: string): [number, number, number] | null {
   if (typeof v !== 'string') return null
@@ -221,7 +226,7 @@ const MAX_RESPONSE_BYTES = 64 * 1024
 
 /** 查最新版本号；任何失败静默返回 null。 */
 export async function fetchLatest(
-  registry: string, timeoutMs = 3000, doFetch: typeof fetch = fetch,
+  registry: string, timeoutMs = CHECK_TIMEOUT_MS, doFetch: typeof fetch = fetch,
 ): Promise<string | null> {
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), timeoutMs)

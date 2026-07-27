@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { resolveRegistry, fetchLatest, runUpgrade, PKG } from '../src/updater.js'
+import { resolveRegistry, fetchLatest, runUpgrade, PKG, CHECK_TIMEOUT_MS } from '../src/updater.js'
 
 describe('resolveRegistry', () => {
   it('用 npm config 的 registry', () => {
@@ -88,6 +88,28 @@ describe('fetchLatest', () => {
       await vi.advanceTimersByTimeAsync(3000)
       await expect(promise).resolves.toBeNull()
       expect(capturedSignal?.aborted).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // 真机冒烟实测：国内网络冷进程连 registry.npmjs.org 要 1.8~8.2 秒，
+  // 旧的 3 秒默认超时几乎必然 abort → 页脚永远不提示、/update 恒报「检查失败」。
+  it('默认超时是 CHECK_TIMEOUT_MS，3 秒时仍未放弃', async () => {
+    vi.useFakeTimers()
+    try {
+      const doFetch = vi.fn((_url: string, opts: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          opts.signal.addEventListener('abort', () => reject(new Error('AbortError')))
+        }))
+      const promise = fetchLatest('https://r.example', undefined, doFetch as any)
+      let settled = false
+      void promise.then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(settled).toBe(false) // 3 秒还在等，不像旧默认那样已放弃
+      await vi.advanceTimersByTimeAsync(CHECK_TIMEOUT_MS - 3000)
+      await expect(promise).resolves.toBeNull()
+      expect(CHECK_TIMEOUT_MS).toBeGreaterThanOrEqual(10_000)
     } finally {
       vi.useRealTimers()
     }
