@@ -81,7 +81,7 @@ describe('Transcript', () => {
     let state: TranscriptItem[] = []
     state = transcriptReducer(state, { type: 'delta', delta: '前导', reasoning: false, messageId: 'm1' })
     state = transcriptReducer(state, { type: 'tool_start', id: 't1', name: 'Read', desc: '{}' })
-    state = transcriptReducer(state, { type: 'tool_end', id: 't1', ok: true, preview: 'UNIQUE-PREVIEW', previewExtra: 0, ms: 50 })
+    state = transcriptReducer(state, { type: 'tool_end', id: 't1', ok: true, preview: 'UNIQUE-PREVIEW', previewExtra: 0, ms: 50, content: 'UNIQUE-RESULT' })
     state = transcriptReducer(state, { type: 'turn_end', usage })
 
     const { rerender, lastFrame } = render(<Transcript items={state} />)

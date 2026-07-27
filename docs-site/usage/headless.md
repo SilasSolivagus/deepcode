@@ -14,14 +14,24 @@ deepcode -p "给 utils 补单测并跑通"
 
 跟交互 TUI 是同一套主循环、同一批工具，唯一区别是没有界面：跑完直接把最终结果打到 stdout，工具调用过程（`⏺ Read(...)` 之类）打到 stderr，方便管道里只捕获结果本身。
 
-不带 `-p` 但用管道喂 stdin 也会自动走 headless（把整段 stdin 当任务描述），适合 `echo "..." | deepcode` 这种用法，但只有 `-p` 支持下面的 `--json`。
+不带 `-p` 但用管道喂 stdin 也会自动走 headless（把整段 stdin 当任务描述），适合 `echo "..." | deepcode` 这种用法，但只有 `-p` 支持下面的 `--output-format`。
 
-## 结构化输出：`--json`
+## 输出格式：`--output-format`
 
-脚本 / CI 里接入，加 `--json` 拿结构化结果而不是纯文本：
+用 `--output-format <text|json|stream-json>` 选输出形态（缺省 `text`）：
+
+| 格式 | 输出 |
+| --- | --- |
+| `text`（缺省） | stdout 打最终回复文本；工具调用过程打到 stderr |
+| `json` | stdout 打单条最终结果 JSON（见下方字段表），适合脚本读结果 |
+| `stream-json` | stdout 逐行 JSONL 实时事件流（含完整工具参数与结果），适合机器解析全过程；该模式下 stderr 的 `⏺` 摘要静默，保证 stdout 是纯净 JSONL |
+
+`--json` 是 `--output-format json` 的向后兼容别名；两者并存时 `--output-format` 优先。
+
+### `json`：单条最终结果
 
 ```bash
-deepcode -p "给 utils 补单测并跑通" --json
+deepcode -p "给 utils 补单测并跑通" --output-format json   # 或 --json
 ```
 
 输出字段（对应源码 `HeadlessResult`）：
@@ -45,6 +55,27 @@ deepcode -p "给 utils 补单测并跑通" --json
   "costCNY": 0.03
 }
 ```
+
+### `stream-json`：实时事件流
+
+逐行 JSONL 打到 stdout，每行一个独立事件，工具参数与结果**完整不截断**（仅受 `maxToolResultChars` 上限保护），适合在管道里实时解析 deepcode 读改了哪些文件、跑了哪些命令：
+
+```bash
+deepcode -p "给 utils 补单测并跑通" --output-format stream-json | jq -c 'select(.type == "tool_start") | {name, input}'
+```
+
+事件类型：
+
+| `type` | 说明 |
+| --- | --- |
+| `init` | 首行一次：`session_id` / `cwd` / `model` / `yolo` |
+| `text` | 助手文本增量（`delta`；`reasoning:true` 为思考增量） |
+| `tool_start` | 工具开始：`id` / `name` / `input`（完整参数对象） |
+| `tool_result` | 工具结束：`id` / `ok` / `content`（完整结果） / `ms` |
+| `turn_end` | 一轮结束：累计 `usage` |
+| `result` | 末行一次：字段同上方 `json` 的最终结果 |
+
+每行都是独立合法 JSON，可 `jq -c` 逐行解析。
 
 ## 退出码
 

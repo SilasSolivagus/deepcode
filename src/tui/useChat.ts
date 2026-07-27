@@ -1549,7 +1549,7 @@ export function createChatCore(opts: {
     if (attachments?.some(a => a.type === 'doc')) {
       line = await resolveDocPlaceholders(line, attachments, {
         onStart: (id) => dispatch({ type: 'tool_start', id: `doc-${id}`, name: '解析文档', desc: `#${id} · glm-ocr` }),
-        onEnd: (id, ok) => dispatch({ type: 'tool_end', id: `doc-${id}`, ok, preview: '', previewExtra: 0, ms: 0 }),
+        onEnd: (id, ok) => dispatch({ type: 'tool_end', id: `doc-${id}`, ok, preview: '', previewExtra: 0, ms: 0, content: '' }),
         onError: (msg) => notice('warn', msg),
       })
     }
