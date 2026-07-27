@@ -18,7 +18,7 @@ export const toolOk = new WeakMap<object, boolean>()
 export type LoopEvent =
   | { type: 'text'; delta: string; reasoning?: boolean }
   | { type: 'tool_start'; id: string; name: string; desc: string }
-  | { type: 'tool_end'; id: string; ok: boolean; preview: string; previewExtra: number; ms: number }
+  | { type: 'tool_end'; id: string; ok: boolean; preview: string; previewExtra: number; ms: number; content: string }
   | { type: 'turn_end'; usage: ChatResult['usage']; sentLen: number }
 
 export interface LoopDeps {
@@ -349,7 +349,7 @@ export async function* runLoop(
     for (const c of ro) {
       const o = outcomes.get(c.id)!
       const pv = previewOf(o.content)
-      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: pv.text, previewExtra: pv.extra, ms: o.ms }
+      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: pv.text, previewExtra: pv.extra, ms: o.ms, content: o.content }
     }
 
     for (const c of rw) {
@@ -358,7 +358,7 @@ export async function* runLoop(
       else outcomes.set(c.id, await execCall(c, deps))
       const o = outcomes.get(c.id)!
       const pv = previewOf(o.content)
-      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: pv.text, previewExtra: pv.extra, ms: o.ms }
+      yield { type: 'tool_end', id: c.id, ok: o.ok, preview: pv.text, previewExtra: pv.extra, ms: o.ms, content: o.content }
     }
 
     // 工具结果必须按原始 tool_calls 顺序回灌

@@ -6,6 +6,7 @@
 import { createClient } from './api.js'
 import { hasApiKey } from './config.js'
 import { setFlagSettingsPath } from './settingsLayers.js'
+import { parseOutputFormat } from './streamJson.js'
 
 const argv = process.argv
 const yolo = argv.includes('--yolo')
@@ -40,16 +41,18 @@ try {
     process.exit(0)
   } else if (pIdx !== -1) {
     const prompt = argv[pIdx + 1]
-    if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--json] [--yolo]')
+    if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--output-format text|json|stream-json] [--yolo]')
     if (!hasApiKey()) throw new Error(NO_KEY_MSG)
     const client = createClient(flagSettingsPath)
+    const outputFormat = parseOutputFormat(argv)
     const { runHeadless } = await import('./headless.js')
-    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath })
-    if (argv.includes('--json')) {
+    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, outputFormat })
+    if (outputFormat === 'json') {
       console.log(JSON.stringify({ text: r.text, status: r.status, turns: r.turns, usage: r.usage, costCNY: r.costCNY }))
-    } else {
+    } else if (outputFormat === 'text') {
       console.log(r.text)
     }
+    // stream-json：runHeadless 已把包括 result 在内的所有事件写到 stdout，这里不再重复输出
     process.exitCode = r.status === 'done' ? 0 : 1
   } else if (!process.stdin.isTTY) {
     // 管道喂入无 -p：读 stdin 全文当 prompt 走 headless

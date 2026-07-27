@@ -82,7 +82,7 @@ describe('transcriptReducer', () => {
   it('tool_start 插入运行中工具行，tool_end 标记完成并带耗时', () => {
     let s = transcriptReducer([], { type: 'tool_start', id: 't1', name: 'Read', desc: '{"file_path":"a.ts"}' })
     expect((s.at(-1) as any).running).toBe(true)
-    s = transcriptReducer(s, { type: 'tool_end', id: 't1', ok: true, preview: '1  // a', previewExtra: 0, ms: 120 })
+    s = transcriptReducer(s, { type: 'tool_end', id: 't1', ok: true, preview: '1  // a', previewExtra: 0, ms: 120, content: '1  // a\n2  line 2' })
     const t = s.find(i => i.kind === 'tool' && (i as any).id === 't1') as any
     expect(t.running).toBe(false)
     expect(t.ms).toBe(120)
