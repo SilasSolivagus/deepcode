@@ -27,6 +27,7 @@ import { makeSkillTool } from './tools/skill.js'
 import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
 import { resolveDenyList, buildDenySourceMap } from './deny.js'
+import { streamInit, streamFromLoopEvent, streamResult } from './streamJson.js'
 import { globalMemdirFor } from './memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from './memdir/memoryConfig.js'
 import { availablePresets, resolveActiveProvider, resolveStartupModel, resolveSubModel } from './providers.js'
@@ -61,7 +62,7 @@ export function buildHeadlessToolset(d: {
 }
 
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
-export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string; home?: string }): Promise<HeadlessResult> {
+export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string; home?: string; outputFormat?: 'text' | 'json' | 'stream-json'; write?: (s: string) => void }): Promise<HeadlessResult> {
   installTaskCleanup() // 退出时 kill 仍 running 的后台任务
   const home = opts.home ?? os.homedir() // 测试注入：隔离全局记忆抽屉落盘根目录，避免污染 ~/.deepcode
   const layered = loadLayeredSettings(process.cwd(), opts.flagSettingsPath)
@@ -174,22 +175,33 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     hooks: settings.hooks,
     hookDeps,
   })
+  const outputFormat = opts.outputFormat ?? 'text'
+  const streaming = outputFormat === 'stream-json'
+  const write = opts.write ?? ((s: string) => { process.stdout.write(s) })
+  if (streaming) write(streamInit({ sessionId, cwd, model, yolo: opts.yolo }))
   let step
   try {
     while (!(step = await gen.next()).done) {
       const ev = step.value
-      if (ev.type === 'tool_start') process.stderr.write(`⏺ ${ev.name}(${headlessToolArg(ev.name, ev.desc)})\n`)
+      if (streaming) {
+        const line = streamFromLoopEvent(ev)
+        if (line) write(line)
+      } else if (ev.type === 'tool_start') {
+        process.stderr.write(`⏺ ${ev.name}(${headlessToolArg(ev.name, ev.desc)})\n`)
+      }
       if (ev.type === 'turn_end') { turns++; addUsage(ev.usage) }
     }
   } finally {
     await mcpCleanup()
   }
   const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
-  return {
+  const result: HeadlessResult = {
     text: final?.content ?? '',
     status: step!.value,
     turns,
     usage: total,
     costCNY: costCNY(model, total.prompt_tokens, total.prompt_cache_hit_tokens, total.completion_tokens),
   }
+  if (streaming) write(streamResult(result))
+  return result
 }
