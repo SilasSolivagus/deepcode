@@ -11,8 +11,12 @@ describe('extractToolArg（无截断提取）', () => {
     const cmd = 'find . -name "*.ts" | xargs grep -l TODO | sort | head -50'
     expect(extractToolArg('Bash', JSON.stringify({ command: cmd }))).toBe(cmd)
   })
-  it('Grep/Glob 取 pattern', () => {
-    expect(extractToolArg('Grep', JSON.stringify({ pattern: 'TODO|FIXME', path: 'src' }))).toBe('TODO|FIXME')
+  it('Grep/Glob 取 pattern，有 path 时拼上', () => {
+    expect(extractToolArg('Grep', JSON.stringify({ pattern: 'TODO|FIXME', path: 'src' }))).toBe('TODO|FIXME src')
+    expect(extractToolArg('Glob', JSON.stringify({ pattern: '**/*.ts', path: 'app' }))).toBe('**/*.ts app')
+  })
+  it('Grep 只有 pattern 时不变', () => {
+    expect(extractToolArg('Grep', JSON.stringify({ pattern: 'TODO' }))).toBe('TODO')
   })
   it('TaskUpdate 组装 #id → status', () => {
     expect(extractToolArg('TaskUpdate', JSON.stringify({ taskId: '7', status: 'done' }))).toBe('#7 → done')

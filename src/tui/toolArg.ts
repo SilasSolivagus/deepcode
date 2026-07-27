@@ -26,8 +26,11 @@ export function extractToolArg(name: string, desc: string): string {
     case 'Bash':
       return String(args.command ?? '')
     case 'Grep':
-    case 'Glob':
-      return String(args.pattern ?? '')
+    case 'Glob': {
+      const pat = String(args.pattern ?? '')
+      const p = args.path ? ` ${args.path}` : ''
+      return `${pat}${p}`
+    }
     case 'Agent':
       return String(args.description ?? '')
     case 'TaskCreate':
