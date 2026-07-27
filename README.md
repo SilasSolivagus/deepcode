@@ -39,6 +39,8 @@ deepcode -p "<任务>"         # 一次性 headless 输出
 deepcode -p "<任务>" --json  # headless + JSON（text/status/turns/usage/costCNY）
 ```
 
+装好后会在后台留意新版本：npm 全局安装可直接自动升级，其余安装形态只在页脚提示升级命令；`/update` 手动检查，`DEEPCODE_DISABLE_UPDATES=1` 全关。
+
 ## 实测，不是 PPT
 
 可复现的自建 eval harness（`eval/`）+ 与顶级闭源 agent 同题对打。**防污染自建场景 × 5 模型 × 3 seed 的 pass^3**（照 τ-bench 可靠性理念，专抓 flaky），程序化判分不靠主观。
@@ -148,14 +150,17 @@ allow/ask/deny 三桶 + auto 模式分类器 + 分层 settings + SSRF 防护 + g
 <summary><b>用法 & 命令</b></summary>
 
 ```bash
-deepcode                    # 交互式 TUI
-deepcode -p "<任务>"         # 一次性 headless 输出
-deepcode -p "<任务>" --json  # headless + JSON（text/status/turns/usage/costCNY）
-echo "<任务>" | deepcode     # 管道喂入走 headless
+deepcode                                  # 交互式 TUI
+deepcode -p "<任务>"                       # 一次性 headless 输出（纯文本）
+deepcode -p "<任务>" --json                # 最终结果一行 JSON（text/status/turns/usage/costCNY）
+deepcode -p "<任务>" --output-format stream-json  # 逐行 JSONL 事件流，工具参数与结果不截断
+echo "<任务>" | deepcode                   # 管道喂入走 headless
 ```
 
+`--output-format` 三档：`text`（默认）/ `json`（`--json` 是它的别名）/ `stream-json`。stream-json 逐事件打到 stdout，每行可直接 `jq` 解析，适合脚本与 CI 消费；该模式下 stderr 的人读轨迹静默。
+
 - `@文件` 引用文件、`!命令` 直跑 shell、`/` 浮出命令菜单
-- 常用命令：`/model`（切模型/provider）、`/think`、`/accept`、`/auto`、`/plan`、`/cost`、`/compact`、`/resume`、`/rewind`、`/memory`、`/permissions`、`/init`、`/help`、`/exit`
+- 常用命令：`/model`（切模型/provider）、`/think`、`/accept`、`/plan`、`/cost`、`/compact`、`/resume`、`/rewind`、`/memory`、`/permissions`、`/update`、`/init`、`/help`、`/exit`（auto 模式用 Shift+Tab 切）
 - Esc 中断当前轮（可中途转向），Ctrl+C×2 退出
 
 </details>

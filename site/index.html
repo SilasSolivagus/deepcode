@@ -143,8 +143,10 @@ deepcode            # 交互式
         data-i18n="ui.copy">复制</button>
       <pre style="color:var(--term-fg);font-size:12.5px;overflow-x:auto;margin:0">deepcode                        # 交互式 TUI
 deepcode -p "写一个 today.sh"   # headless 单次任务
+deepcode -p "..." --output-format stream-json   # 逐行 JSONL 事件流，给脚本 / CI 消费
 /model                          # 切换 provider / 模型
 /think                          # 开关深度思考
+/update                         # 检查并升级到最新版
 Ctrl+J                          # 输入框内换行
 # 这个仓库用 pnpm                # 行首 # 快速记忆</pre>
     </div>
@@ -222,6 +224,10 @@ cat DEEPCODE.md                     # 项目级记忆文件</pre>
       <h3 data-i18n="q4.q" style="font-size:15px"></h3>
       <p data-i18n="q4.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
     </div>
+    <div class="faq-item" style="border-bottom:1px solid var(--border);padding:16px 0">
+      <h3 data-i18n="q5.q" style="font-size:15px"></h3>
+      <p data-i18n="q5.a" style="font-size:13px;color:var(--muted);margin-top:6px"></p>
+    </div>
   </div>
 </section>
 
@@ -252,9 +258,9 @@ cat DEEPCODE.md                     # 项目级记忆文件</pre>
       "bench.t":"实测，不是 PPT","bench.d":"可复现的自建 eval harness + 与国际一线闭源 agent 同题对打。防污染自建场景 × 5 模型 × 3 seed 的 pass³(专抓 flaky)，程序化判分不靠主观。",
       "tut.t":"上手教程","ui.copy":"复制",
       "tut.n1":"安装","tut.n2":"配置模型","tut.n3":"命令快捷键","tut.n4":"工具权限","tut.n5":"记忆","tut.n6":"子代理与工作流","tut.n7":"完整示例",
-      "t1.t":"① 安装","t1.d":"npm 全局安装，需 Node ≥ 22.5。首次运行走向导粘 key，直接可用。",
+      "t1.t":"① 安装","t1.d":"npm 全局安装，需 Node ≥ 22.5。首次运行走向导粘 key，直接可用。装好后自己留意新版，可自动升级。",
       "t2.t":"② 配置模型","t2.d":"默认 deepseek-v4-pro。切 GLM / Kimi 或自建 OpenAI 兼容端点：设对应 env key，用 /model 切换。",
-      "t3.t":"③ 常用命令 & 快捷键","t3.d":"交互 TUI 或 -p headless；/model 切模型、/think 开思考；Ctrl+J 换行、# 行首快速记忆。",
+      "t3.t":"③ 常用命令 & 快捷键","t3.d":"交互 TUI 或 -p headless（可输出逐行 JSONL 事件流）；/model 切模型、/think 开思考；Ctrl+J 换行、# 行首快速记忆。",
       "t4.t":"④ 工具 & 权限","t4.d":"工具编排自动干活；权限模式 default / accept / plan / auto，可按规则 ask / deny 收紧。",
       "t5.t":"⑤ 记忆","t5.d":"项目 DEEPCODE.md + 全局抽屉；行首 # 一句话存记忆；自动记忆随会话沉淀。",
       "t6.t":"⑥ 子代理 & 工作流","t6.d":"复杂任务派子代理并行；用 loop / workflow 把多步编排成确定流程。",
@@ -264,6 +270,7 @@ cat DEEPCODE.md                     # 项目级记忆文件</pre>
       "q2.q":"支持哪些模型？","q2.a":"DeepSeek、GLM、Kimi 开箱即用，也支持任意 OpenAI 兼容端点（自建 / 中转）。",
       "q3.q":"我的代码和数据去哪？","q3.a":"直连你配置的模型服务，不经第三方中转；工具在你本机跑，每一步都在你眼前。",
       "q4.q":"适合谁？","q4.a":"想在终端里用国产模型、又要一线 agent 体验与掌控感的开发者。",
+      "q5.q":"能接进脚本和 CI 吗？","q5.a":"能。-p 单次任务跑完即退，退出码区分成功与中断；--output-format 可选纯文本、单条结果 JSON，或逐行 JSONL 事件流（工具参数与结果完整不截断），每行都能直接 jq 解析。",
       "foot.social":"微信"
     },
     en: {
@@ -281,9 +288,9 @@ cat DEEPCODE.md                     # 项目级记忆文件</pre>
       "bench.t":"Measured, not marketed","bench.d":"A reproducible in-house eval harness, head-to-head with top-tier closed-source agents. Contamination-safe scenarios × 5 models × 3 seeds, pass³ (catches flakiness), scored programmatically.",
       "tut.t":"Getting started","ui.copy":"Copy",
       "tut.n1":"Install","tut.n2":"Set up a model","tut.n3":"Commands & shortcuts","tut.n4":"Tools & permissions","tut.n5":"Memory","tut.n6":"Subagents & workflows","tut.n7":"Full example",
-      "t1.t":"① Install","t1.d":"Install globally via npm, Node ≥ 22.5 required. First run walks you through pasting a key — then you're ready.",
+      "t1.t":"① Install","t1.d":"Install globally via npm, Node ≥ 22.5 required. First run walks you through pasting a key — then you're ready. It watches for new releases and can upgrade itself.",
       "t2.t":"② Set up a model","t2.d":"Defaults to deepseek-v4-pro. Switch to GLM / Kimi or your own OpenAI-compatible endpoint: set the matching env key and switch with /model.",
-      "t3.t":"③ Commands & shortcuts","t3.d":"Interactive TUI or headless -p; /model switches models, /think toggles deep thinking; Ctrl+J for newline, # at line start for a quick memory.",
+      "t3.t":"③ Commands & shortcuts","t3.d":"Interactive TUI or headless -p (which can emit a line-delimited JSON event stream); /model switches models, /think toggles deep thinking; Ctrl+J for newline, # at line start for a quick memory.",
       "t4.t":"④ Tools & permissions","t4.d":"Tool orchestration runs the work; permission modes are default / accept / plan / auto, and you can tighten them with ask / deny rules.",
       "t5.t":"⑤ Memory","t5.d":"Per-project DEEPCODE.md plus a global drawer; # at line start saves a memory instantly; automatic memory accumulates as you work.",
       "t6.t":"⑥ Subagents & workflows","t6.d":"Complex tasks fan out to parallel subagents; loop / workflow turn multi-step work into a repeatable pipeline.",
@@ -293,6 +300,7 @@ cat DEEPCODE.md                     # 项目级记忆文件</pre>
       "q2.q":"Which models are supported?","q2.a":"DeepSeek, GLM, Kimi out of the box, plus any OpenAI-compatible endpoint (self-hosted / proxy).",
       "q3.q":"Where do my code and data go?","q3.a":"Straight to the model service you configure, no third-party relay; tools run on your machine, every step in front of you.",
       "q4.q":"Who is it for?","q4.a":"Developers who want domestic models in the terminal with top-tier agent quality and full control.",
+      "q5.q":"Can I wire it into scripts and CI?","q5.a":"Yes. -p runs one task and exits, with exit codes that separate success from interruption; --output-format gives you plain text, a single result JSON, or a line-delimited JSONL event stream (tool arguments and results untruncated) where every line parses with jq.",
       "foot.social":"WeChat"
     }
   };

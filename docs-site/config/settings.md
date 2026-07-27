@@ -52,6 +52,7 @@ skillOverrides
 - `statusLineCommand`：自定义状态栏命令（仅 user 层）。
 - `viewMode` / `tui`：`focus`/`default` 视图、`inline`/`fullscreen` 渲染模式。
 - `costWarnCNY`：本会话花费提醒阈值（CNY）。
+- `autoUpdates`：设为 `false` 时仍检查新版并提示，但不后台自动升级（详见[安装与更新](/config/install)）。
 
 示例（`~/.deepcode/settings.json`）：
 
@@ -84,6 +85,8 @@ skillOverrides
 | `DEEPCODE_API_KEY` | `custom` provider 缺省 key（可用 `apiKeyEnv` 改成别的变量名） |
 | `BOCHA_API_KEY` / `TAVILY_API_KEY` | WebSearch 双源 key（优先于 `settings.webSearch`） |
 | `https_proxy` / `HTTPS_PROXY` / `http_proxy` / `HTTP_PROXY` | 出站请求代理，自动读取无需额外配置 |
+| `DEEPCODE_DISABLE_AUTOUPDATER` | 设为 1 只提示不自动升级（等价于 `autoUpdates: false`） |
+| `DEEPCODE_DISABLE_UPDATES` | 设为 1 全关升级：不查询、不提示，`/update` 直接拒绝 |
 
 ## SSRF 防护
 

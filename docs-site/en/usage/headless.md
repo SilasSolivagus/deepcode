@@ -14,14 +14,24 @@ deepcode -p "add unit tests for utils and make them pass"
 
 Same main loop, same tools as the interactive TUI — the only difference is there's no UI: the final result goes to stdout, and tool-call progress (things like `⏺ Read(...)`) goes to stderr, so a pipeline can capture just the result.
 
-Piping stdin without `-p` also triggers headless automatically (the whole stdin is treated as the task description) — handy for `echo "..." | deepcode` — but only the `-p` form supports `--json` below.
+Piping stdin without `-p` also triggers headless automatically (the whole stdin is treated as the task description) — handy for `echo "..." | deepcode` — but only the `-p` form supports `--output-format` below.
 
-## Structured output: `--json`
+## Output format: `--output-format`
 
-For scripting or CI, add `--json` to get a structured result instead of plain text:
+Pick the output shape with `--output-format <text|json|stream-json>` (defaults to `text`):
+
+| Format | Output |
+| --- | --- |
+| `text` (default) | stdout gets the final reply text; tool-call progress goes to stderr |
+| `json` | stdout gets a single final-result JSON object (fields below) — what most scripts want |
+| `stream-json` | stdout gets a line-delimited JSONL event stream in real time (with complete tool arguments and results), for machine-parsing the whole run; the `⏺` stderr summary stays silent in this mode so stdout is pure JSONL |
+
+`--json` is a backward-compatible alias for `--output-format json`; when both are present, `--output-format` wins.
+
+### `json`: a single final result
 
 ```bash
-deepcode -p "add unit tests for utils and make them pass" --json
+deepcode -p "add unit tests for utils and make them pass" --output-format json   # or --json
 ```
 
 Output fields (matching the `HeadlessResult` type in source):
@@ -45,6 +55,27 @@ Example:
   "costCNY": 0.03
 }
 ```
+
+### `stream-json`: a live event stream
+
+One JSON event per line to stdout, with tool arguments and results **untruncated** (bounded only by `maxToolResultChars`) — so a pipeline can watch, in real time, which files deepcode read and edited and which commands it ran:
+
+```bash
+deepcode -p "add unit tests for utils and make them pass" --output-format stream-json | jq -c 'select(.type == "tool_start") | {name, input}'
+```
+
+Event types:
+
+| `type` | Description |
+| --- | --- |
+| `init` | Once, first line: `session_id` / `cwd` / `model` / `yolo` |
+| `text` | Assistant text delta (`delta`; `reasoning:true` marks a reasoning delta) |
+| `tool_start` | Tool started: `id` / `name` / `input` (the complete argument object) |
+| `tool_result` | Tool finished: `id` / `ok` / `content` (the complete result) / `ms` |
+| `turn_end` | A turn ended: cumulative `usage` |
+| `result` | Once, last line: same fields as the `json` final result above |
+
+Every line is independently valid JSON, so `jq -c` can parse it line by line.
 
 ## Exit codes
 

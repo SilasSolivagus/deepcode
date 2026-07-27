@@ -43,6 +43,22 @@ or:
 npm update -g @silassolivagus/deepcode
 ```
 
+### Automatic updates
+
+After startup deepcode checks for a new release in the background (at most once per 24 hours) and reports the result in the footer:
+
+- **npm global install in a writable directory** → it upgrades itself in the background; the footer then shows `✦ 已升至 <version> · 重启生效`, and the new version takes effect on the next session.
+- **Any other install shape** (pnpm / bun / npx cache / a directory that needs sudo) → it only shows `✦ 有新版 <version> · <the matching upgrade command>` and never touches disk.
+- **A repository working copy** (running from source) → completely silent: no check, no prompt.
+
+Type `/update` in a session to check immediately, bypassing the 24-hour throttle. Three switches:
+
+| Switch | Effect |
+| --- | --- |
+| `"autoUpdates": false` (settings.json) | Still checks and prompts, but never upgrades on its own |
+| `DEEPCODE_DISABLE_AUTOUPDATER=1` | Same, as an environment variable |
+| `DEEPCODE_DISABLE_UPDATES=1` | Everything off: no query, no prompt, and `/update` refuses outright |
+
 ## Uninstall
 
 ```bash

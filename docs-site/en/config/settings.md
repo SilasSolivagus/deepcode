@@ -52,6 +52,7 @@ Not the complete dictionary — just the high-frequency fields; see the referenc
 - `statusLineCommand`: a custom status-line command (user layer only).
 - `viewMode` / `tui`: `focus`/`default` view and `inline`/`fullscreen` render mode.
 - `costWarnCNY`: the per-session cost warning threshold (CNY).
+- `autoUpdates`: set to `false` to keep checking and prompting for new releases without ever upgrading in the background (see [Install & update](/en/config/install)).
 
 Example (`~/.deepcode/settings.json`):
 
@@ -84,6 +85,8 @@ Each provider's key is read from an environment variable first, with `apiKey`/`p
 | `DEEPCODE_API_KEY` | Default key for the `custom` provider (override the variable name with `apiKeyEnv`) |
 | `BOCHA_API_KEY` / `TAVILY_API_KEY` | WebSearch dual-source keys (take priority over `settings.webSearch`) |
 | `https_proxy` / `HTTPS_PROXY` / `http_proxy` / `HTTP_PROXY` | Outbound proxy, read automatically, no extra config needed |
+| `DEEPCODE_DISABLE_AUTOUPDATER` | Set to 1 to prompt only, never upgrade automatically (same as `autoUpdates: false`) |
+| `DEEPCODE_DISABLE_UPDATES` | Set to 1 to turn updates off entirely: no query, no prompt, and `/update` refuses |
 
 ## SSRF protection
 

@@ -34,10 +34,12 @@ deepcode                             # 首跑向导粘 key，直接用
 Defaults to `deepseek-v4-pro`. Already have a key? `export DEEPSEEK_API_KEY=sk-...` and you're set. To switch to GLM / Kimi / a self-hosted backend, see [Configuration](#configuration) below.
 
 ```bash
-deepcode                    # 交互式 TUI
-deepcode -p "<任务>"         # 一次性 headless 输出
-deepcode -p "<任务>" --json  # headless + JSON（text/status/turns/usage/costCNY）
+deepcode                     # interactive TUI
+deepcode -p "<task>"         # one-shot headless output
+deepcode -p "<task>" --json  # headless + JSON (text/status/turns/usage/costCNY)
 ```
+
+Once installed, deepcode watches for new releases in the background: a writable npm global install upgrades itself, other install shapes only show the upgrade command in the footer. `/update` checks manually; `DEEPCODE_DISABLE_UPDATES=1` turns it all off.
 
 ## Real Benchmarks, Not Slides
 
@@ -148,14 +150,17 @@ Pick one (priority: env > settings):
 <summary><b>Usage & Commands</b></summary>
 
 ```bash
-deepcode                    # 交互式 TUI
-deepcode -p "<任务>"         # 一次性 headless 输出
-deepcode -p "<任务>" --json  # headless + JSON（text/status/turns/usage/costCNY）
-echo "<任务>" | deepcode     # 管道喂入走 headless
+deepcode                                       # interactive TUI
+deepcode -p "<task>"                           # one-shot headless output (plain text)
+deepcode -p "<task>" --json                    # final result as one JSON line (text/status/turns/usage/costCNY)
+deepcode -p "<task>" --output-format stream-json  # line-delimited JSON event stream, tool args and results untruncated
+echo "<task>" | deepcode                       # piped input goes through headless
 ```
 
+`--output-format` takes three values: `text` (default) / `json` (`--json` is an alias) / `stream-json`. stream-json writes one JSON event per line to stdout — every line parses with `jq`, which is what scripts and CI want; the human-readable stderr trace stays silent in that mode.
+
 - `@file` references a file, `!command` runs shell directly, `/` pops up the command menu
-- Common commands: `/model` (switch model/provider), `/think`, `/accept`, `/auto`, `/plan`, `/cost`, `/compact`, `/resume`, `/rewind`, `/memory`, `/permissions`, `/init`, `/help`, `/exit`
+- Common commands: `/model` (switch model/provider), `/think`, `/accept`, `/plan`, `/cost`, `/compact`, `/resume`, `/rewind`, `/memory`, `/permissions`, `/update`, `/init`, `/help`, `/exit` (auto mode is toggled with Shift+Tab)
 - Esc interrupts the current turn (redirect mid-flight), Ctrl+C×2 to quit
 
 </details>

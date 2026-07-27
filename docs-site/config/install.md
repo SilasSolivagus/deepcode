@@ -43,6 +43,22 @@ npm i -g @silassolivagus/deepcode@latest
 npm update -g @silassolivagus/deepcode
 ```
 
+### 自动升级
+
+启动后 deepcode 会在后台留意有没有新版（24 小时最多查一次），结果显示在页脚：
+
+- **npm 全局安装且目录可写** → 直接后台升级，完成后页脚显示 `✦ 已升至 <版本> · 重启生效`，重启新会话生效。
+- **其他安装形态**（pnpm / bun / npx 缓存 / 需要 sudo 的目录）→ 只提示 `✦ 有新版 <版本> · <对应的升级命令>`，不碰磁盘。
+- **仓库工作副本**（从源码跑）→ 完全静默，既不查也不提示。
+
+会话里输入 `/update` 可立刻手动检查一次（绕过 24 小时节流）。三档开关：
+
+| 开关 | 效果 |
+| --- | --- |
+| `"autoUpdates": false`（settings.json） | 仍检查并提示，但不自动升级 |
+| `DEEPCODE_DISABLE_AUTOUPDATER=1` | 同上，环境变量形式 |
+| `DEEPCODE_DISABLE_UPDATES=1` | 全关：不查询、不提示，`/update` 也直接拒绝 |
+
 ## 卸载
 
 ```bash
