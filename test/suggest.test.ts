@@ -12,12 +12,36 @@ describe('computeSuggestions skills 补全', () => {
     expect(out.map(s => s.value)).not.toContain('/secret')
   })
 
-  it('skill 候选 hint 为真实描述', () => {
+  it('skill 候选 hint 为真实描述 + 来源后缀', () => {
     const out = computeSuggestions('/gr', {
       cwd: process.cwd(), customCommands: new Map(),
       skills: [{ name: 'greet', userInvocable: true, description: '打招呼技能' }],
     })
-    expect(out.find(s => s.value === '/greet')?.hint).toBe('打招呼技能')
+    expect(out.find(s => s.value === '/greet')?.hint).toBe('打招呼技能 (技能)')
+  })
+
+  // 用户困惑过「/benchmark 是技能还是内置命令」——命令有 (用户)/(项目) 后缀而技能没有。
+  it('技能按 priority 标来源：项目=0、用户=1、legacy/未知=通用 (技能)', () => {
+    const out = computeSuggestions('/s', {
+      cwd: process.cwd(), customCommands: new Map(),
+      skills: [
+        { name: 'sproj', userInvocable: true, description: '项目技能', priority: 0 },
+        { name: 'suser', userInvocable: true, description: '用户技能', priority: 1 },
+        { name: 'slegacy', userInvocable: true, description: '老命令技能', priority: 2 },
+      ],
+    })
+    const hint = (v: string) => out.find(s => s.value === v)?.hint
+    expect(hint('/sproj')).toBe('项目技能 (项目技能)')
+    expect(hint('/suser')).toBe('用户技能 (用户技能)')
+    expect(hint('/slegacy')).toBe('老命令技能 (技能)')
+  })
+
+  it('技能无描述时 hint 只有来源标签，不留空', () => {
+    const out = computeSuggestions('/no', {
+      cwd: process.cwd(), customCommands: new Map(),
+      skills: [{ name: 'nodesc', userInvocable: true, priority: 1 }],
+    })
+    expect(out.find(s => s.value === '/nodesc')?.hint).toBe('(用户技能)')
   })
 
   it('命令与同名技能去重（命令优先，显首行描述+来源后缀，命令/技能分离）', () => {

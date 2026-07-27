@@ -119,7 +119,14 @@ function listFiles(cwd: string, depth = 3): string[] {
   return out
 }
 
-export function computeSuggestions(input: string, env: { cwd: string; customCommands: Map<string, { template: string; source: 'user' | 'project' }>; skills?: { name: string; userInvocable: boolean; description?: string }[] }): Suggestion[] {
+/** 技能来源标签。priority 同 skillsLoader：项目=0、用户/home=1、legacy=2（legacy 无来源概念，给通用标）。 */
+function skillTag(priority?: number): string {
+  if (priority === 0) return '(项目技能)'
+  if (priority === 1) return '(用户技能)'
+  return '(技能)'
+}
+
+export function computeSuggestions(input: string, env: { cwd: string; customCommands: Map<string, { template: string; source: 'user' | 'project' }>; skills?: { name: string; userInvocable: boolean; description?: string; priority?: number }[] }): Suggestion[] {
   if (input.startsWith('/') && !input.includes(' ')) {
     const builtinValues = new Set(BUILTIN_COMMANDS.map(b => b.value))
     const customNames = new Set(env.customCommands.keys())
@@ -142,7 +149,7 @@ export function computeSuggestions(input: string, env: { cwd: string; customComm
     const b3 = invSkills
       .filter(s => !builtinValues.has(`/${s.name}`) && !customNames.has(s.name))
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map(s => ({ value: `/${s.name}`, hint: firstSentence(s.description ?? '') }))
+      .map(s => ({ value: `/${s.name}`, hint: suffixed(firstSentence(s.description ?? ''), skillTag(s.priority)) }))
     // 桶 0：内置命令保留精选顺序。桶序：内置 → 用户命令 → 项目命令 → 技能。
     const all = [...BUILTIN_COMMANDS, ...b1, ...b2, ...b3]
     // 命令名内子串模糊匹配（/text 可搜到 /context），去掉前导 / 后在命令名内找子串
