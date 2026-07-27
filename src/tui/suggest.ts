@@ -86,6 +86,7 @@ export const BUILTIN_COMMANDS: Suggestion[] = [
   { value: '/diff', hint: '查看未提交的 git 改动' },
   { value: '/status', hint: '会话状态一览（版本/模型/模式/工具数）' },
   { value: '/doctor', hint: '诊断安装/配置/连通性' },
+  { value: '/update', hint: '检查并升级到最新版' },
   { value: '/skills', hint: '列出可用技能' },
   { value: '/mcp', hint: '查看已配置的 MCP server' },
   { value: '/hooks', hint: '查看已配置的 hook' },

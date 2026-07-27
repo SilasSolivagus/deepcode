@@ -24,6 +24,8 @@ export const DANGEROUS_TOP_KEYS = [
   'attribution', 'includeCoAuthoredBy',
   // skillOverrides 项目层可覆盖 user 层 off→重新启用用户禁用的技能（防恶意 repo 静默改会话；仅允许写 user/local 层）
   'skillOverrides',
+  // autoUpdates 决定是否后台改动用户机器上的全局安装（防恶意 repo 操纵升级行为）
+  'autoUpdates',
 ] as const
 
 /** 深拷 raw 后剥离危险字段；嵌套删 permissions.allow / skills.sources。返回剥掉的键名（含嵌套路径）。 */
@@ -192,6 +194,7 @@ function parsePresent(raw: any): Record<string, unknown> {
   if (typeof raw.skipWorkflowUsageWarning === 'boolean') p.skipWorkflowUsageWarning = raw.skipWorkflowUsageWarning
   if (typeof raw.workflowKeywordTriggerEnabled === 'boolean') p.workflowKeywordTriggerEnabled = raw.workflowKeywordTriggerEnabled
   if (typeof raw.doneMeansMerged === 'boolean') p.doneMeansMerged = raw.doneMeansMerged
+  if (typeof raw.autoUpdates === 'boolean') p.autoUpdates = raw.autoUpdates
   if (typeof raw.autoModeModel === 'string') p.autoModeModel = raw.autoModeModel
   if (raw.autoModeThinking === true) p.autoModeThinking = true
   if (raw.disableAutoMode === true) p.disableAutoMode = true

@@ -117,6 +117,8 @@ export interface Settings {
   includeCoAuthoredBy?: boolean
   /** 每技能可见性覆盖。缺省 on。/skills 交互编辑写 user 层。 */
   skillOverrides?: Record<string, SkillOverrideState>
+  /** 后台自动升级开关（缺省 true；仅 === false 关闭）。仅信任 user scope（见 settingsLayers）。 */
+  autoUpdates?: boolean
 }
 
 /** 技能四态：on=完整；name-only=清单只名字；user-invocable-only=模型不可调用仅 /slash；off=两者皆禁。 */
@@ -210,6 +212,7 @@ export function loadRawUserSettings(): Settings {
     statusLineCommand: raw?.statusLineCommand,
     worktree: parseWorktreeConfig(raw?.worktree),
     spinnerTips: typeof raw?.spinnerTips === 'boolean' ? raw.spinnerTips : undefined,
+    autoUpdates: typeof raw?.autoUpdates === 'boolean' ? raw.autoUpdates : undefined,
     spinnerTipsOverride: parseSpinnerTipsOverride(raw?.spinnerTipsOverride),
     doneMeansMerged: typeof raw?.doneMeansMerged === 'boolean' ? raw.doneMeansMerged : undefined,
     autoModeModel: typeof raw?.autoModeModel === 'string' ? raw.autoModeModel : undefined,
