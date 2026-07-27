@@ -54,6 +54,37 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
 })
 
 describe('runHeadless stream-json', () => {
+  it('UserPromptSubmit hook 拦截时仍输出 init+result，拦截理由随 result.text 流出', async () => {
+    const { runHeadless } = await import('../src/headless.js')
+    const { runHooks } = await import('../src/hooks.js')
+    script.length = 0
+    vi.mocked(runHooks).mockImplementation(async (event: any) => {
+      if (event === 'UserPromptSubmit') {
+        return { block: true, preventContinuation: false, stop: false, blockReason: '危险输入', results: [] } as any
+      }
+      return { block: false, preventContinuation: false, stop: false, results: [] } as any
+    })
+
+    const lines: string[] = []
+    try {
+      const r = await runHeadless({
+        client: {} as any, prompt: '坏输入', yolo: true,
+        outputFormat: 'stream-json',
+        write: s => lines.push(s),
+        home: '/tmp/dc-sj-block-' + Math.random().toString(36).slice(2),
+      })
+
+      const events = lines.join('').trim().split('\n').filter(Boolean).map(l => JSON.parse(l))
+      expect(events[0]?.type).toBe('init')
+      expect(events.at(-1)?.type).toBe('result')
+      expect(events.at(-1)?.status).toBe('aborted')
+      expect(events.at(-1)?.text).toContain('危险输入')
+      expect(r.status).toBe('aborted')
+    } finally {
+      vi.mocked(runHooks).mockImplementation(async () => ({ block: false, preventContinuation: false, stop: false, results: [] } as any))
+    }
+  })
+
   it('输出 init → tool_start → tool_result → result 的 JSONL，stderr 无 ⏺', async () => {
     const { runHeadless } = await import('../src/headless.js')
     script.length = 0

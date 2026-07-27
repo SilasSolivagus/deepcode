@@ -130,6 +130,13 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       }, settings.hooks!, hookDeps).catch(() => {})
     }
   }
+  // outputFormat/streaming/write 只依赖 sessionId/cwd/model（均已就绪），在此上移，
+  // 确保 stream-json 下 init 首行恒早于任何早退分支（包括 UserPromptSubmit hook 拦截），
+  // 拦截理由才能随 result.text 流出而不是零字节 stdout 静默蒸发。
+  const outputFormat = opts.outputFormat ?? 'text'
+  const streaming = outputFormat === 'stream-json'
+  const write = opts.write ?? ((s: string) => { process.stdout.write(s) })
+  if (streaming) write(streamInit({ sessionId, cwd, model, yolo: opts.yolo }))
   let promptText = opts.prompt
   if (settings.hooks) {
     const ups = await runHooks('UserPromptSubmit', {
@@ -137,7 +144,9 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     }, settings.hooks, hookDeps)
     if (ups.block || ups.preventContinuation) {
       const extra = ups.additionalContext ? `\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>` : ''
-      return { text: `输入被 hook 拦截：${ups.blockReason ?? ''}${extra}`, status: 'aborted', turns: 0, usage: total, costCNY: 0 }
+      const result: HeadlessResult = { text: `输入被 hook 拦截：${ups.blockReason ?? ''}${extra}`, status: 'aborted', turns: 0, usage: total, costCNY: 0 }
+      if (streaming) write(streamResult(result))
+      return result
     }
     if (ups.additionalContext) promptText = `${opts.prompt}\n\n<hook-context>\n${ups.additionalContext}\n</hook-context>`
   }
@@ -175,10 +184,6 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     hooks: settings.hooks,
     hookDeps,
   })
-  const outputFormat = opts.outputFormat ?? 'text'
-  const streaming = outputFormat === 'stream-json'
-  const write = opts.write ?? ((s: string) => { process.stdout.write(s) })
-  if (streaming) write(streamInit({ sessionId, cwd, model, yolo: opts.yolo }))
   let step
   try {
     while (!(step = await gen.next()).done) {
