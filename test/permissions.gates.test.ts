@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { checkPermission, YOLO_DANGEROUS_CONFIRM_REASON, type PermissionContext, type Decision, type PermissionDecisionReason } from '../src/permissions.js'
 import { readTool } from '../src/tools/read.js'
+import { subagentPermissionDecision } from '../src/tools/agent.js'
 
 // 本文件的 fakeTool 故意不设 workspacePaths/deniablePaths，好让 checkPermission
 // 直达 yolo 分支（:488）——工作目录围栏（:423）与 deny（:378）都要靠这两个字段
@@ -173,5 +174,43 @@ describe('只读工具的 ask 防护走路径维度', () => {
     expect(asked).toBe(false)
     expect(r.ok).toBe(true)
     expect(readTool.needsPermission({ file_path: CONFIG } as any)).toBe(false) // 根因就在这
+  })
+})
+
+describe('deny 无人值守链路', () => {
+  // paths 是唯一变量：命中 deny 与否全由工具桩报出的可 deny 路径决定（同 Task 6 的桩形状）。
+  const bashTool = (cmd: string, paths: string[]): any => ({
+    name: 'Bash', isReadOnly: false,
+    needsPermission: () => cmd,
+    deniablePaths: () => paths,
+  })
+
+  it('子代理侧：deny 命中 Bash → ask 收到 deny 来源 → 判定为拒', async () => {
+    let seen: PermissionDecisionReason | undefined
+    const r = await checkPermission(
+      bashTool('cat /home/u/.ssh/id_rsa', ['/home/u/.ssh/id_rsa']), {},
+      pc({
+        deny: ['**/id_rsa'],
+        ask: async (_n, desc, reason) => { seen = reason; return subagentPermissionDecision(desc, reason) },
+      }),
+    )
+    expect(r.ok).toBe(false)
+    // 拒的依据必须是结构化 deny 来源，不是 desc 文本——命令 `cat …id_rsa` 本身不命中
+    // DANGEROUS_PATTERNS，所以若 reason 没传到位，isDangerous 兜底会放行。
+    expect(seen).toEqual({
+      type: 'rule',
+      rule: { source: 'builtin', behavior: 'deny', value: '**/id_rsa' },
+    })
+  })
+
+  it('回归：未命中 deny 的普通命令在无人值守下仍放行（网关不是"一律拒"）', async () => {
+    const r = await checkPermission(
+      bashTool('npm test', []), {},
+      pc({
+        deny: ['**/id_rsa'],
+        ask: async (_n, desc, reason) => subagentPermissionDecision(desc, reason),
+      }),
+    )
+    expect(r.ok).toBe(true)
   })
 })
