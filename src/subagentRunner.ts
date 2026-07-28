@@ -58,7 +58,7 @@ export function worktreeSubagentPrompt(parentCwd: string, worktreePath: string):
 
 /** 组装子代理的 PermissionContext：继承父级全部安全约束，ask 按 reason 来源二分。
  *  拿不到父快照 → 回落 default + 空规则（= 改动前行为），不放宽。
- *  fenceRoot 由调用方定死，函数本身无副作用，便于对抗性单测直接喂 checkPermission。 */
+ *  fenceRoot 由调用方定死，便于对抗性单测直接喂 checkPermission；唯一副作用是缺 cwd 时的告警。 */
 export function buildSubagentPermission(
   parent: PermissionSnapshot | undefined,
   fenceRoot: string,

@@ -112,12 +112,16 @@ export const bashTool: Tool<typeof schema> = {
               // setCwd 可能被围栏拒绝（子代理不得漂出工作区）。被拒时 ctx.cwd() 仍是旧值，
               // 必须告诉模型这次 cd 没生效，否则它会以为后续命令在新目录里执行。
               if (ctx.cwd() !== newCwd) cdRejected = newCwd
-              const sid = ctx.sessionId?.()
-              if (sid) clearCwdEnvFiles(sid) // 清旧 cwd 专属 env，hook 重写新值
-              await ctx.hookDispatch?.('CwdChanged', {
-                hook_event_name: 'CwdChanged', cwd: newCwd, session_id: sid, old_cwd: oldCwd, new_cwd: newCwd,
-              })?.catch(() => undefined)
-              if (sid) invalidateSessionEnvCache(sid) // 下条命令重读前缀
+              // 被拒时不派发 CwdChanged/不清 env 缓存——否则 hook 收到的 new_cwd 是假的
+              // （目录根本没切换成功），且为一次没发生的切换白白使下条命令重读 env 前缀。
+              if (!cdRejected) {
+                const sid = ctx.sessionId?.()
+                if (sid) clearCwdEnvFiles(sid) // 清旧 cwd 专属 env，hook 重写新值
+                await ctx.hookDispatch?.('CwdChanged', {
+                  hook_event_name: 'CwdChanged', cwd: newCwd, session_id: sid, old_cwd: oldCwd, new_cwd: newCwd,
+                })?.catch(() => undefined)
+                if (sid) invalidateSessionEnvCache(sid) // 下条命令重读前缀
+              }
             } else if (newCwd) {
               ctx.setCwd(newCwd)
               if (ctx.cwd() !== newCwd) cdRejected = newCwd

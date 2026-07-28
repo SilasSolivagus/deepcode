@@ -72,6 +72,8 @@ describe('子代理继承安全约束 · 对抗性实跑', () => {
     mode: 'default',
     rules: [],
     deny: ['**/id_rsa', '**/.aws/credentials'],
+    cwd: '/repo', // 补上：不影响本组用例语义（buildSubagentPermission 返回的 pc.cwd 恒取调用方传入的
+    // fenceRoot 而非 parent.cwd，这里只是避免触发"父快照缺 cwd"告警噪音，淹没真实的第四注入点信号）
   }
 
   it('攻击：子代理读 ~/.ssh/id_rsa → 被 deny 拦', async () => {
@@ -134,7 +136,9 @@ describe('跨层子代理围栏逃逸 · 孙代理不得继承已漂移的 cwd',
       get signal() { return new AbortController().signal },
       fileState: new Map(),
       fenceRoot: '/repo', // A 自身不可变的围栏根
-      parentPermission: () => ({ mode: 'default', rules: [] }),
+      // cwd 补个占位值：本用例验证的是 ctx.fenceRoot 优先于 parentPerm.cwd（漂移场景），
+      // 加不加都不影响这条断言，纯为避免触发"父快照缺 cwd"告警噪音。
+      parentPermission: () => ({ mode: 'default', rules: [], cwd: '/repo' }),
     } as any
 
     const seen = { called: false }

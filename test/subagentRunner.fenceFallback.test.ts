@@ -12,6 +12,15 @@ describe('fenceRoot 兜底不得 fail-open', () => {
     expect(warn).toHaveBeenCalled() // 缺 cwd 是异常，必须可观测
     warn.mockRestore()
   })
+
+  it('回归：父快照含 cwd → 不告警（正常路径不产生噪音）', () => {
+    const warn = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const parent: PermissionSnapshot = { mode: 'default', rules: [], cwd: '/repo' }
+    const pc = buildSubagentPermission(parent, '/repo')
+    expect(pc.cwd).toBe('/repo')
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
 })
 
 describe('三处注入点 cwd 同源', () => {

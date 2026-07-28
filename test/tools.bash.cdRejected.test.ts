@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -32,5 +32,34 @@ describe('越界 cd 不静默丢弃', () => {
     const out = await bashTool.call({ command: 'cd sub' }, ctx)
     expect(out).not.toContain('未生效')
     expect(cur).toBe(path.join(dir, 'sub'))
+  })
+
+  it('cd 被围栏拒绝 → 不派发 CwdChanged（发了就是向 hook 撒谎：目录压根没变）', async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dc-cdrej-hook-')))
+    let cur = dir
+    const hookDispatch = vi.fn().mockResolvedValue({})
+    const ctx: any = {
+      ...makeCtx(dir),
+      cwd: () => cur,
+      setCwd: (d: string) => { if (d.startsWith(dir)) cur = d },
+      hookDispatch,
+    }
+    await bashTool.call({ command: 'cd /' }, ctx)
+    expect(hookDispatch).not.toHaveBeenCalledWith('CwdChanged', expect.anything())
+  })
+
+  it('回归：围栏内的 cd 正常生效时仍正常派发 CwdChanged', async () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dc-cdok-hook-')))
+    fs.mkdirSync(path.join(dir, 'sub'))
+    let cur = dir
+    const hookDispatch = vi.fn().mockResolvedValue({})
+    const ctx: any = {
+      ...makeCtx(dir),
+      cwd: () => cur,
+      setCwd: (d: string) => { if (d.startsWith(dir)) cur = d },
+      hookDispatch,
+    }
+    await bashTool.call({ command: 'cd sub' }, ctx)
+    expect(hookDispatch).toHaveBeenCalledWith('CwdChanged', expect.objectContaining({ new_cwd: path.join(dir, 'sub') }))
   })
 })
