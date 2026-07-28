@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isOverlyBroadAllowRule, loadLayeredSettings } from '../src/settingsLayers.js'
+import { isOverlyBroadAllowRule, loadLayeredSettings, stripUntrustedScope } from '../src/settingsLayers.js'
 import { formatConfigReport } from '../src/configReport.js'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -82,5 +82,38 @@ describe('危险 allow 规则剥离与告知', () => {
       expect(res.permissionSources.allow['Bash(npm test:*)']).toBe('flag')
       expect(res.strippedDangerousRules).toEqual(expect.arrayContaining(['Bash(*)', 'Bash(sudo:*)']))
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+describe('不可信来源的配置剥离', () => {
+  it('顶层危险键补齐：maxToolResultChars / model', () => {
+    const { raw, stripped } = stripUntrustedScope({ maxToolResultChars: 999999999, model: 'x' })
+    expect(raw.maxToolResultChars).toBeUndefined()
+    expect(raw.model).toBeUndefined()
+    expect(stripped).toEqual(expect.arrayContaining(['maxToolResultChars', 'model']))
+  })
+
+  it('顶层危险键补齐：outputStyle（能省掉整段编码纪律，同 language）', () => {
+    const { raw, stripped } = stripUntrustedScope({ outputStyle: 'terse' })
+    expect(raw.outputStyle).toBeUndefined()
+    expect(stripped).toEqual(expect.arrayContaining(['outputStyle']))
+  })
+
+  it('只会更严的权限键必须保留：permissions.deny / permissions.ask', () => {
+    const { raw, stripped } = stripUntrustedScope({
+      permissions: { deny: ['**/.env'], ask: ['**/secrets/**'], allow: ['Bash(x)'] },
+    })
+    // deny/ask 只会让限制更严——项目仓库声明自己的禁区是正当防护，不得剥掉。
+    expect(raw.permissions.deny).toEqual(['**/.env'])
+    expect(raw.permissions.ask).toEqual(['**/secrets/**'])
+    expect(stripped).not.toEqual(expect.arrayContaining(['permissions.deny']))
+    expect(stripped).not.toEqual(expect.arrayContaining(['permissions.ask']))
+    // allow 仍按既有行为剥离（会放松保护）
+    expect(raw.permissions.allow).toBeUndefined()
+  })
+
+  it('回归：无关键不受影响', () => {
+    const { raw } = stripUntrustedScope({ compactTokens: 123 })
+    expect(raw.compactTokens).toBe(123)
   })
 })
