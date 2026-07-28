@@ -15,6 +15,9 @@ import { taskOutputPath } from '../config.js'
 import { runSubagent } from '../subagentRunner.js'
 import { resolveGitRoot, createWorktree, worktreeChanges, removeWorktree, type WorktreeConfig, type WorktreeHandle } from '../worktree.js'
 
+/** 子代理嵌套深度上限：主 → 子 → 孙，孙再派即拒。防 general-purpose 递归 fork 失控。 */
+export const MAX_SUBAGENT_DEPTH = 2
+
 /** 这些 reason 来源意味着"本该由人拍板"。子代理无审批 UI，无人可批 → 拒。 */
 export function isSecurityGate(reason?: PermissionDecisionReason): boolean {
   if (!reason) return false
@@ -63,6 +66,9 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
         const available = agents.map(a => a.agentType).join(', ')
         throw new Error(`Agent type '${type}' not found. Available: ${available}`)
       }
+      if ((ctx.subagentDepth ?? 0) >= MAX_SUBAGENT_DEPTH) {
+        throw new Error(`子代理嵌套已达上限 ${MAX_SUBAGENT_DEPTH} 层，不能再派子代理。请在当前层完成剩余工作。`)
+      }
       const tools = resolveAgentTools(def, pool, GLOBAL_SUBAGENT_DENY)
       const subModel =
         resolveSubModel(def.model, deps.getModel())
@@ -93,7 +99,8 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       }
 
       // 后台路径：脱钩跑、立即返句柄。
-      if (input.run_in_background === true) {
+      // 子代理保持纯执行：忽略 run_in_background，降级为前台同步执行（防污染主会话通知队列）。
+      if (input.run_in_background === true && !ctx.isSubagent) {
         const id = generateTaskId('local_agent')
         const ac = new AbortController()
         const outputFile = taskOutputPath(id)
