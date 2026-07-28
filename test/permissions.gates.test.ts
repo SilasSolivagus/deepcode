@@ -98,3 +98,29 @@ describe('deny 命中后 hook 不得放行', () => {
     expect(asked).toBe(false) // hook 放行，没走到 ask
   })
 })
+
+describe('auto 模式 Edit/Write 恢复 hard_deny', () => {
+  const writeTool = (desc: string): any => ({
+    name: 'Write', isReadOnly: false, needsPermission: () => desc,
+  })
+
+  it('攻击：auto 下 Write 命中 hard_deny → 被拦（此前 fast-path 直接放行）', async () => {
+    let classified = 0
+    const r = await checkPermission(writeTool('echo x >> ~/.ssh/authorized_keys'), {}, pc({
+      mode: 'auto',
+      classify: async () => { classified++; return 'run' },
+    }))
+    expect(r.ok).toBe(false)
+    expect(classified).toBe(0) // hard_deny 是静态判定，不该惊动分类器
+  })
+
+  it('回归：auto 下普通 Write 仍走 fast-path，不调分类器（保住 ~3s 延迟优化）', async () => {
+    let classified = 0
+    const r = await checkPermission(writeTool('write src/a.ts'), {}, pc({
+      mode: 'auto',
+      classify: async () => { classified++; return 'run' },
+    }))
+    expect(r.ok).toBe(true)
+    expect(classified).toBe(0)
+  })
+})
