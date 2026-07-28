@@ -512,7 +512,7 @@ export function createChatCore(opts: {
   const foreignStartupModel = settings.model
     ? foreignProviderOf(activePreset, settings.model, availablePresets(settings))
     : undefined
-  let model = resolveStartupModel(settings.model, activePreset, availablePresets(settings))
+  let model = resolveStartupModel(settings.model, activePreset, availablePresets(settings), settings.availableModels)
   // Task6 focus 视图：由 settings.viewMode 初始化；locked（viewMode:focus）时 /focus 不可关
   const initialFocus = resolveInitialFocus(settings)
   let focusMode = initialFocus.focusMode
@@ -794,6 +794,9 @@ export function createChatCore(opts: {
   let recovered: { file: string } | undefined
   if (foreignStartupModel) {
     notice('warn', `settings.model=${settings.model} 属于 ${foreignStartupModel} provider，当前 provider 是 ${activePreset.id}，已回落到 ${model}`)
+  } else if (settings.model && settings.availableModels && !settings.availableModels.includes(settings.model)) {
+    // 绝不静默失效：白名单钳制拦掉一个模型时也要可观测（同 headless/backgroundRunner 已有的回落告警）
+    notice('warn', `settings.model=${settings.model} 不在 availableModels 白名单内，已回落到 ${model}`)
   }
   if (opts.resumeFile) {
     try { fs.accessSync(opts.resumeFile); recovered = { file: opts.resumeFile } }

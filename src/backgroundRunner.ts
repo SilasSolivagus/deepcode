@@ -59,7 +59,7 @@ export async function runBackgroundSession(opts: {
   const denySources = buildDenySourceMap(layered.permissionSources.deny)
   const activePreset = resolveActiveProvider(settings)
   const requestedModel = opts.model ?? loaded.meta.model ?? settings.model
-  const model = resolveStartupModel(requestedModel, activePreset, availablePresets(settings))
+  const model = resolveStartupModel(requestedModel, activePreset, availablePresets(settings), settings.availableModels)
   if (requestedModel && requestedModel !== model) {
     // 绝不静默失效。后台子进程 stdio:'ignore'，stderr 被丢弃 → 唯一可见通道是 job state（/stop 列表会显示）。
     updateJobState(opts.jobShort, {

@@ -46,6 +46,9 @@ export interface Settings {
   maxToolResultChars: number
   /** 启动默认模型（undefined = 内置缺省 deepseek-v4-flash） */
   model?: string
+  /** model 白名单：设了则 model 必须命中其一，否则忽略回落默认档；undefined = 全允许、[] = 仅默认档。
+   *  仅信任 user scope（DANGEROUS_TOP_KEYS 剥离 project，否则可自设白名单架空钳制）。 */
+  availableModels?: string[]
   /** 输出风格名（undefined = 不注入特殊风格；'default' 同) */
   outputStyle?: string
   /** 响应语言锁定：设了就往系统提示注入「始终用 X 回复」。undefined = 不锁定。 */

@@ -30,6 +30,8 @@ export const DANGEROUS_TOP_KEYS = [
   // outputStyle 可强制选中 keepCodingInstructions:false 的风格 → 省掉整段编码纪律，
   // 与已因「注入系统提示」被剥的 language 同类
   'outputStyle',
+  // availableModels 是 model 的白名单闸门；project 层可写＝可自设白名单把贵档模型放进去，clamp 形同虚设
+  'availableModels',
 ] as const
 
 /** 深拷 raw 后剥离危险字段；嵌套删 permissions.allow / skills.sources。返回剥掉的键名（含嵌套路径）。 */

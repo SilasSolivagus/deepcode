@@ -183,8 +183,12 @@ export function resolveStartupModel(
   configured: string | undefined,
   preset: ProviderPreset,
   presets?: ProviderPreset[],
+  availableModels?: string[],
 ): string {
   if (!configured) return preset.models.smart // 未配置 → 默认用智能档（deepseek 即 deepseek-v4-pro）
+  // 白名单钳制：设了就必须命中，否则忽略所配模型回落默认档。
+  // 未设＝全允许（不改变既有行为）；空数组＝只允许默认档。
+  if (availableModels && !availableModels.includes(configured)) return preset.models.smart
   return foreignProviderOf(preset, configured, presets) ? preset.models.fast : configured
 }
 
