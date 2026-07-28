@@ -156,10 +156,13 @@ describe('只读工具的 ask 防护走路径维度', () => {
     expect(r.ok).toBe(true)
   })
 
-  // 钉住既定语义：命令维度对只读工具天然不适用（desc 恒 false，没有可匹配对象）。
-  // 这不是缺口——CC 同样不用命令维度保护读操作，它用的就是上面那条路径维度。
-  // 若将来有人给只读工具加上真实 needsPermission 描述，这条会变红，提醒他一并考虑
-  // 弹窗文案／suggestRule／isDangerous／subagentPermissionDecision 的连带影响。
+  // 钉住既定语义：命令维度规则只保护「有具体动作描述」的工具，只读工具没有描述
+  // （needsPermission 恒 false），故天然不适用；它们的防护本就该走上面那条路径维度。
+  // 这不是缺口。
+  // 注意本用例能钉住的是「needsPermission 恒 false」这个事实断言——行为断言那两条
+  // 由 isReadOnly 短路与 desc===false 短路双重兜底，单独移除任一道都不会让它们变红。
+  // 若将来有人给只读工具加上真实 needsPermission 描述，第三条断言会红，
+  // 提醒他一并评估弹窗文案／suggestRule／isDangerous／subagentPermissionDecision 的连带影响。
   it('既定语义：Tool(pattern) 命令维度规则对只读工具不触发', async () => {
     let asked = false
     const r = await checkPermission(readTool, { file_path: CONFIG }, pc({
