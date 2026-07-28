@@ -82,6 +82,9 @@ export const bashTool: Tool<typeof schema> = {
       return Promise.resolve(`后台任务已启动 id=${id}，输出写入 ${outputFile}。用 BgTaskList/TaskOutput/TaskStop 管理。`)
     }
     return new Promise(resolve => {
+      // cd 越界时 setCwd 会被围栏静默拒绝（ctx.cwd() 不变）——模型看到 shell 里 $PWD 变了，
+      // 若不告知，会误以为后续命令在新目录执行，撞"绝不静默失效"边。
+      let cdRejected: string | undefined
       // session-env 前缀（hook 写的 export 行）内联在用户命令前，使其 env 生效。
       // 已知局限（内联前缀写法的通病）：若 hook 脚本含 `set -e` 等会泄漏到用户命令；
       // 退出码经 err.code 兜底，但前缀提前退出会致 MARKER 未打印、本次 cwd 不更新。属病态 hook，不防御。
@@ -106,6 +109,9 @@ export const bashTool: Tool<typeof schema> = {
             if (newCwd && newCwd !== ctx.cwd()) {
               const oldCwd = ctx.cwd()
               ctx.setCwd(newCwd)
+              // setCwd 可能被围栏拒绝（子代理不得漂出工作区）。被拒时 ctx.cwd() 仍是旧值，
+              // 必须告诉模型这次 cd 没生效，否则它会以为后续命令在新目录里执行。
+              if (ctx.cwd() !== newCwd) cdRejected = newCwd
               const sid = ctx.sessionId?.()
               if (sid) clearCwdEnvFiles(sid) // 清旧 cwd 专属 env，hook 重写新值
               await ctx.hookDispatch?.('CwdChanged', {
@@ -114,13 +120,17 @@ export const bashTool: Tool<typeof schema> = {
               if (sid) invalidateSessionEnvCache(sid) // 下条命令重读前缀
             } else if (newCwd) {
               ctx.setCwd(newCwd)
+              if (ctx.cwd() !== newCwd) cdRejected = newCwd
             }
           }
           const merged = [out, stderr && `[stderr]\n${stderr}`].filter(Boolean).join('\n')
+          const notice = cdRejected
+            ? `\n注意：切换到 ${cdRejected} 未生效（超出本次会话允许的工作目录范围），后续命令仍在 ${ctx.cwd()}。`
+            : ''
           if (err?.killed) {
-            return resolve(truncateMiddle(`错误：命令超时（${input.timeout ?? 120_000}ms），已终止。\n${merged}`))
+            return resolve(truncateMiddle(`错误：命令超时（${input.timeout ?? 120_000}ms），已终止。\n${merged}${notice}`))
           }
-          resolve(truncateMiddle(exitCode === 0 ? merged || '(无输出)' : `退出码 ${exitCode}\n${merged}`))
+          resolve(truncateMiddle(exitCode === 0 ? (merged || '(无输出)') + notice : `退出码 ${exitCode}\n${merged}${notice}`))
         },
       )
     })
