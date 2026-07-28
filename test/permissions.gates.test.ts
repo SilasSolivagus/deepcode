@@ -57,6 +57,27 @@ describe('yolo 危险命令门', () => {
     expect(asked).toBe(false)
     expect(r.ok).toBe(true)
   })
+
+  it('无人值守（unattended）+ yolo + 危险命令 → 放行且不强制确认（ask 恒返回拒绝，问了也白问）', async () => {
+    let asked = false
+    const r = await checkPermission(fakeTool('Bash', false, 'rm -rf dist'), {}, pc({
+      mode: 'yolo',
+      unattended: true,
+      ask: async () => { asked = true; return 'no' as Decision },
+    }))
+    expect(asked).toBe(false)
+    expect(r.ok).toBe(true)
+  })
+
+  it('交互式（未设 unattended）+ yolo + 危险命令 → 仍强制确认（无人值守豁免不外溢到交互场景）', async () => {
+    let asked = false
+    const r = await checkPermission(fakeTool('Bash', false, 'rm -rf dist'), {}, pc({
+      mode: 'yolo',
+      ask: async () => { asked = true; return 'no' as Decision },
+    }))
+    expect(asked).toBe(true)
+    expect(r.ok).toBe(false)
+  })
 })
 
 describe('deny 命中后 hook 不得放行', () => {
@@ -101,19 +122,22 @@ describe('deny 命中后 hook 不得放行', () => {
   })
 })
 
-describe('auto 模式 Edit/Write 恢复 hard_deny', () => {
+describe('auto 模式 Edit/Write 路径描述不进命令形态的 hard_deny 判定', () => {
   const writeTool = (desc: string): any => ({
     name: 'Write', isReadOnly: false, needsPermission: () => desc,
   })
 
-  it('攻击：auto 下 Write 命中 hard_deny → 被拦（此前 fast-path 直接放行）', async () => {
+  it('auto 模式：Edit/Write 的路径描述不进命令形态的 hard_deny 判定', async () => {
+    // HARD_DENY_PATTERNS 是为命令串写的；`写入 <路径>` 形态只会误命中含 @ 的合法路径
+    // （scoped 包目录、企业家目录），且 hard_deny 不弹窗无逃生口。写入型后门防护应走
+    // 路径形态的规则，见后续批次。
     let classified = 0
-    const r = await checkPermission(writeTool('echo x >> ~/.ssh/authorized_keys'), {}, pc({
+    const r = await checkPermission(writeTool('写入 /Users/foo@bar.com/proj/.env'), {}, pc({
       mode: 'auto',
       classify: async () => { classified++; return 'run' },
     }))
-    expect(r.ok).toBe(false)
-    expect(classified).toBe(0) // hard_deny 是静态判定，不该惊动分类器
+    expect(r.ok).toBe(true)      // 不被硬拒
+    expect(classified).toBe(0)   // 走 fast-path，仍跳过分类器
   })
 
   it('回归：auto 下普通 Write 仍走 fast-path，不调分类器（保住 ~3s 延迟优化）', async () => {
