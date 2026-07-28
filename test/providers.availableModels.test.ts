@@ -15,7 +15,8 @@ describe('availableModels 白名单', () => {
   })
 
   it('不在白名单内 → 忽略，回落到默认档（不是硬失败）', () => {
-    expect(resolveStartupModel('deepseek-v4-pro', preset, undefined, ['deepseek-v4-flash'])).toBe(preset.models.smart)
+    // configured 必须不等于 preset.models.smart，否则删掉钳制行返回值不变、这条测不出东西
+    expect(resolveStartupModel('deepseek-v4-flash', preset, undefined, ['deepseek-v4-pro'])).toBe(preset.models.smart)
   })
 
   it('空数组 → 只允许默认档', () => {
