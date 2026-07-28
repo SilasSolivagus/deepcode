@@ -145,6 +145,20 @@ export interface PermissionContext {
   setSkipWorkflowWarning?: () => void
 }
 
+/** 父级安全约束的只读快照，供子代理继承。刻意不含 saveRule/ask：
+ *  子代理不得持久化规则，也不得复用父级的交互审批入口。 */
+export interface PermissionSnapshot {
+  mode: PermissionMode
+  rules: string[]
+  deny?: string[]
+  ruleSources?: Record<string, PermissionRuleSource>
+  denySources?: Record<string, PermissionRuleSource>
+  askRules?: string[]
+  askSources?: Record<string, PermissionRuleSource>
+  additionalDirs?: string[]
+  classify?: (toolName: string, desc: string, sibling: string) => Promise<'run' | 'ask' | 'block'>
+}
+
 // S1：auto 模式拒绝熔断器阈值（硬编码不可配）。
 // 连续 block ≥3 或整会话 block ≥20 → 不再自动拦，回退问用户（防分类器反复 block 卡死循环）。
 export const AUTO_MODE_MAX_CONSECUTIVE_DENIALS = 3
