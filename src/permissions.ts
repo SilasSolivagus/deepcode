@@ -98,6 +98,11 @@ export type PermissionDecisionReason =
   | { type: 'other'; reason: string }
   | { type: 'mode'; mode: PermissionMode }
 
+/** {type:'other'} 网关类 reason 的文案常量。生产者（本文件 checkPermission）与消费者
+ *  （tools/agent.ts 的 isSecurityGate）必须共用同一个常量——只改文案不改这里就会静默失效。 */
+export const WORKSPACE_FENCE_REASON = '工作目录围栏'
+export const WORKFLOW_USAGE_CONFIRM_REASON = 'workflow 用量确认'
+
 const SOURCE_NAMES: Record<PermissionRuleSource, string> = {
   builtin: '内置规则',
   user: '用户设置',
@@ -157,6 +162,10 @@ export interface PermissionSnapshot {
   askSources?: Record<string, PermissionRuleSource>
   additionalDirs?: string[]
   classify?: (toolName: string, desc: string, sibling: string) => Promise<'run' | 'ask' | 'block'>
+  /** 本回合工作目录围栏根快照：与父级本回合喂给 checkPermission 的 pc.cwd 同源，
+   *  回合内不随 Bash cd/EnterWorktree/ExitWorktree 漂移。子代理据此定 fenceRoot，
+   *  不得直接读父级实时 ctx.cwd()（会拿到回合中途已漂移的值，制造围栏绕过）。 */
+  cwd?: string
 }
 
 // S1：auto 模式拒绝熔断器阈值（硬编码不可配）。
@@ -416,7 +425,7 @@ export async function checkPermission(
       const outside = tool.workspacePaths(input as any, pc.cwd ?? process.cwd()).find(p => !isInsideWorkspace(p, roots))
       if (outside) {
         const fenceDesc = tool.needsPermission(input) || `访问工作目录外的路径：${outside}`
-        const fenceReason: PermissionDecisionReason = { type: 'other', reason: '工作目录围栏' }
+        const fenceReason: PermissionDecisionReason = { type: 'other', reason: WORKSPACE_FENCE_REASON }
         const d = await prompt(tool.name, fenceDesc, fenceReason)
         if (d === 'no') {
           await hooks?.onDenied?.(tool.name, fenceDesc, '路径在工作目录外，用户拒绝')
@@ -431,7 +440,7 @@ export async function checkPermission(
     if (tool.name === 'Workflow' && typeof tool.needsPermission === 'function') {
       const warn = tool.needsPermission(input)
       if (typeof warn === 'string') {
-        const reason: PermissionDecisionReason = { type: 'other', reason: 'workflow 用量确认' }
+        const reason: PermissionDecisionReason = { type: 'other', reason: WORKFLOW_USAGE_CONFIRM_REASON }
         const d = await prompt(tool.name, warn, reason)
         if (d === 'no') {
           await hooks?.onDenied?.(tool.name, warn, '用户取消了 workflow 运行')

@@ -495,6 +495,11 @@ export function createChatCore(opts: {
   const askSources = layered.permissionSources.ask
   const denySources = buildDenySourceMap(layered.permissionSources.deny)
   let cwd = opts.cwd
+  // 本回合围栏根快照：runTurn 开头冻结一次，回合内不随 Bash cd/EnterWorktree/ExitWorktree 漂移。
+  // 与本回合喂给 checkPermission 的 permission.cwd（下方 deps.permission.cwd）同源——
+  // 子代理 fenceRoot 必须取这个值而非实时 ctx.cwd()，否则回合内先 cd 再派子代理就会绕过围栏
+  // （父代理在同一回合里写那目录会被问人，静默派出的子代理却直接放行）。
+  let roundCwd = cwd
   const home = opts.home ?? os.homedir() // memdir 系（活动日志/召回/session-memory）落盘根目录
   let abort = new AbortController()
   const steerQueue = new SteeringQueue()
@@ -547,6 +552,7 @@ export function createChatCore(opts: {
       askSources,
       additionalDirs,
       classify: (t: string, d: string, s: string) => classify(t, d, s, { onUsage: auxOnUsage }),
+      cwd: roundCwd,
     }),
     get signal() { return abort.signal },
     fileState: new Map(),
@@ -583,6 +589,8 @@ export function createChatCore(opts: {
       onUsage: (u, m) => { usageLog.push({ usage: u, model: m }); session.appendUsage(u, m) },
       cwd: () => cwd,
       onProgress: (label?: string) => { hookProgress = label ?? null; setState() },
+      parentPermission: ctx.parentPermission,
+      denyPatterns: ctx.denyPatterns,
     }),
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
@@ -1024,6 +1032,8 @@ export function createChatCore(opts: {
    *    技能正文…），几百字灌进 `>` 行就是拿指导语冒充用户诉求喂 dream。将来新增命令忘了传，
    *    最多只记命令名（安全），而不是污染语料。只有真正的用户输入路径显式传展开后的 userText。 */
   const runTurn = async (displayLine: string, userText: string, images?: { base64: string; mime: string }[], activityText: string = displayLine): Promise<void> => {
+    // 本回合围栏根快照：必须在本回合任何工具执行之前冻结，否则回合内 cd 会污染子代理 fenceRoot。
+    roundCwd = cwd
     // 动态 /loop 标志：displayLine 为这些值时，本轮属于动态/自主循环，turn 末需检查是否已续跑。
     const loopActive =
       displayLine === '（/loop 自起步）' ||
@@ -1140,7 +1150,7 @@ export function createChatCore(opts: {
           get mode() { return permMode },
           rules: settings.permissions.allow,
           deny: resolveDenyList(settings.permissions.deny),
-          cwd,
+          cwd: roundCwd, // 与 ctx.parentPermission().cwd 同一份回合快照，二者必须同源
           additionalDirs,
           saveRule: r => {
             addUserAllowRule(r)        // 持久化到 user scope（raw RMW）

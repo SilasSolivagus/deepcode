@@ -8,6 +8,7 @@ import { runLoop } from './loop.js'
 import { makeStructuredOutputTool, structuredOutputReminder, MAX_STRUCTURED_OUTPUT_RETRIES } from './tools/structuredOutput.js'
 import { subagentPermissionDecision } from './tools/agent.js'
 import type { PermissionContext, PermissionSnapshot } from './permissions.js'
+import { isInsideWorkspace } from './workspace.js'
 
 // 记忆 fork 专用信号量（独立于用户 subagent 池，防三连点火打爆限流）。
 // MAX_MEMORY_ACTIVE=2：extract+sessionMemory+dream 最多 2 个并发，不饿死用户主动起的 Task。
@@ -98,16 +99,24 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       messages.push({ role: 'user', content: `<hook-context>\n${startOut.additionalContext}\n</hook-context>` })
     }
   }
+  const parentPerm = ctx.parentPermission?.()
   // 围栏根：构造时求值一次，不随子代理内 cd 漂移——漂移即围栏绕过（cd / 后可写任意路径）。
   // 与 subCwd 是两个量：subCwd 管"在哪执行"，fenceRoot 管"允许碰哪"。
-  // 调用方若自身是子代理，ctx.cwd() 可能已被其内部 cd 漂移（subCwd 的读法），
-  // 此时须取调用方自己不可变的 ctx.fenceRoot，否则孙代理会继承漂移后的值造成跨层逃逸；
-  // 顶层会话没有 fenceRoot 概念，才落到 ctx.cwd()。
-  const fenceRoot = opts.worktreePath ?? ctx.fenceRoot ?? ctx.cwd()
-  const parentPerm = ctx.parentPermission?.()
+  // 优先级：worktree 隔离 > 调用方（子代理）自己不可变的 ctx.fenceRoot（孙代理场景，防继承漂移后的 cwd 造成跨层逃逸）
+  // > parentPerm.cwd（顶层会话本回合的围栏根快照，与 useChat/headless/backgroundRunner 喂给 checkPermission 的
+  //   pc.cwd 同源、回合内不随 Bash cd/EnterWorktree/ExitWorktree 漂移）> ctx.cwd()（兜底：两者都拿不到时的最后手段，
+  //   即改动前行为，不比之前更松）。
+  const fenceRoot = opts.worktreePath ?? ctx.fenceRoot ?? parentPerm?.cwd ?? ctx.cwd()
+  // 子代理允许 cd 落脚的范围：围栏根 ∪ 继承的工作目录白名单。越界 cd 一律拒绝持久化——
+  // 否则「判定用 fenceRoot 解析相对路径」与「执行用 subCwd 解析相对路径」会分裂成两个基准，
+  // cd 到围栏外后传相对路径就能绕过围栏与 deny（实证：cd 到 outside 后 Write 相对路径写到围栏外；
+  // cd 到 ~/.aws 后 Read 相对路径读到真实 credentials）。
+  const allowedCdRoots = [fenceRoot, ...(parentPerm?.additionalDirs ?? [])]
   const subCtx: ToolContext = {
     cwd: () => subCwd,
-    setCwd: d => { subCwd = d }, // 独立变量：子代理内 Bash cd 漂移自身 cwd，不污染主 cwd
+    // 子代理纯执行，cd 不得漂出围栏：命中围栏内才持久化漂移，越界则静默保留原 subCwd
+    // （shell 子进程里的 cd 本身已经执行完毕退出，这里只是不落地这次目录切换）。
+    setCwd: d => { if (isInsideWorkspace(d, allowedCdRoots)) subCwd = d },
     get signal() { return signal }, // 前台=主 loop signal；后台=任务 AbortController（供 TaskStop）
     fileState: new Map(), // 独立 fileState，不污染主会话 read-before-edit 状态
     isSubagent: true, // 子代理纯执行：禁止起后台任务（防污染主会话通知队列）
@@ -125,6 +134,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       askSources: parentPerm?.askSources,
       additionalDirs: parentPerm?.additionalDirs,
       classify: parentPerm?.classify,
+      cwd: fenceRoot, // 传给下一层：与自身 ctx.fenceRoot 一致，双保险（ctx.fenceRoot 已优先生效）
     }),
   }
   let subStopFired = false
