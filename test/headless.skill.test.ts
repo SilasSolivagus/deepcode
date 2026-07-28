@@ -119,6 +119,7 @@ describe('headless Skills 接线', () => {
       settings: settingsWithDeny,
       provenance: {},
       permissionSources: { allow: {}, deny: {}, ask: {} }, hookLayers: [],
+      strippedDangerousRules: [],
       scopes: [],
     })
 

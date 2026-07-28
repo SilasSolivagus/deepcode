@@ -25,6 +25,9 @@ export function formatConfigReport(r: LayeredResult): string {
       lines.push(`  ⚠ ${tag} 的 ${s.stripped.join('/')} 已忽略（不可信来源）`)
     }
   }
+  if (r.strippedDangerousRules.length) {
+    lines.push(`  ⚠ 以下 allow 规则过宽或危险，已忽略：${r.strippedDangerousRules.join(' / ')}`)
+  }
   lines.push('加载的文件：')
   for (const s of r.scopes) {
     lines.push(`  [${s.scope}] ${s.path} ${s.present ? (s.demoted ? '(已加载·降级)' : '(已加载)') : '(缺失)'}`)

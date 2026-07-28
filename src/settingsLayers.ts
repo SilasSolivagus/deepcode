@@ -8,6 +8,7 @@ import {
 } from './config.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
 import { NOTIF_CHANNELS } from './notify.js'
+import { isDangerous } from './permissions.js'
 
 export type SettingScope = 'user' | 'project' | 'local' | 'flag'
 
@@ -56,6 +57,17 @@ export function isGitTracked(filePath: string, cwd: string): boolean {
   } catch {
     return false
   }
+}
+
+/** 一条 allow 规则是否过宽或危险，不得生效。
+ *  过宽=内容为空/纯星号（等于放行该工具全部用法）；危险=内容命中既有 DANGEROUS_PATTERNS。
+ *  在加载期剥离而非匹配期复检：一次性、可解释、能把被剥清单告知用户；
+ *  匹配期复检则每次调用都付代价，且用户看着规则在配置里却不知为何不生效。 */
+export function isOverlyBroadAllowRule(rule: string): boolean {
+  const m = /^(\w+)\((.*)\)$/.exec(rule.trim())
+  const content = m ? m[2].trim() : rule.trim()
+  if (content === '' || /^[\s*]+$/.test(content)) return true
+  return isDangerous(content.replace(/:\*$/, ''))
 }
 
 export interface ScopePartial { scope: SettingScope; partial: Record<string, unknown> }
@@ -137,6 +149,8 @@ export interface LayeredResult {
   permissionSources: { allow: Record<string, SettingScope>; deny: Record<string, SettingScope>; ask: Record<string, SettingScope> }
   scopes: LoadedScope[]
   hookLayers: { scope: SettingScope; hooks: import('./hooks.js').HooksConfig }[]
+  /** 被剥掉的过宽/危险 allow 规则（不生效，需告知用户）。 */
+  strippedDangerousRules: string[]
 }
 
 /** 从各层 partial 收集配了 hooks 的层（保留 scope），供 /hooks 标注来源。按加载序。 */
@@ -235,5 +249,18 @@ export function loadLayeredSettings(cwd: string = process.cwd(), flagPath: strin
   }
   const { settings, provenance, permissionSources } = mergeScopePartials(layers)
   const hookLayers = deriveHookLayers(layers)
-  return { settings: settings as Settings, provenance, permissionSources, scopes, hookLayers }
+
+  const strippedDangerousRules: string[] = []
+  if (Array.isArray(settings.permissions?.allow)) {
+    const kept: string[] = []
+    for (const r of settings.permissions.allow) {
+      if (isOverlyBroadAllowRule(r)) {
+        strippedDangerousRules.push(r)
+        delete permissionSources.allow[r] // 已剥离的规则不该再在来源追溯里露面
+      } else kept.push(r)
+    }
+    settings.permissions.allow = kept
+  }
+
+  return { settings: settings as Settings, provenance, permissionSources, scopes, hookLayers, strippedDangerousRules }
 }
