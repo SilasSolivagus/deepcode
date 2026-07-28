@@ -16,7 +16,7 @@ import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from './too
 import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
 import { loadOutputStyles, resolveOutputStyle } from './outputStyles.js'
-import { loadLayeredSettings } from './settingsLayers.js'
+import { loadLayeredSettings, strippedRulesNotice } from './settingsLayers.js'
 import { runHooks } from './hooks.js'
 import { makeHookRuntime } from './hookRuntime.js'
 import { initMcpTools } from './mcp.js'
@@ -78,6 +78,11 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   if (modelFallback) {
     // 绝不静默失效：配置被推翻必须说出来（stderr，不污染 stdout 结果通道）
     console.error(`[deepcode] settings.model=${modelFallback}`)
+  }
+  const strippedNotice = strippedRulesNotice(layered.strippedDangerousRules)
+  if (strippedNotice) {
+    // 绝不静默失效：always/plan 批准存下的规则若被剥，产品不能只在用户手动敲 /config 时才说。
+    console.error(`[deepcode] ${strippedNotice}`)
   }
   let cwd = process.cwd()
   // 本次 headless 单轮运行的围栏根快照：单发模式全程只有一轮 runLoop，此值在此冻结，

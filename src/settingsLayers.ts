@@ -191,6 +191,17 @@ export interface LayeredResult {
   strippedDangerousRules: string[]
 }
 
+/** `strippedDangerousRules` 的启动期告知文案。headless / 后台会话 / TUI 三个入口共用同一判定
+ *  与措辞——各写各的会在文案变更时静默分叉，出现"同样的剥离，一处说了一处没说"的情况
+ *  （同 modelFallbackReason 的共享判定理由）。无剥离返回 undefined。
+ *  措辞必须说清两件事：这些规则**不会生效**（不是"已记录待处理"），以及**为什么**
+ *  （过宽/危险，不是随机拒绝）——只报个清单会让用户以为是 bug。 */
+export function strippedRulesNotice(stripped: string[] | undefined): string | undefined {
+  if (!stripped?.length) return undefined
+  return `已剥离 ${stripped.length} 条过宽或危险的 allow 规则，它们不会生效：${stripped.join(' / ')}`
+    + '（这些规则等价于放开整个 Bash，或撞上内置的不可逆/破坏性命令模式，加载时被拒绝存续）'
+}
+
 /** 从各层 partial 收集配了 hooks 的层（保留 scope），供 /hooks 标注来源。按加载序。 */
 export function deriveHookLayers(layers: ScopePartial[]): { scope: SettingScope; hooks: import('./hooks.js').HooksConfig }[] {
   return layers

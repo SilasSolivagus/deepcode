@@ -55,6 +55,7 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
       provenance: {},
       permissionSources: { allow: {}, deny: {} },
       scopes: [],
+      strippedDangerousRules: [],
     })),
   }
 })
@@ -99,6 +100,27 @@ describe('runHeadless', () => {
     )
     const r = await runHeadless({ client: {} as any, prompt: '建个文件', yolo: false })
     expect(r.status).toBe('done') // 不挂起、不抛错，拒绝理由按正常机制喂回模型
+  })
+
+  it('yolo + 无人值守：命中危险命令正则的命令直接放行执行，不因确认门退化成硬拒', async () => {
+    // echo --force 的字面串命中 DANGEROUS_PATTERNS（--force），但真实执行毫无副作用——
+    // 用它做端到端断言：既验证命令真的跑了（stdout 含 --force），又不碰真实文件系统。
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'h9', name: 'Bash', args: '{"command":"echo --force"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '跑一下', yolo: true })
+    expect(r.status).toBe('done')
+    const allCalls = vi.mocked(chatStream).mock.calls
+    const allMessages: any[] = allCalls.flatMap(([_client, opts]) => opts.messages ?? [])
+    const toolMsg = allMessages.find(m => m.role === 'tool' && m.tool_call_id === 'h9')
+    expect(toolMsg?.content).toContain('--force') // 命令真的被执行了，不是被拦下的拒绝文案
+    expect(toolMsg?.content).not.toContain('yolo 危险命令')
   })
 
   it('todo 过期时在工具消息中注入 system-reminder', async () => {
@@ -232,6 +254,24 @@ describe('headless availableModels 白名单回落文案', () => {
       await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
       const msgs = errSpy.mock.calls.map(c => c.join(' '))
       expect(msgs).toContain('[deepcode] settings.model=deepseek-v4-flash 不在 availableModels 白名单内，已回落到 deepseek-v4-pro')
+    } finally {
+      errSpy.mockRestore()
+    }
+  })
+})
+
+describe('headless 剥离的 allow 规则告知', () => {
+  it('strippedDangerousRules 非空时经 console.error 播报（绝不只在 /config 里才看得见）', async () => {
+    vi.mocked(loadLayeredSettings).mockReturnValueOnce({
+      settings: mockSettings, provenance: {}, permissionSources: { allow: {}, deny: {} },
+      scopes: [], strippedDangerousRules: ['Bash(npm run:*)', 'Bash(rm -rf dist)'],
+    } as any)
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+      await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
+      const msgs = errSpy.mock.calls.map(c => c.join(' '))
+      expect(msgs.some(m => m.includes('Bash(npm run:*)') && m.includes('不会生效'))).toBe(true)
     } finally {
       errSpy.mockRestore()
     }

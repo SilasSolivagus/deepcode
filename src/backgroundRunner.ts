@@ -7,7 +7,7 @@ import { resolveAgents } from './agentsLoader.js'
 import { installTaskCleanup } from './tasks.js'
 import { buildSystemPrompt } from './prompt.js'
 import { loadOutputStyles, resolveOutputStyle } from './outputStyles.js'
-import { loadLayeredSettings } from './settingsLayers.js'
+import { loadLayeredSettings, strippedRulesNotice } from './settingsLayers.js'
 import { runHooks } from './hooks.js'
 import { makeHookRuntime } from './hookRuntime.js'
 import { initMcpTools } from './mcp.js'
@@ -61,11 +61,14 @@ export async function runBackgroundSession(opts: {
   const requestedModel = opts.model ?? loaded.meta.model ?? settings.model
   const model = resolveStartupModel(requestedModel, activePreset, availablePresets(settings), settings.availableModels)
   const modelFallback = modelFallbackReason(requestedModel, model, activePreset, settings.availableModels)
-  if (modelFallback) {
-    // 绝不静默失效。后台子进程 stdio:'ignore'，stderr 被丢弃 → 唯一可见通道是 job state（/stop 列表会显示）。
+  const strippedNotice = strippedRulesNotice(layered.strippedDangerousRules)
+  // 绝不静默失效。后台子进程 stdio:'ignore'，stderr 被丢弃 → 唯一可见通道是 job state（/stop 列表会显示）。
+  // warning 是单个标量字段，两条告警须合并进同一次写入，否则后写的会覆盖先写的。
+  const warnings = [modelFallback && `model=${modelFallback}`, strippedNotice].filter((w): w is string => !!w)
+  if (warnings.length) {
     updateJobState(opts.jobShort, {
       model,
-      warning: `model=${modelFallback}`,
+      warning: warnings.join('；'),
       updatedAt: Date.now(),
     })
   }

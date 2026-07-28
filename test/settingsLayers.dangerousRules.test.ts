@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isOverlyBroadAllowRule, loadLayeredSettings, stripUntrustedScope } from '../src/settingsLayers.js'
+import { isOverlyBroadAllowRule, loadLayeredSettings, stripUntrustedScope, strippedRulesNotice } from '../src/settingsLayers.js'
 import { formatConfigReport } from '../src/configReport.js'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -82,6 +82,22 @@ describe('危险 allow 规则剥离与告知', () => {
       expect(res.permissionSources.allow['Bash(npm test:*)']).toBe('flag')
       expect(res.strippedDangerousRules).toEqual(expect.arrayContaining(['Bash(*)', 'Bash(sudo:*)']))
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+describe('strippedRulesNotice：三入口共用的告知文案', () => {
+  it('无剥离 → undefined（不产生噪音通知）', () => {
+    expect(strippedRulesNotice([])).toBeUndefined()
+    expect(strippedRulesNotice(undefined)).toBeUndefined()
+  })
+
+  it('有剥离 → 说清"不会生效"+ 列出规则 + 说明原因（过宽/危险）', () => {
+    const msg = strippedRulesNotice(['Bash(npm run:*)', 'Bash(rm -rf dist)'])
+    expect(msg).toBeDefined()
+    expect(msg).toContain('Bash(npm run:*)')
+    expect(msg).toContain('Bash(rm -rf dist)')
+    expect(msg).toContain('不会生效') // 不是"已记录"这类暧昧措辞
+    expect(msg).toMatch(/过宽|危险/) // 说明原因，不是只报个清单
   })
 })
 

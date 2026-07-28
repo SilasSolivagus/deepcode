@@ -33,6 +33,8 @@ vi.mock('../src/api.js', async orig => ({
 
 // 供个别测试临时覆盖 settings 字段（如 provider/model/availableModels），不影响其余测试对真实宿主 settings 的依赖。
 const settingsOverride: Record<string, unknown> = {}
+// 供个别测试临时覆盖 strippedDangerousRules（真实宿主机上该值通常为空，测试需要时显式注入）。
+let strippedRulesOverride: string[] | undefined
 
 // 隔离宿主机 ~/.deepcode/settings.json 的权限规则：钉空 permissions.allow/deny，
 // 使权限测试（ask-chain 等）不受用户累积的 allow 规则影响（如 Bash(echo hello:*) 会让 ask 不弹 → 测试挂死）。
@@ -48,6 +50,7 @@ vi.mock('../src/settingsLayers.js', async orig => {
         // 避免 mock 脚本耗尽时的 "[memory] 提取失败" 噪音与测试结束后晚到的 console.error→write EPIPE。
         settings: { ...real.settings, permissions: { allow: [], deny: [] }, memory: { ...real.settings.memory, enabled: false }, ...settingsOverride },
         permissionSources: { allow: {}, deny: {} },
+        strippedDangerousRules: strippedRulesOverride ?? real.strippedDangerousRules,
       }
     },
   }
@@ -407,6 +410,16 @@ describe('createChatCore availableModels 白名单回落文案', () => {
     const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
     const notices = core.state.transcript.filter(i => i.kind === 'notice') as any[]
     expect(notices.some(n => n.text === 'settings.model=deepseek-v4-flash 不在 availableModels 白名单内，已回落到 deepseek-v4-pro')).toBe(true)
+  })
+})
+
+describe('createChatCore 剥离的 allow 规则告知', () => {
+  afterEach(() => { strippedRulesOverride = undefined })
+  it('strippedDangerousRules 非空时经 notice 播报（不能只在用户手动敲 /config 时才看得见）', () => {
+    strippedRulesOverride = ['Bash(npm run:*)', 'Bash(rm -rf dist)']
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    const notices = core.state.transcript.filter(i => i.kind === 'notice') as any[]
+    expect(notices.some(n => n.text.includes('Bash(npm run:*)') && n.text.includes('不会生效'))).toBe(true)
   })
 })
 

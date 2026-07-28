@@ -34,7 +34,7 @@ import type { Settings, OnboardingKeys } from '../config.js'
 import { loadAppState, saveAppState } from '../tipsState.js'
 import { selectTip, recordTipShown } from './tips.js'
 import { formatPermissionRules, resolveRuleRemoval } from '../permissionsView.js'
-import { loadLayeredSettings } from '../settingsLayers.js'
+import { loadLayeredSettings, strippedRulesNotice } from '../settingsLayers.js'
 import { runHooks } from '../hooks.js'
 import { newFlushState, computeFlush, type FlushState } from './messageDisplayFlush.js'
 import { makeHookRuntime } from '../hookRuntime.js'
@@ -800,6 +800,10 @@ export function createChatCore(opts: {
     const modelFallback = modelFallbackReason(settings.model, model, activePreset, settings.availableModels)
     if (modelFallback) notice('warn', `settings.model=${modelFallback}`)
   }
+  // 绝不静默失效：always/plan 批准存下的规则若被剥，不能只在用户手动敲 /config 时才说出来
+  // （同 headless/backgroundRunner 共用同一判定与措辞）。
+  const strippedNotice = strippedRulesNotice(layered.strippedDangerousRules)
+  if (strippedNotice) notice('warn', strippedNotice)
   if (opts.resumeFile) {
     try { fs.accessSync(opts.resumeFile); recovered = { file: opts.resumeFile } }
     catch { recovered = undefined }
