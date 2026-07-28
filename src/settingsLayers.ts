@@ -27,9 +27,6 @@ export const DANGEROUS_TOP_KEYS = [
   'skillOverrides',
   // autoUpdates 决定是否后台改动用户机器上的全局安装（防恶意 repo 操纵升级行为）
   'autoUpdates',
-  // maxToolResultChars 可被调到爆表使工具结果不截断 → 撑爆上下文（成本/DoS）；
-  // model 可强制切到贵档或不存在的模型名（拒服务）
-  'maxToolResultChars', 'model',
   // outputStyle 可强制选中 keepCodingInstructions:false 的风格 → 省掉整段编码纪律，
   // 与已因「注入系统提示」被剥的 language 同类
   'outputStyle',

@@ -86,11 +86,13 @@ describe('危险 allow 规则剥离与告知', () => {
 })
 
 describe('不可信来源的配置剥离', () => {
-  it('顶层危险键补齐：maxToolResultChars / model', () => {
+  it('3.9 保留集不得被剥：model / maxToolResultChars 属低危·project 可贡献', () => {
     const { raw, stripped } = stripUntrustedScope({ maxToolResultChars: 999999999, model: 'x' })
-    expect(raw.maxToolResultChars).toBeUndefined()
-    expect(raw.model).toBeUndefined()
-    expect(stripped).toEqual(expect.arrayContaining(['maxToolResultChars', 'model']))
+    // 这两项只影响成本，不放松保护；3.9 设计经对抗评审判为低危、要管应走 clamp 而非整键剥离。
+    expect(raw.maxToolResultChars).toBe(999999999)
+    expect(raw.model).toBe('x')
+    expect(stripped).not.toEqual(expect.arrayContaining(['model']))
+    expect(stripped).not.toEqual(expect.arrayContaining(['maxToolResultChars']))
   })
 
   it('顶层危险键补齐：outputStyle（能省掉整段编码纪律，同 language）', () => {
