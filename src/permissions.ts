@@ -149,6 +149,10 @@ export interface PermissionContext {
   autoDenials?: { consecutive: number; total: number }
   /** B7：workflow 用量确认「总是」时持久化 skipWorkflowUsageWarning:true。 */
   setSkipWorkflowWarning?: () => void
+  /** 无人值守（headless/后台会话）：ask 恒返回 'no'，无法真正弹窗问人。
+   *  仅影响 yolo 危险命令确认门——那道门在交互式下是"强制确认"，无人值守下会退化成硬拒，
+   *  与 yolo「别问我」的语义矛盾；deny/围栏/S4 保护路径/ask 规则等其余关卡不受此字段影响。 */
+  unattended?: boolean
 }
 
 /** 父级安全约束的只读快照，供子代理继承。刻意不含 saveRule/ask：
@@ -489,7 +493,9 @@ export async function checkPermission(
     if (pc.mode === 'yolo' && !forceAsk) {
       // yolo 语义是「别问我」，但危险命令是确定性安全兜底——与同文件 S4 保护路径守卫
       // 一致：连 yolo 也拦。放行本次但不写规则（危险命令不可自动放行）。
-      if (isDangerous(desc)) {
+      // 无人值守（unattended）下没有人能应答这道强制确认，ask 桩恒返回拒绝会让它退化成
+      // 硬拒——那些场景里 yolo 就是「别问，直接跑」，故此门只在真能弹窗问人时生效。
+      if (isDangerous(desc) && !pc.unattended) {
         const reason: PermissionDecisionReason = { type: 'other', reason: YOLO_DANGEROUS_CONFIRM_REASON }
         const d = await prompt(tool.name, desc, reason)
         if (d === 'no') {

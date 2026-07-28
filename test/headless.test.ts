@@ -62,6 +62,7 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
 import { runHeadless } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
 import { runHooks } from '../src/hooks.js'
+import { loadLayeredSettings } from '../src/settingsLayers.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 10 }
 beforeEach(() => { script.length = 0; hookCalls.length = 0; vi.mocked(chatStream).mockClear() })

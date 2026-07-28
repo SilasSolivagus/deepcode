@@ -161,6 +161,7 @@ export async function runBackgroundSession(opts: {
       cwd: roundCwd, // 与 ctx.parentPermission().cwd 同一份快照，二者必须同源
       saveRule: () => {},
       ask: async () => 'no', // 后台无人值守：默认拒绝，理由喂回模型
+      unattended: true, // ask 恒 'no'，无法真正弹窗——yolo 危险命令门在此退化成硬拒，故豁免
       ruleSources: layered.permissionSources.allow,
       denySources,
       askRules: settings.permissions.ask ?? [],
