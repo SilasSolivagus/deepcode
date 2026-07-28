@@ -102,6 +102,7 @@ export type PermissionDecisionReason =
  *  （tools/agent.ts 的 isSecurityGate）必须共用同一个常量——只改文案不改这里就会静默失效。 */
 export const WORKSPACE_FENCE_REASON = '工作目录围栏'
 export const WORKFLOW_USAGE_CONFIRM_REASON = 'workflow 用量确认'
+export const YOLO_DANGEROUS_CONFIRM_REASON = 'yolo 危险命令确认'
 
 const SOURCE_NAMES: Record<PermissionRuleSource, string> = {
   builtin: '内置规则',
@@ -485,7 +486,20 @@ export async function checkPermission(
       await hooks?.onDenied?.(tool.name, desc, `ask 规则拒绝：${askMatched}`)
       return { ok: false, reason: '用户拒绝了此操作', decisionReason: reason }
     }
-    if (pc.mode === 'yolo' && !forceAsk) return { ok: true }
+    if (pc.mode === 'yolo' && !forceAsk) {
+      // yolo 语义是「别问我」，但危险命令是确定性安全兜底——与同文件 S4 保护路径守卫
+      // 一致：连 yolo 也拦。放行本次但不写规则（危险命令不可自动放行）。
+      if (isDangerous(desc)) {
+        const reason: PermissionDecisionReason = { type: 'other', reason: YOLO_DANGEROUS_CONFIRM_REASON }
+        const d = await prompt(tool.name, desc, reason)
+        if (d === 'no') {
+          await hooks?.onDenied?.(tool.name, desc, 'yolo 危险命令：用户拒绝')
+          return { ok: false, reason: 'yolo 危险命令：用户拒绝', decisionReason: reason }
+        }
+        return { ok: true, decisionReason: reason }
+      }
+      return { ok: true }
+    }
     if (pc.mode === 'acceptEdits' && !forceAsk && (tool.name === 'Edit' || tool.name === 'Write')) return { ok: true }
     const matched = tool.name === 'Bash'
       ? findBashMatchingRule(desc, pc.rules)

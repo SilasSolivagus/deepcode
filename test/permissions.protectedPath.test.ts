@@ -5,6 +5,7 @@ import {
   detectDangerousRemoval,
   checkPermission,
   type PermissionContext,
+  type PermissionDecisionReason,
 } from '../src/permissions.js'
 
 const HOME = '/home/tester'
@@ -139,11 +140,16 @@ describe('S4 checkPermission 守卫', () => {
     expect(r.ok).toBe(true)
     expect(saved).toBeNull() // always 也不持久化（不可自动放行）
   })
-  it('普通 rm 不触发守卫（yolo 直接放行、不问）', async () => {
+  // Task5 更新：rm -rf node_modules 命中 DANGEROUS_PATTERNS（\brm\s+...-rf），
+  // 现在会被 yolo 危险命令门（非本 S4 守卫）拦下确认。本用例改为断言 S4 本身
+  // 确实没有误判该非保护路径（reason 不是「保护路径守卫」），而非零弹窗。
+  it('普通 rm（非保护路径）不触发 S4 守卫本身，但会被 Task5 yolo 危险命令门拦下确认', async () => {
     let asked = 0
+    let capturedReason: PermissionDecisionReason | undefined
     const r = await checkPermission(tool() as any, { command: 'rm -rf node_modules' },
-      ctx({ mode: 'yolo', ask: async () => { asked++; return 'no' } }))
-    expect(asked).toBe(0)
+      ctx({ mode: 'yolo', ask: async (_n, _d, reason) => { asked++; capturedReason = reason; return 'yes' } }))
+    expect(asked).toBe(1)
+    expect(capturedReason?.type === 'other' && capturedReason.reason.startsWith('保护路径守卫')).toBe(false)
     expect(r.ok).toBe(true)
   })
 })

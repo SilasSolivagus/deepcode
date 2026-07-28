@@ -8,7 +8,7 @@ import type { Usage } from '../api.js'
 import { allTools } from './index.js'
 import { makeWebFetchTool } from './webfetch.js'
 import { resolveSubModel } from '../providers.js'
-import { isDangerous, WORKSPACE_FENCE_REASON, WORKFLOW_USAGE_CONFIRM_REASON, type Decision, type PermissionDecisionReason } from '../permissions.js'
+import { isDangerous, WORKSPACE_FENCE_REASON, WORKFLOW_USAGE_CONFIRM_REASON, YOLO_DANGEROUS_CONFIRM_REASON, type Decision, type PermissionDecisionReason } from '../permissions.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription, type AgentDefinition } from './agentTypes.js'
 import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
 import { taskOutputPath } from '../config.js'
@@ -29,6 +29,10 @@ export function isSecurityGate(reason?: PermissionDecisionReason): boolean {
       // workflow 用量确认天然属于"本该由人拍板"：当前因 Workflow 在 GLOBAL_SUBAGENT_DENY 里
       // 不可达而从未真正触发，补上是为了去掉这层隐性依赖（不依赖"恰好不可达"这条件）。
       || reason.reason === WORKFLOW_USAGE_CONFIRM_REASON
+      // yolo 危险命令确认同属"本该由人拍板"。今天该门只在 isDangerous(desc) 为真时触发，
+      // 而下方兜底也正是 isDangerous 判定，故行为上是 no-op；补上是为了不依赖
+      // "恰好被兜底覆盖"这条件（同 workflow 用量确认的理由）。
+      || reason.reason === YOLO_DANGEROUS_CONFIRM_REASON
   }
   return false
 }
