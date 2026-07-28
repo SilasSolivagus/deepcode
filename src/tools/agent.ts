@@ -8,15 +8,29 @@ import type { Usage } from '../api.js'
 import { allTools } from './index.js'
 import { makeWebFetchTool } from './webfetch.js'
 import { resolveSubModel } from '../providers.js'
-import { isDangerous, type Decision } from '../permissions.js'
+import { isDangerous, type Decision, type PermissionDecisionReason } from '../permissions.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription, type AgentDefinition } from './agentTypes.js'
 import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
 import { taskOutputPath } from '../config.js'
 import { runSubagent } from '../subagentRunner.js'
 import { resolveGitRoot, createWorktree, worktreeChanges, removeWorktree, type WorktreeConfig, type WorktreeHandle } from '../worktree.js'
 
-/** 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo + isDangerous 钳制）。desc = 工具 needsPermission 文本（Bash 即命令原文）。 */
-export function subagentPermissionDecision(desc: string): Decision {
+/** 这些 reason 来源意味着"本该由人拍板"。子代理无审批 UI，无人可批 → 拒。 */
+export function isSecurityGate(reason?: PermissionDecisionReason): boolean {
+  if (!reason) return false
+  if (reason.type === 'rule') return reason.rule.behavior === 'deny' || reason.rule.behavior === 'ask'
+  if (reason.type === 'classifier') return reason.decision === 'ask' || reason.decision === 'block'
+  if (reason.type === 'other') {
+    return reason.reason === '工作目录围栏' || reason.reason.startsWith('保护路径守卫')
+  }
+  return false
+}
+
+/** 子代理无审批 UI：安全网关来源一律拒；常规审批沿用 isDangerous 文本判定。
+ *  desc = 工具 needsPermission 文本；reason = checkPermission 给出的结构化来源。
+ *  ⚠️ 不能只看 desc：S4 守卫会把 desc 重写成中文警告串，纯文本判定会把 rm -rf / 判成安全。 */
+export function subagentPermissionDecision(desc: string, reason?: PermissionDecisionReason): Decision {
+  if (isSecurityGate(reason)) return 'no'
   return isDangerous(desc) ? 'no' : 'yes'
 }
 
