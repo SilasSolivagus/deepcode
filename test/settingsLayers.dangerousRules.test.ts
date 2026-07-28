@@ -51,6 +51,38 @@ describe('isOverlyBroadAllowRule', () => {
     expect(isOverlyBroadAllowRule('Bash(envsubst:*)')).toBe(false) // env
     expect(isOverlyBroadAllowRule('Bash(timeout-report:*)')).toBe(false) // timeout
   })
+
+  it('新增的内建执行原语前缀：awk/gawk/find/make/sed/docker 授权即等价于任意命令执行', () => {
+    expect(isOverlyBroadAllowRule('Bash(awk:*)')).toBe(true)     // system()
+    expect(isOverlyBroadAllowRule('Bash(gawk:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(find:*)')).toBe(true)    // -exec/-execdir
+    expect(isOverlyBroadAllowRule('Bash(make:*)')).toBe(true)    // $(shell …)/--eval
+    expect(isOverlyBroadAllowRule('Bash(sed:*)')).toBe(true)     // GNU sed 的 e 命令
+    expect(isOverlyBroadAllowRule('Bash(docker:*)')).toBe(true)  // -v /:/host 挂宿主根目录
+  })
+
+  it('等价拼写缺口：绝对路径形式与版本号后缀形式同样被剥', () => {
+    expect(isOverlyBroadAllowRule('Bash(/usr/bin/python:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(/bin/sh:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(python3.11:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(node20:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(/usr/bin/python3.11:*)')).toBe(true) // 路径+版本号叠加
+  })
+
+  it('等价拼写守卫：basename/去版本号后仍逐形态精确相等，不误剥名字撞前缀的合法工具', () => {
+    expect(isOverlyBroadAllowRule('Bash(./scripts/python-lint:*)')).toBe(false) // basename=python-lint≠python
+    expect(isOverlyBroadAllowRule('Bash(makefile-gen:*)')).toBe(false)         // ≠make
+    expect(isOverlyBroadAllowRule('Bash(find-my-thing:*)')).toBe(false)        // ≠find
+    expect(isOverlyBroadAllowRule('Bash(node_modules/.bin/tsc:*)')).toBe(false) // basename=tsc
+  })
+
+  it('判定排除项：git/kubectl 的危险形态是子命令/配置键级别，不是裸前缀——不加入清单', () => {
+    // git -c core.pager="sh -c id" log 能执行任意命令，但 git -C dir status、git -c user.name=x
+    // 这类完全无害的调用同样以 "git -" 开头——现有前缀表的匹配粒度是"整条规则内容"，
+    // 加入裸 "git"/"kubectl" 会让这些常见良性规则一并被剥，误伤面比堵住的口子更大，故不加。
+    expect(isOverlyBroadAllowRule('Bash(git -c core.pager=xxx:*)')).toBe(false)
+    expect(isOverlyBroadAllowRule('Bash(kubectl:*)')).toBe(false)
+  })
 })
 
 describe('危险 allow 规则剥离与告知', () => {

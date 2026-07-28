@@ -79,17 +79,46 @@ const CODE_EXEC_PREFIXES = [
   'eval', 'exec', 'env', 'xargs', 'nice', 'stdbuf', 'nohup', 'timeout', 'time',
   // 提权与远程执行
   'sudo', 'doas', 'pkexec', 'ssh',
+  // 内建执行原语：调用本身（无需特定参数）就具备任意命令执行能力，与解释器同类。
+  // awk/gawk 的 system()、find 的 -exec/-execdir、GNU sed 的 e 命令、
+  // make 的 $(shell …)/--eval、docker 挂载宿主根目录跑容器，均不需要"恰好命中某个危险参数"，
+  // 授予裸前缀即等同于授予任意命令执行。
+  'awk', 'gawk', 'find', 'make', 'sed', 'docker',
 ] as const
+
+/** 取 token 的 basename（覆盖绝对路径写法，如 `/usr/bin/python` → `python`）再去掉
+ *  末尾纯数字/点号的版本号（`python3.11` → `python`、`node20` → `node`）。
+ *  只用于识别单 token 前缀（解释器/shell/内建执行原语）的等价拼写——多词前缀
+ *  （如 `npm run`）不存在路径/版本号变体问题，不套用此归一化。 */
+function normalizeHeadToken(token: string): string {
+  const base = token.includes('/') ? token.slice(token.lastIndexOf('/') + 1) : token
+  return base.replace(/[\d.]+$/, '')
+}
 
 /** 规则内容是否命中某个代码执行前缀。**逐形态精确相等，不做 startsWith**——
  *  否则 `Bash(nodemon:*)` 会被 `node` 误伤。先小写以覆盖大小写变体。
- *  五种形态：`python` / `python:*` / `python*` / `python *` / `python -…*`。 */
+ *  五种形态：`python` / `python:*` / `python*` / `python *` / `python -…*`。
+ *  单 token 前缀额外比较 basename+去版本号后的形式，覆盖 `/usr/bin/python:*`、
+ *  `python3.11:*` 这类等价拼写；比较仍是精确相等，不做 startsWith，
+ *  故 `makefile-gen:*`、`find-my-thing:*` 这类名字撞前缀的合法工具不受影响。 */
 function isCodeExecPrefixRule(content: string): boolean {
   const c = content.trim().toLowerCase()
-  return CODE_EXEC_PREFIXES.some(p =>
-    c === p || c === `${p}:*` || c === `${p}*` || c === `${p} *` ||
-    (c.startsWith(`${p} -`) && c.endsWith('*')),
-  )
+  const spaceIdx = c.search(/\s/)
+  const rawFirstToken = spaceIdx === -1 ? c : c.slice(0, spaceIdx)
+  const firstTokenBare = rawFirstToken.replace(/(:\*|\*)$/, '')
+  const restAfterFirst = c.slice(firstTokenBare.length)
+  const normalizedFirst = normalizeHeadToken(firstTokenBare)
+  const matchesTail = (rest: string): boolean =>
+    rest === '' || rest === ':*' || rest === '*' || rest === ' *' ||
+    (rest.startsWith(' -') && rest.endsWith('*'))
+  return CODE_EXEC_PREFIXES.some(p => {
+    if (p.includes(' ')) {
+      // 多词前缀（如 "npm run"）：沿用原判定，不做路径/版本号归一化。
+      return c === p || c === `${p}:*` || c === `${p}*` || c === `${p} *` ||
+        (c.startsWith(`${p} -`) && c.endsWith('*'))
+    }
+    return (firstTokenBare === p || normalizedFirst === p) && matchesTail(restAfterFirst)
+  })
 }
 
 /** 一条 allow 规则是否过宽或危险，不得生效。三类：
