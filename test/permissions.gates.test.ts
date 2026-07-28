@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { checkPermission, YOLO_DANGEROUS_CONFIRM_REASON, type PermissionContext, type Decision, type PermissionDecisionReason } from '../src/permissions.js'
+import { readTool } from '../src/tools/read.js'
 
 // 本文件的 fakeTool 故意不设 workspacePaths/deniablePaths，好让 checkPermission
 // 直达 yolo 分支（:488）——工作目录围栏（:423）与 deny（:378）都要靠这两个字段
@@ -122,5 +123,52 @@ describe('auto 模式 Edit/Write 恢复 hard_deny', () => {
     }))
     expect(r.ok).toBe(true)
     expect(classified).toBe(0)
+  })
+})
+
+describe('只读工具的 ask 防护走路径维度', () => {
+  const CONFIG = '/repo/config.json'
+
+  it('路径维度：裸 glob ask 规则命中只读工具的路径 → 强制弹窗，拒则拒', async () => {
+    let asked = false
+    let askReason: PermissionDecisionReason | undefined
+    const r = await checkPermission(readTool, { file_path: CONFIG }, pc({
+      cwd: '/repo',
+      askRules: ['**/config.json'],
+      ask: async (_n, _d, reason) => { asked = true; askReason = reason; return 'no' as Decision },
+    }))
+    expect(asked).toBe(true) // 只读短路没能把它吞掉
+    expect(r.ok).toBe(false)
+    expect(askReason).toEqual({
+      type: 'rule',
+      rule: { source: 'user', behavior: 'ask', value: '**/config.json' },
+    })
+  })
+
+  it('回归：路径不命中裸 glob 时，只读工具仍零弹窗放行', async () => {
+    let asked = false
+    const r = await checkPermission(readTool, { file_path: '/repo/other.json' }, pc({
+      cwd: '/repo',
+      askRules: ['**/config.json'],
+      ask: async () => { asked = true; return 'no' as Decision },
+    }))
+    expect(asked).toBe(false)
+    expect(r.ok).toBe(true)
+  })
+
+  // 钉住既定语义：命令维度对只读工具天然不适用（desc 恒 false，没有可匹配对象）。
+  // 这不是缺口——CC 同样不用命令维度保护读操作，它用的就是上面那条路径维度。
+  // 若将来有人给只读工具加上真实 needsPermission 描述，这条会变红，提醒他一并考虑
+  // 弹窗文案／suggestRule／isDangerous／subagentPermissionDecision 的连带影响。
+  it('既定语义：Tool(pattern) 命令维度规则对只读工具不触发', async () => {
+    let asked = false
+    const r = await checkPermission(readTool, { file_path: CONFIG }, pc({
+      cwd: '/repo',
+      askRules: ['Read(config.json)'],
+      ask: async () => { asked = true; return 'no' as Decision },
+    }))
+    expect(asked).toBe(false)
+    expect(r.ok).toBe(true)
+    expect(readTool.needsPermission({ file_path: CONFIG } as any)).toBe(false) // 根因就在这
   })
 })
