@@ -548,7 +548,9 @@ export async function checkPermission(
     // PermissionRequest hook：交互 ask 前。allow→放行；deny/block→拒绝。
     if (hooks?.onRequest) {
       const out = await hooks.onRequest(tool.name, desc)
-      if (out.permission === 'allow') return { ok: true }
+      // deny 命中过（Bash 被降级为 forceAsk）时，hook 只能拒不能放——
+      // 否则一条 PermissionRequest hook 就能把 deny 名单整个架空。
+      if (out.permission === 'allow' && !denyHit) return { ok: true }
       if (out.permission === 'deny' || out.block) {
         const reason = out.permissionReason ?? out.blockReason ?? '权限被 hook 拒绝'
         await hooks.onDenied?.(tool.name, desc, reason)

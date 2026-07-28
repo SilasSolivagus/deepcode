@@ -56,3 +56,45 @@ describe('yolo 危险命令门', () => {
     expect(r.ok).toBe(true)
   })
 })
+
+describe('deny 命中后 hook 不得放行', () => {
+  // paths 是唯一变量：命中 deny 与否，全靠工具桩报出的可 deny 路径决定。
+  const bashTool = (cmd: string, paths: string[]): any => ({
+    name: 'Bash', isReadOnly: false,
+    needsPermission: () => cmd,
+    deniablePaths: () => paths,
+  })
+  const allowHook = { onRequest: async () => ({ permission: 'allow' }) } as any
+
+  it('攻击：deny 命中 Bash 后 PermissionRequest hook 返回 allow → 仍不得放行，且改由人拍板', async () => {
+    let asked = false
+    let askReason: PermissionDecisionReason | undefined
+    const r = await checkPermission(
+      bashTool('cat /home/u/.ssh/id_rsa', ['/home/u/.ssh/id_rsa']), {},
+      pc({
+        deny: ['**/id_rsa'],
+        ask: async (_n, _d, reason) => { asked = true; askReason = reason; return 'no' as Decision },
+      }),
+      allowHook,
+    )
+    expect(r.ok).toBe(false)
+    // 不是"hook allow 被无声吞掉直接硬拒"，而是 fall through 到尾部 ask 交人决定，
+    // 且带着 deny 归因——「绝不静默失效」要求这条链路可观测。
+    expect(asked).toBe(true)
+    expect(askReason).toEqual({ type: 'rule', rule: { source: 'builtin', behavior: 'deny', value: '**/id_rsa' } })
+  })
+
+  it('回归：未命中 deny 时 hook 的 allow 仍然生效（不打废 hook）', async () => {
+    let asked = false
+    const r = await checkPermission(
+      bashTool('npm test', []), {},
+      pc({
+        deny: ['**/id_rsa'],
+        ask: async () => { asked = true; return 'no' as Decision },
+      }),
+      allowHook,
+    )
+    expect(r.ok).toBe(true)
+    expect(asked).toBe(false) // hook 放行，没走到 ask
+  })
+})
