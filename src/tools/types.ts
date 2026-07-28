@@ -54,6 +54,10 @@ export interface ToolContext {
   worktreeSession?: WorktreeSession
   /** 会话级 EnterWorktree 用；主会话/headless 注入 */
   worktreeConfig?: () => import('../worktree.js').WorktreeConfig | undefined
+  /** 本执行体的工作目录围栏根：构造时定死、不随 cd 漂移。子代理注入自身 fenceRoot，
+   *  供其再派子代理时继承——直接用 cwd() 会把已漂移的 subCwd 当围栏根，形成跨层逃逸。
+   *  顶层会话不注入：其 cwd() 本身即围栏根。 */
+  fenceRoot?: string
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

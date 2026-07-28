@@ -100,7 +100,10 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
   }
   // 围栏根：构造时求值一次，不随子代理内 cd 漂移——漂移即围栏绕过（cd / 后可写任意路径）。
   // 与 subCwd 是两个量：subCwd 管"在哪执行"，fenceRoot 管"允许碰哪"。
-  const fenceRoot = opts.worktreePath ?? ctx.cwd()
+  // 调用方若自身是子代理，ctx.cwd() 可能已被其内部 cd 漂移（subCwd 的读法），
+  // 此时须取调用方自己不可变的 ctx.fenceRoot，否则孙代理会继承漂移后的值造成跨层逃逸；
+  // 顶层会话没有 fenceRoot 概念，才落到 ctx.cwd()。
+  const fenceRoot = opts.worktreePath ?? ctx.fenceRoot ?? ctx.cwd()
   const parentPerm = ctx.parentPermission?.()
   const subCtx: ToolContext = {
     cwd: () => subCwd,
@@ -110,6 +113,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
     isSubagent: true, // 子代理纯执行：禁止起后台任务（防污染主会话通知队列）
     denyPatterns: ctx.denyPatterns, // Glob/Grep 输出过滤：不继承则派个子代理 Grep 即可绕过 deny
     subagentDepth: (ctx.subagentDepth ?? 0) + 1,
+    fenceRoot, // 注入自身定死的围栏根，供下一层子代理继承而非误用已漂移的 cwd()
     // 逐层传递：孙代理同样受约束（fenceRoot 已收窄），而非在第二层丢失
     parentPermission: () => ({
       mode: parentPerm?.mode ?? 'default',
