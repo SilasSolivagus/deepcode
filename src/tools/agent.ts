@@ -8,15 +8,36 @@ import type { Usage } from '../api.js'
 import { allTools } from './index.js'
 import { makeWebFetchTool } from './webfetch.js'
 import { resolveSubModel } from '../providers.js'
-import { isDangerous, type Decision } from '../permissions.js'
+import { isDangerous, WORKSPACE_FENCE_REASON, WORKFLOW_USAGE_CONFIRM_REASON, type Decision, type PermissionDecisionReason } from '../permissions.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools, buildAgentDescription, type AgentDefinition } from './agentTypes.js'
 import { generateTaskId, registerTask, updateTask, getTask, enqueueNotification } from '../tasks.js'
 import { taskOutputPath } from '../config.js'
 import { runSubagent } from '../subagentRunner.js'
 import { resolveGitRoot, createWorktree, worktreeChanges, removeWorktree, type WorktreeConfig, type WorktreeHandle } from '../worktree.js'
 
-/** 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo + isDangerous 钳制）。desc = 工具 needsPermission 文本（Bash 即命令原文）。 */
-export function subagentPermissionDecision(desc: string): Decision {
+/** 子代理嵌套深度上限：主 → 子 → 孙，孙再派即拒。防 general-purpose 递归 fork 失控。 */
+export const MAX_SUBAGENT_DEPTH = 2
+
+/** 这些 reason 来源意味着"本该由人拍板"。子代理无审批 UI，无人可批 → 拒。 */
+export function isSecurityGate(reason?: PermissionDecisionReason): boolean {
+  if (!reason) return false
+  if (reason.type === 'rule') return reason.rule.behavior === 'deny' || reason.rule.behavior === 'ask'
+  if (reason.type === 'classifier') return reason.decision === 'ask' || reason.decision === 'block'
+  if (reason.type === 'other') {
+    return reason.reason === WORKSPACE_FENCE_REASON
+      || reason.reason.startsWith('保护路径守卫')
+      // workflow 用量确认天然属于"本该由人拍板"：当前因 Workflow 在 GLOBAL_SUBAGENT_DENY 里
+      // 不可达而从未真正触发，补上是为了去掉这层隐性依赖（不依赖"恰好不可达"这条件）。
+      || reason.reason === WORKFLOW_USAGE_CONFIRM_REASON
+  }
+  return false
+}
+
+/** 子代理无审批 UI：安全网关来源一律拒；常规审批沿用 isDangerous 文本判定。
+ *  desc = 工具 needsPermission 文本；reason = checkPermission 给出的结构化来源。
+ *  ⚠️ 不能只看 desc：S4 守卫会把 desc 重写成中文警告串，纯文本判定会把 rm -rf / 判成安全。 */
+export function subagentPermissionDecision(desc: string, reason?: PermissionDecisionReason): Decision {
+  if (isSecurityGate(reason)) return 'no'
   return isDangerous(desc) ? 'no' : 'yes'
 }
 
@@ -49,6 +70,9 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
         const available = agents.map(a => a.agentType).join(', ')
         throw new Error(`Agent type '${type}' not found. Available: ${available}`)
       }
+      if ((ctx.subagentDepth ?? 0) >= MAX_SUBAGENT_DEPTH) {
+        throw new Error(`子代理嵌套已达上限 ${MAX_SUBAGENT_DEPTH} 层，不能再派子代理。请在当前层完成剩余工作。`)
+      }
       const tools = resolveAgentTools(def, pool, GLOBAL_SUBAGENT_DENY)
       const subModel =
         resolveSubModel(def.model, deps.getModel())
@@ -79,7 +103,8 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
       }
 
       // 后台路径：脱钩跑、立即返句柄。
-      if (input.run_in_background === true) {
+      // 子代理保持纯执行：忽略 run_in_background，降级为前台同步执行（防污染主会话通知队列）。
+      if (input.run_in_background === true && !ctx.isSubagent) {
         const id = generateTaskId('local_agent')
         const ac = new AbortController()
         const outputFile = taskOutputPath(id)

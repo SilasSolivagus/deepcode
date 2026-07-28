@@ -4,10 +4,11 @@ import { chatStream, type Usage } from './api.js'
 import { runLoop } from './loop.js'
 import { allTools } from './tools/index.js'
 import { activeFastModel } from './providers.js'
-import { subagentPermissionDecision } from './tools/agent.js'
+import { buildSubagentPermission } from './subagentRunner.js'
 import type { HookEngineDeps } from './hooks.js'
 import { registerAsync } from './hookTasks.js'
 import type { ToolContext } from './tools/types.js'
+import type { PermissionSnapshot } from './permissions.js'
 import { z } from 'zod'
 import { makeStructuredOutputTool, structuredOutputReminder, MAX_STRUCTURED_OUTPUT_RETRIES } from './tools/structuredOutput.js'
 
@@ -30,6 +31,11 @@ export function makeHookRuntime(opts: {
   onUsage?: (u: Usage, model: string) => void
   cwd: () => string
   onProgress?: (label?: string) => void
+  /** 父级安全约束快照（子代理继承用）。拿不到时 buildSubagentPermission 回落到 default+空规则，
+   *  不放宽——不得比"接线前"更松。 */
+  parentPermission?: () => PermissionSnapshot
+  /** deny 规则列表（Glob/Grep 输出过滤用），与主会话/子代理同一份。 */
+  denyPatterns?: () => string[]
 }): Pick<HookEngineDeps, 'llm' | 'runAgent' | 'registerAsync' | 'onProgress'> {
   const llm: HookEngineDeps['llm'] = async (prompt, model, signal) => {
     const gen = chatStream(opts.client, {
@@ -44,12 +50,18 @@ export function makeHookRuntime(opts: {
 
   const runAgent: HookEngineDeps['runAgent'] = async (prompt, model, signal) => {
     const subModel = resolveModel(model, opts.getModel)
+    // hook 子代理与用户子代理共用同一套围栏：deny/ask/cwd 都不能丢，否则 hook 子回路
+    // 变成绕过父级安全约束的后门（实证：读私钥/Grep 敏感串未被过滤）。拿不到父快照时
+    // buildSubagentPermission 回落 default+空规则，不比接线前更松（fail-safe）。
+    const fenceRoot = opts.cwd()
     const subCtx: ToolContext = {
       cwd: opts.cwd,
       setCwd: () => { /* hook 子代理只读，不漂移 cwd */ },
       get signal() { return signal },
       fileState: new Map(),
       isSubagent: true, // 纯执行 + 不注入 hookDispatch → 子回路 hooks-free 防递归
+      denyPatterns: opts.denyPatterns, // Glob/Grep 输出过滤：不继承则派个 Grep 即可绕过 deny
+      fenceRoot,
     }
     const messages: any[] = [{ role: 'user', content: prompt }]
     // L-044：注入 StructuredOutput 工具，强制 hook 子代理产出 {ok,reason}（替代 ①c 的自由文本解析近似）。
@@ -62,7 +74,7 @@ export function makeHookRuntime(opts: {
         tools,
         model: subModel,
         thinking: false,
-        permission: { mode: 'default', rules: [], saveRule: () => {}, ask: async (_n, desc) => subagentPermissionDecision(desc) },
+        permission: buildSubagentPermission(opts.parentPermission?.(), fenceRoot),
         ctx: subCtx,
         maxTurns: 10,
       })

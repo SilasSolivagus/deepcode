@@ -56,8 +56,11 @@ describe('子代理独立 cwd（worktree 隔离）', () => {
     } as any
   }
 
-  // stub 工具：call 里读 ctx.cwd() 快照，再 ctx.setCwd('/some/other')。
-  const mkStub = (seen: { initial?: string; afterSet?: string }): Tool => ({
+  // stub 工具：call 里读 ctx.cwd() 快照，再 ctx.setCwd(target)。
+  // target 必须在围栏内（fenceRoot 的子目录）——子代理的 cd 现在只允许在围栏内漂移
+  // （Critical 1 修复：cd 出围栏不再持久化，防 cd 出围栏后传相对路径穿透），
+  // 这里验证的是"围栏内漂移仍然独立于父 cwd"这条隔离不变量，越界拒绝已有专门用例覆盖。
+  const mkStub = (seen: { initial?: string; afterSet?: string }, target: string): Tool => ({
     name: 'cwdProbe',
     description: 'probe cwd',
     inputSchema: z.object({}),
@@ -65,37 +68,37 @@ describe('子代理独立 cwd（worktree 隔离）', () => {
     needsPermission: () => false,
     call: async (_input, ctx: ToolContext) => {
       seen.initial = ctx.cwd()
-      ctx.setCwd('/some/other')
+      ctx.setCwd(target)
       seen.afterSet = ctx.cwd()
       return 'ok'
     },
   })
 
-  it('传 worktreePath：子代理 ctx.cwd() 初值==worktreePath，setCwd 只漂移自身', async () => {
+  it('传 worktreePath：子代理 ctx.cwd() 初值==worktreePath，setCwd 在围栏内只漂移自身', async () => {
     const parent = mkParentCtx()
     const seen: { initial?: string; afterSet?: string } = {}
     lastToolCallName = 'cwdProbe'
     await runSubagent({
       client: {} as any, onUsage: () => {}, systemPrompt: 'sys', userPrompt: 'go',
-      tools: [mkStub(seen)], model: 'm', ctx: parent, signal: new AbortController().signal,
+      tools: [mkStub(seen, '/wt/agent-abc/sub')], model: 'm', ctx: parent, signal: new AbortController().signal,
       agentId: 'a1', agentType: 'general', worktreePath: '/wt/agent-abc',
     })
     expect(seen.initial).toBe('/wt/agent-abc')        // 初值锚定 worktree
-    expect(seen.afterSet).toBe('/some/other')         // 子代理自身 cwd 已漂移
+    expect(seen.afterSet).toBe('/wt/agent-abc/sub')   // 子代理自身 cwd 在围栏内已漂移
     expect(parent.cwd()).toBe('/parent/repo')         // 父 cwd 未被污染
   })
 
-  it('不传 worktreePath：子代理 cwd 初值==父 cwd 快照，setCwd 仍不污染父', async () => {
+  it('不传 worktreePath：子代理 cwd 初值==父 cwd 快照，setCwd 在围栏内仍不污染父', async () => {
     const parent = mkParentCtx()
     const seen: { initial?: string; afterSet?: string } = {}
     lastToolCallName = 'cwdProbe'
     await runSubagent({
       client: {} as any, onUsage: () => {}, systemPrompt: 'sys', userPrompt: 'go',
-      tools: [mkStub(seen)], model: 'm', ctx: parent, signal: new AbortController().signal,
+      tools: [mkStub(seen, '/parent/repo/sub')], model: 'm', ctx: parent, signal: new AbortController().signal,
       agentId: 'a2', agentType: 'general',
     })
     expect(seen.initial).toBe('/parent/repo')         // 初值=父 cwd 快照
-    expect(seen.afterSet).toBe('/some/other')         // 子代理自身漂移
+    expect(seen.afterSet).toBe('/parent/repo/sub')    // 子代理自身在围栏内漂移
     expect(parent.cwd()).toBe('/parent/repo')         // 父 cwd 不变
   })
 })

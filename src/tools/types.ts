@@ -2,6 +2,7 @@
 import type { z } from 'zod'
 import type { TaskListStore } from '../taskList.js'
 import type { HookEvent, HookOutcome } from '../hooks.js'
+import type { PermissionSnapshot } from '../permissions.js'
 
 export interface WorktreeSessionState {
   originalCwd: string
@@ -29,6 +30,12 @@ export interface ToolContext {
   recordBeforeImage?: (absPath: string) => void
   /** 子代理上下文标记：子代理保持纯执行，禁止起后台任务（防污染主会话通知队列）。 */
   isSubagent?: boolean
+  /** 父级安全约束快照（子代理继承用）。主会话/headless/后台会话注入；
+   *  子代理子 ctx **也注入**（值为子代理自己的快照），使约束逐层传递而非在第二层丢失。
+   *  getter 形式：mode/cwd 等在会话中可变，必须每次现取。 */
+  parentPermission?: () => PermissionSnapshot
+  /** 子代理嵌套深度。顶层不注入 = 0；每下一层 +1。Agent 工具据此拒绝过深递归。 */
+  subagentDepth?: number
   /** hooks 生命周期分派闭包（捕获会话 hooks 快照）。主会话与 headless 顶层 ctx 注入；子代理内部子 ctx 不注入。
    *  工具层事件（SubagentStart/Stop、①b-2 的 CwdChanged/Task/Notification）经此发事件。对空配置零开销返回空 outcome。 */
   hookDispatch?: (event: HookEvent, payload: Record<string, unknown>) => Promise<HookOutcome>
@@ -47,6 +54,10 @@ export interface ToolContext {
   worktreeSession?: WorktreeSession
   /** 会话级 EnterWorktree 用；主会话/headless 注入 */
   worktreeConfig?: () => import('../worktree.js').WorktreeConfig | undefined
+  /** 本执行体的工作目录围栏根：构造时定死、不随 cd 漂移。子代理注入自身 fenceRoot，
+   *  供其再派子代理时继承——直接用 cwd() 会把已漂移的 subCwd 当围栏根，形成跨层逃逸。
+   *  顶层会话不注入：其 cwd() 本身即围栏根。 */
+  fenceRoot?: string
 }
 
 export interface Tool<S extends z.ZodTypeAny = z.ZodTypeAny> {

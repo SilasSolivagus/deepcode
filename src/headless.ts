@@ -79,6 +79,10 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     console.error(`[deepcode] settings.model=${settings.model} 不属于当前 provider（${activePreset.id}），已回落到 ${model}`)
   }
   let cwd = process.cwd()
+  // 本次 headless 单轮运行的围栏根快照：单发模式全程只有一轮 runLoop，此值在此冻结，
+  // 不随本轮内 Bash cd/EnterWorktree/ExitWorktree 漂移；子代理 fenceRoot 必须取它而非
+  // 实时 ctx.cwd()，否则先 cd 再派子代理会绕过围栏。
+  const roundCwd = cwd
   const agents = resolveAgents(cwd)
   const skills = loadSkills(cwd, undefined, settings.skills, settings.skillOverrides)
   const injectionBuffer: string[] = []
@@ -90,6 +94,16 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     cwd: () => cwd,
     setCwd: d => { cwd = d },
     denyPatterns: () => resolveDenyList(settings.permissions.deny),
+    parentPermission: () => ({
+      mode: opts.yolo ? 'yolo' : 'default',
+      rules: settings.permissions.allow,
+      deny: resolveDenyList(settings.permissions.deny),
+      ruleSources: layered.permissionSources.allow,
+      denySources,
+      askRules: settings.permissions.ask ?? [],
+      askSources: layered.permissionSources.ask,
+      cwd: roundCwd,
+    }),
     signal: new AbortController().signal,
     fileState: new Map(),
     taskList,
@@ -108,7 +122,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     total.prompt_cache_hit_tokens += u.prompt_cache_hit_tokens
   }
   const hookDeps = {
-    ...makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd }),
+    ...makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd, parentPermission: ctx.parentPermission, denyPatterns: ctx.denyPatterns }),
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
   }
@@ -166,7 +180,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       mode: opts.yolo ? 'yolo' : 'default',
       rules: settings.permissions.allow,
       deny: resolveDenyList(settings.permissions.deny),
-      cwd,
+      cwd: roundCwd, // 与 ctx.parentPermission().cwd 同一份快照，二者必须同源
       saveRule: () => { /* headless 不持久化规则 */ },
       ask: async () => 'no', // 无人值守：默认拒绝，拒绝理由按正常机制喂回模型
       ruleSources: layered.permissionSources.allow,

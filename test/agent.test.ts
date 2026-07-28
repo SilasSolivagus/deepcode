@@ -114,7 +114,8 @@ describe('Agent 子代理', () => {
       { result: { content: '结论', toolCalls: [], usage, finishReason: 'stop' } },
     )
     const tool = makeAgentTool({ client: {} as any, onUsage: () => {}, getModel: () => 'deepseek-v4-flash' })
-    const c = ctx()
+    // cwd 指向 dir（探针文件所在目录）：子代理围栏根=fenceRoot=父 cwd，探针文件须落在围栏内才能被读到。
+    const c = { ...ctx(), cwd: () => dir }
     await tool.call({ description: 'x', prompt: 'y' }, c)
     const { chatStream } = await import('../src/api.js')
     // call[0] = 第一幕（子代理发起），call[1] = 第二幕（带 tool 结果）

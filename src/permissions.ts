@@ -98,6 +98,11 @@ export type PermissionDecisionReason =
   | { type: 'other'; reason: string }
   | { type: 'mode'; mode: PermissionMode }
 
+/** {type:'other'} 网关类 reason 的文案常量。生产者（本文件 checkPermission）与消费者
+ *  （tools/agent.ts 的 isSecurityGate）必须共用同一个常量——只改文案不改这里就会静默失效。 */
+export const WORKSPACE_FENCE_REASON = '工作目录围栏'
+export const WORKFLOW_USAGE_CONFIRM_REASON = 'workflow 用量确认'
+
 const SOURCE_NAMES: Record<PermissionRuleSource, string> = {
   builtin: '内置规则',
   user: '用户设置',
@@ -143,6 +148,24 @@ export interface PermissionContext {
   autoDenials?: { consecutive: number; total: number }
   /** B7：workflow 用量确认「总是」时持久化 skipWorkflowUsageWarning:true。 */
   setSkipWorkflowWarning?: () => void
+}
+
+/** 父级安全约束的只读快照，供子代理继承。刻意不含 saveRule/ask：
+ *  子代理不得持久化规则，也不得复用父级的交互审批入口。 */
+export interface PermissionSnapshot {
+  mode: PermissionMode
+  rules: string[]
+  deny?: string[]
+  ruleSources?: Record<string, PermissionRuleSource>
+  denySources?: Record<string, PermissionRuleSource>
+  askRules?: string[]
+  askSources?: Record<string, PermissionRuleSource>
+  additionalDirs?: string[]
+  classify?: (toolName: string, desc: string, sibling: string) => Promise<'run' | 'ask' | 'block'>
+  /** 本回合工作目录围栏根快照：与父级本回合喂给 checkPermission 的 pc.cwd 同源，
+   *  回合内不随 Bash cd/EnterWorktree/ExitWorktree 漂移。子代理据此定 fenceRoot，
+   *  不得直接读父级实时 ctx.cwd()（会拿到回合中途已漂移的值，制造围栏绕过）。 */
+  cwd?: string
 }
 
 // S1：auto 模式拒绝熔断器阈值（硬编码不可配）。
@@ -355,6 +378,7 @@ export async function checkPermission(
   // deny 最高优先级：早于 isReadOnly/yolo/acceptEdits/rules
   let forceAsk = false
   let denyHit: string | null = null
+  let gateReason: PermissionDecisionReason | undefined // 网关来源：fall through 到尾部 ask 时带出去
   if (pc.deny?.length && tool.deniablePaths) {
     for (const p of tool.deniablePaths(input as any, pc.cwd ?? process.cwd())) {
       const hit = isDeniedPath(p, pc.deny)
@@ -401,10 +425,11 @@ export async function checkPermission(
       const outside = tool.workspacePaths(input as any, pc.cwd ?? process.cwd()).find(p => !isInsideWorkspace(p, roots))
       if (outside) {
         const fenceDesc = tool.needsPermission(input) || `访问工作目录外的路径：${outside}`
-        const d = await prompt(tool.name, fenceDesc)
+        const fenceReason: PermissionDecisionReason = { type: 'other', reason: WORKSPACE_FENCE_REASON }
+        const d = await prompt(tool.name, fenceDesc, fenceReason)
         if (d === 'no') {
           await hooks?.onDenied?.(tool.name, fenceDesc, '路径在工作目录外，用户拒绝')
-          return { ok: false, reason: '路径在工作目录外，用户拒绝', decisionReason: { type: 'other', reason: '工作目录围栏' } }
+          return { ok: false, reason: '路径在工作目录外，用户拒绝', decisionReason: fenceReason }
         }
         return { ok: true } // yes/always：放行本次（围栏是路径维度，不写规则）
       }
@@ -415,7 +440,7 @@ export async function checkPermission(
     if (tool.name === 'Workflow' && typeof tool.needsPermission === 'function') {
       const warn = tool.needsPermission(input)
       if (typeof warn === 'string') {
-        const reason: PermissionDecisionReason = { type: 'other', reason: 'workflow 用量确认' }
+        const reason: PermissionDecisionReason = { type: 'other', reason: WORKFLOW_USAGE_CONFIRM_REASON }
         const d = await prompt(tool.name, warn, reason)
         if (d === 'no') {
           await hooks?.onDenied?.(tool.name, warn, '用户取消了 workflow 运行')
@@ -485,6 +510,7 @@ export async function checkPermission(
         if (pc.autoDenials) pc.autoDenials.consecutive = 0 // 放行→连续计数归零（total 累积整会话）
         return { ok: true, decisionReason: { type: 'classifier', decision: 'run' } }
       }
+      if (decision === 'ask') gateReason = { type: 'classifier', decision: 'ask' }
       if (decision === 'block') {
         // S1 熔断器：连续 block ≥3 或整会话 block ≥20 → 不再自动拦，回退问用户，
         // 防分类器反复 block 卡死循环。total 触发时清零两计数给复查后的新窗口。hard_deny 不走此路（永硬拦）。
@@ -501,6 +527,7 @@ export async function checkPermission(
           return { ok: false, reason, decisionReason: { type: 'classifier', decision: 'block' } }
         }
         // 熔断跳闸：fall through 到下方 pc.ask，把决定权交回用户
+        gateReason = { type: 'classifier', decision: 'ask' } // 熔断跳闸同样是网关来源
       }
       // 'ask'（或熔断跳闸）→ 继续 fall through 到下方现有 pc.ask（用户确认）
     }
@@ -517,7 +544,7 @@ export async function checkPermission(
     }
     const askReason: PermissionDecisionReason | undefined = denyHit
       ? { type: 'rule', rule: { source: pc.denySources?.[denyHit] ?? 'builtin', behavior: 'deny', value: denyHit } }
-      : undefined
+      : gateReason
     const previewRule = suggestRule(tool.name, desc)
     const decision = await prompt(tool.name, desc, askReason, previewRule)
     if (decision === 'always') {
