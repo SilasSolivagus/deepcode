@@ -59,15 +59,48 @@ export function isGitTracked(filePath: string, cwd: string): boolean {
   }
 }
 
-/** 一条 allow 规则是否过宽或危险，不得生效。
- *  过宽=内容为空/纯星号（等于放行该工具全部用法）；危险=内容命中既有 DANGEROUS_PATTERNS。
+/** 授予即等于任意代码执行的命令前缀：解释器、包运行器、shell、以及会把参数当命令执行的包装器。
+ *  这回答的问题与 DANGEROUS_PATTERNS 不同——不是「这条命令危不危险」，而是
+ *  「把这个前缀写进 allow 名单，是不是等于把整个 Bash 敞开」。`Bash(python:*)` 之后
+ *  一句 `python -c '...'` 就能跑任意代码，后面所有关卡都形同虚设。 */
+const CODE_EXEC_PREFIXES = [
+  // 解释器
+  'python', 'python3', 'python2', 'node', 'deno', 'tsx', 'ruby', 'perl', 'php', 'lua',
+  // 包运行器
+  'npx', 'bunx', 'npm run', 'yarn run', 'pnpm run', 'bun run',
+  // shell
+  'bash', 'sh', 'zsh', 'fish', 'csh', 'tcsh', 'ksh', 'dash',
+  // 把参数当命令执行的包装器
+  'eval', 'exec', 'env', 'xargs', 'nice', 'stdbuf', 'nohup', 'timeout', 'time',
+  // 提权与远程执行
+  'sudo', 'doas', 'pkexec', 'ssh',
+] as const
+
+/** 规则内容是否命中某个代码执行前缀。**逐形态精确相等，不做 startsWith**——
+ *  否则 `Bash(nodemon:*)` 会被 `node` 误伤。先小写以覆盖大小写变体。
+ *  五种形态：`python` / `python:*` / `python*` / `python *` / `python -…*`。 */
+function isCodeExecPrefixRule(content: string): boolean {
+  const c = content.trim().toLowerCase()
+  return CODE_EXEC_PREFIXES.some(p =>
+    c === p || c === `${p}:*` || c === `${p}*` || c === `${p} *` ||
+    (c.startsWith(`${p} -`) && c.endsWith('*')),
+  )
+}
+
+/** 一条 allow 规则是否过宽或危险，不得生效。三类：
+ *  ① 过宽＝内容为空/纯星号（等于放行该工具全部用法）
+ *  ② 授权即任意代码执行＝内容是解释器/包装器前缀（见 CODE_EXEC_PREFIXES）
+ *  ③ 危险＝内容命中既有 DANGEROUS_PATTERNS
  *  在加载期剥离而非匹配期复检：一次性、可解释、能把被剥清单告知用户；
  *  匹配期复检则每次调用都付代价，且用户看着规则在配置里却不知为何不生效。 */
 export function isOverlyBroadAllowRule(rule: string): boolean {
   const m = /^(\w+)\((.*)\)$/.exec(rule.trim())
   const content = m ? m[2].trim() : rule.trim()
   if (content === '' || /^[\s*]+$/.test(content)) return true
-  return isDangerous(content.replace(/:\*$/, ''))
+  if (isCodeExecPrefixRule(content)) return true
+  // 小写后再判——DANGEROUS_PATTERNS 里 \bsudo\b 等模式区分大小写，
+  // 否则 `Bash(Sudo apt-get:*)` 这类大小写变体会漏剥（本函数的判定意图本就是大小写不敏感）。
+  return isDangerous(content.toLowerCase().replace(/:\*$/, ''))
 }
 
 export interface ScopePartial { scope: SettingScope; partial: Record<string, unknown> }

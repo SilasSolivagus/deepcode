@@ -18,10 +18,38 @@ describe('isOverlyBroadAllowRule', () => {
     expect(isOverlyBroadAllowRule('Bash(rm -rf:*)')).toBe(true)
   })
 
+  it('授权即任意代码执行的前缀：解释器 / 包运行器 / shell / 包装器', () => {
+    expect(isOverlyBroadAllowRule('Bash(python:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(node:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(npm run:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(npx:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(bash:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(env:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(xargs:*)')).toBe(true)
+    expect(isOverlyBroadAllowRule('Bash(ssh:*)')).toBe(true)
+  })
+
+  it('代码执行前缀的各种形态与大小写变体', () => {
+    expect(isOverlyBroadAllowRule('Bash(python)')).toBe(true)      // 精确
+    expect(isOverlyBroadAllowRule('Bash(python*)')).toBe(true)     // 尾通配
+    expect(isOverlyBroadAllowRule('Bash(python *)')).toBe(true)    // 空格通配
+    expect(isOverlyBroadAllowRule('Bash(python -c*)')).toBe(true)  // 带参通配
+    expect(isOverlyBroadAllowRule('Bash(PYTHON:*)')).toBe(true)    // 大小写
+    expect(isOverlyBroadAllowRule('Bash(Sudo apt-get:*)')).toBe(true)
+  })
+
   it('正常规则不被误剥', () => {
     expect(isOverlyBroadAllowRule('Bash(npm test:*)')).toBe(false)
     expect(isOverlyBroadAllowRule('Read(src/**)')).toBe(false)
     expect(isOverlyBroadAllowRule('Bash(git status)')).toBe(false)
+    expect(isOverlyBroadAllowRule('Bash(git push:*)')).toBe(false)
+  })
+
+  it('前缀表逐形态精确相等，不做 startsWith——名字撞前缀的合法工具不得误剥', () => {
+    expect(isOverlyBroadAllowRule('Bash(nodemon:*)')).toBe(false)  // node
+    expect(isOverlyBroadAllowRule('Bash(shellcheck:*)')).toBe(false) // sh
+    expect(isOverlyBroadAllowRule('Bash(envsubst:*)')).toBe(false) // env
+    expect(isOverlyBroadAllowRule('Bash(timeout-report:*)')).toBe(false) // timeout
   })
 })
 

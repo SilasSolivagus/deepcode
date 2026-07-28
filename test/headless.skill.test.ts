@@ -46,6 +46,7 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
       settings: mockSkillSettings,
       provenance: {},
       permissionSources: { allow: {}, deny: {}, ask: {} }, hookLayers: [],
+      strippedDangerousRules: [],
       scopes: [],
     })),
   }
