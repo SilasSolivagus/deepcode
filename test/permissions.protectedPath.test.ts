@@ -4,6 +4,7 @@ import {
   isProtectedSystemPath,
   detectDangerousRemoval,
   checkPermission,
+  YOLO_DANGEROUS_CONFIRM_REASON,
   type PermissionContext,
   type PermissionDecisionReason,
 } from '../src/permissions.js'
@@ -149,7 +150,8 @@ describe('S4 checkPermission 守卫', () => {
     const r = await checkPermission(tool() as any, { command: 'rm -rf node_modules' },
       ctx({ mode: 'yolo', ask: async (_n, _d, reason) => { asked++; capturedReason = reason; return 'yes' } }))
     expect(asked).toBe(1)
-    expect(capturedReason?.type === 'other' && capturedReason.reason.startsWith('保护路径守卫')).toBe(false)
+    expect(capturedReason?.type === 'other' && capturedReason.reason.startsWith('保护路径守卫')).toBe(false) // 不是 S4 误判
+    expect(capturedReason).toEqual({ type: 'other', reason: YOLO_DANGEROUS_CONFIRM_REASON }) // 正面确认：是 Task5 yolo 危险命令门
     expect(r.ok).toBe(true)
   })
 })

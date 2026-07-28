@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { checkPermission, YOLO_DANGEROUS_CONFIRM_REASON, type PermissionContext, type Decision, type PermissionDecisionReason } from '../src/permissions.js'
 
+// 本文件的 fakeTool 故意不设 workspacePaths/deniablePaths，好让 checkPermission
+// 直达 yolo 分支（:488）——工作目录围栏（:423）与 deny（:378）都要靠这两个字段
+// 才会触发。后续维护若给 fakeTool 加上这两个字段，会让下面的用例被别的关卡
+// 抢先拦下，产出与本门无关的假绿/假红。
 const fakeTool = (name: string, isReadOnly: boolean, desc: false | string = 'x'): any => ({
   name, isReadOnly, needsPermission: () => desc,
 })
@@ -30,12 +34,14 @@ describe('yolo 危险命令门', () => {
   })
 
   it('yolo 下用户放行则放行，但不写规则', async () => {
+    let asked = false
     let saved: string | null = null
     const r = await checkPermission(fakeTool('Bash', false, 'sudo chown -R root /etc'), {}, pc({
       mode: 'yolo',
-      ask: async () => 'always' as Decision,
+      ask: async () => { asked = true; return 'always' as Decision },
       saveRule: (rule: string) => { saved = rule },
     }))
+    expect(asked).toBe(true) // 确实经过了强制确认，不是 yolo 直接放行
     expect(r.ok).toBe(true)
     expect(saved).toBeNull() // always 也不固化危险命令
   })
