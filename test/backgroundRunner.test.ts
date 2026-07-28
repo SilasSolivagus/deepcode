@@ -102,7 +102,7 @@ describe('runBackgroundSession', () => {
     }
   })
 
-  it('availableModels 白名单钳制回落时 job state warning 用白名单专属文案，不误说成"不属于当前 provider"', async () => {
+  it('availableModels 白名单钳制回落时 job state warning 与共享判定函数 modelFallbackReason 的产出逐字一致（耦合测试：判定条件只许有一份）', async () => {
     ;(mockSettings as any).availableModels = ['deepseek-v4-pro']
     try {
       const { file, short } = seedSession()
@@ -112,11 +112,10 @@ describe('runBackgroundSession', () => {
         backend: 'detached', createdAt: 1, updatedAt: 1,
       })
       script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
-      // deepseek-v4-flash 明明属于 deepseek（当前默认 provider），只是没进白名单——若沿用旧文案会撒谎
+      // deepseek-v4-flash 明明属于 deepseek（当前默认 provider），只是没进白名单——期望值写死
+      // （不经运行时调用 modelFallbackReason 计算），与 providers.availableModels.test.ts 里的同款单测断言逐字同步
       await runBackgroundSession({ client: {} as any, resumeFile: file, jobShort: short, seed: 'x', model: 'deepseek-v4-flash', home: tmp })
-      const warning = readJobState(short)?.warning
-      expect(warning).toContain('不在 availableModels 白名单内')
-      expect(warning).not.toContain('不属于当前 provider')
+      expect(readJobState(short)?.warning).toBe('model=deepseek-v4-flash 不在 availableModels 白名单内，已回落到 deepseek-v4-pro')
     } finally {
       delete (mockSettings as any).availableModels
     }

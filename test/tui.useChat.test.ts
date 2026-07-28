@@ -1,5 +1,5 @@
 // test/tui.useChat.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -31,6 +31,9 @@ vi.mock('../src/api.js', async orig => ({
   ),
 }))
 
+// 供个别测试临时覆盖 settings 字段（如 provider/model/availableModels），不影响其余测试对真实宿主 settings 的依赖。
+const settingsOverride: Record<string, unknown> = {}
+
 // 隔离宿主机 ~/.deepcode/settings.json 的权限规则：钉空 permissions.allow/deny，
 // 使权限测试（ask-chain 等）不受用户累积的 allow 规则影响（如 Bash(echo hello:*) 会让 ask 不弹 → 测试挂死）。
 vi.mock('../src/settingsLayers.js', async orig => {
@@ -43,7 +46,7 @@ vi.mock('../src/settingsLayers.js', async orig => {
         ...real,
         // memory.enabled=false：禁掉每轮末 fire-and-forget 的提取/dream（本文件无测试依赖之），
         // 避免 mock 脚本耗尽时的 "[memory] 提取失败" 噪音与测试结束后晚到的 console.error→write EPIPE。
-        settings: { ...real.settings, permissions: { allow: [], deny: [] }, memory: { ...real.settings.memory, enabled: false } },
+        settings: { ...real.settings, permissions: { allow: [], deny: [] }, memory: { ...real.settings.memory, enabled: false }, ...settingsOverride },
         permissionSources: { allow: {}, deny: {} },
       }
     },
@@ -385,6 +388,25 @@ describe('createChatCore.runTurn', () => {
     // 第二次回复的内容不应混入第一次的内容
     const lastAssistant = core.state.transcript.filter(i => i.kind === 'assistant').at(-1) as any
     expect(displayTextOf(lastAssistant)).toBe('新的回复')
+  })
+})
+
+describe('createChatCore availableModels 白名单回落文案', () => {
+  afterEach(() => {
+    delete settingsOverride.provider
+    delete settingsOverride.model
+    delete settingsOverride.availableModels
+  })
+  it('白名单钳制回落时 notice 用白名单专属文案（耦合测试：判定条件只许有一份）', () => {
+    // 钉死 provider，避免宿主机真实 ~/.deepcode/settings.json 里的 provider 影响解析结果
+    settingsOverride.provider = 'deepseek'
+    // deepseek-v4-flash 明明属于 deepseek（当前 provider），只是没进白名单——期望值写死
+    // （不经运行时调用 modelFallbackReason 计算），与 providers.availableModels.test.ts 里的同款单测断言逐字同步
+    settingsOverride.model = 'deepseek-v4-flash'
+    settingsOverride.availableModels = ['deepseek-v4-pro']
+    const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, onState: () => {} })
+    const notices = core.state.transcript.filter(i => i.kind === 'notice') as any[]
+    expect(notices.some(n => n.text === 'settings.model=deepseek-v4-flash 不在 availableModels 白名单内，已回落到 deepseek-v4-pro')).toBe(true)
   })
 })
 

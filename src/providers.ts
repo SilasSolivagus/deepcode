@@ -192,6 +192,23 @@ export function resolveStartupModel(
   return foreignProviderOf(preset, configured, presets) ? preset.models.fast : configured
 }
 
+/** model 被 resolveStartupModel 回落的原因说明；未回落返回 undefined。
+ *  headless / 后台会话 / TUI 三个入口共用同一判定与措辞——各写各的会在白名单语义变更时静默分叉，
+ *  出现同一模型在一处放行、另一处被拦的情况。判定顺序与 resolveStartupModel 内部一致（白名单先于跨 provider）。
+ *  TUI 的跨 provider 回落另有更详细的专属文案（带出具体是哪个 provider），不走这里，见 useChat.ts。 */
+export function modelFallbackReason(
+  requested: string | undefined,
+  resolved: string,
+  preset: ProviderPreset,
+  availableModels?: string[],
+): string | undefined {
+  if (!requested || requested === resolved) return undefined
+  if (availableModels && !availableModels.includes(requested)) {
+    return `${requested} 不在 availableModels 白名单内，已回落到 ${resolved}`
+  }
+  return `${requested} 不属于当前 provider（${preset.id}），已回落到 ${resolved}`
+}
+
 const PROVIDER_LABELS: Record<string, string> = { deepseek: 'DeepSeek', glm: 'GLM', kimi: 'Kimi', custom: 'Custom' }
 /** provider 展示名（横幅、选择器标签用）。 */
 export function providerLabel(id: string): string {

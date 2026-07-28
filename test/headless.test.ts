@@ -219,8 +219,10 @@ describe('headless ask 桶·路径维度接线（不变量：绝不静默失效�
 
 describe('headless availableModels 白名单回落文案', () => {
   afterEach(() => { delete (mockSettings as any).model; delete (mockSettings as any).availableModels })
-  it('白名单钳制回落时用白名单专属文案，不误说成"不属于当前 provider"', async () => {
-    // deepseek-v4-flash 明明属于 deepseek（当前 provider），只是没进白名单——若沿用旧文案会撒谎
+  it('白名单钳制回落时的提示与共享判定函数 modelFallbackReason 的产出逐字一致（耦合测试：判定条件只许有一份）', async () => {
+    // deepseek-v4-flash 明明属于 deepseek（当前 provider），只是没进白名单——若沿用旧文案会撒谎；
+    // 期望值写死（不经运行时调用 modelFallbackReason 计算），这样若共享函数内部判定被删/改也能被本用例捕捉
+    // （与 test/providers.availableModels.test.ts 里 modelFallbackReason 的同款单测断言保持逐字同步）
     ;(mockSettings as any).model = 'deepseek-v4-flash'
     ;(mockSettings as any).availableModels = ['deepseek-v4-pro']
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -228,8 +230,7 @@ describe('headless availableModels 白名单回落文案', () => {
       script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
       await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
       const msgs = errSpy.mock.calls.map(c => c.join(' '))
-      expect(msgs.some(m => m.includes('不在 availableModels 白名单内'))).toBe(true)
-      expect(msgs.some(m => m.includes('不属于当前 provider'))).toBe(false)
+      expect(msgs).toContain('[deepcode] settings.model=deepseek-v4-flash 不在 availableModels 白名单内，已回落到 deepseek-v4-pro')
     } finally {
       errSpy.mockRestore()
     }

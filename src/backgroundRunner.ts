@@ -15,7 +15,7 @@ import { createMcpRegistry } from './mcpRegistry.js'
 import { loadSkills } from './skillsLoader.js'
 import { TaskListStore } from './taskList.js'
 import { resolveDenyList, buildDenySourceMap } from './deny.js'
-import { availablePresets, resolveActiveProvider, resolveStartupModel } from './providers.js'
+import { availablePresets, modelFallbackReason, resolveActiveProvider, resolveStartupModel } from './providers.js'
 import { loadSession, openSession, sessionIdFromFile } from './session.js'
 import { createActivityWriter } from './memdir/activityLog.js'
 import { memdirFor, globalMemdirFor } from './memdir/paths.js'
@@ -60,18 +60,12 @@ export async function runBackgroundSession(opts: {
   const activePreset = resolveActiveProvider(settings)
   const requestedModel = opts.model ?? loaded.meta.model ?? settings.model
   const model = resolveStartupModel(requestedModel, activePreset, availablePresets(settings), settings.availableModels)
-  if (requestedModel && settings.availableModels && !settings.availableModels.includes(requestedModel)) {
-    // 绝不静默失效：白名单钳制拦掉模型时用专属文案，否则「不属于当前 provider」是假话（model 可能明明属于当前 provider）
-    updateJobState(opts.jobShort, {
-      model,
-      warning: `model=${requestedModel} 不在 availableModels 白名单内，已回落到 ${model}`,
-      updatedAt: Date.now(),
-    })
-  } else if (requestedModel && requestedModel !== model) {
+  const modelFallback = modelFallbackReason(requestedModel, model, activePreset, settings.availableModels)
+  if (modelFallback) {
     // 绝不静默失效。后台子进程 stdio:'ignore'，stderr 被丢弃 → 唯一可见通道是 job state（/stop 列表会显示）。
     updateJobState(opts.jobShort, {
       model,
-      warning: `model=${requestedModel} 不属于当前 provider（${activePreset.id}），已回落到 ${model}`,
+      warning: `model=${modelFallback}`,
       updatedAt: Date.now(),
     })
   }
