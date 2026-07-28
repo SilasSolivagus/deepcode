@@ -7,6 +7,7 @@ import type { Usage } from './api.js'
 import { runLoop } from './loop.js'
 import { makeStructuredOutputTool, structuredOutputReminder, MAX_STRUCTURED_OUTPUT_RETRIES } from './tools/structuredOutput.js'
 import { subagentPermissionDecision } from './tools/agent.js'
+import type { PermissionContext, PermissionSnapshot } from './permissions.js'
 
 // 记忆 fork 专用信号量（独立于用户 subagent 池，防三连点火打爆限流）。
 // MAX_MEMORY_ACTIVE=2：extract+sessionMemory+dream 最多 2 个并发，不饿死用户主动起的 Task。
@@ -54,6 +55,29 @@ export function worktreeSubagentPrompt(parentCwd: string, worktreePath: string):
   return `\n\n你在一个隔离的 git worktree 里工作：${worktreePath}——同一仓库、同样的相对文件结构、独立工作副本。继承上下文里的路径指向父代理的工作目录（${parentCwd}），需翻译到你的 worktree 根。编辑前先重读文件（父代理可能已改动）。你的改动只留在此 worktree，不会影响父代理的文件。`
 }
 
+/** 组装子代理的 PermissionContext：继承父级全部安全约束，ask 按 reason 来源二分。
+ *  拿不到父快照 → 回落 default + 空规则（= 改动前行为），不放宽。
+ *  fenceRoot 由调用方定死，函数本身无副作用，便于对抗性单测直接喂 checkPermission。 */
+export function buildSubagentPermission(
+  parent: PermissionSnapshot | undefined,
+  fenceRoot: string,
+): PermissionContext {
+  return {
+    mode: parent?.mode ?? 'default',
+    rules: parent?.rules ?? [],
+    deny: parent?.deny,
+    denySources: parent?.denySources,
+    ruleSources: parent?.ruleSources,
+    askRules: parent?.askRules,
+    askSources: parent?.askSources,
+    additionalDirs: parent?.additionalDirs,
+    classify: parent?.classify,
+    cwd: fenceRoot,
+    saveRule: () => {}, // 子代理不得持久化权限规则
+    ask: async (_n, desc, reason) => subagentPermissionDecision(desc, reason),
+  }
+}
+
 /** 跑子代理子循环，返回最后一条 assistant 文本或结构化 JSON。SubagentStart/Stop hook + L-044 结构化输出。 */
 export async function runSubagent(opts: RunSubagentOpts): Promise<string | undefined> {
   const { ctx, signal, agentId, agentType: type } = opts
@@ -74,12 +98,30 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       messages.push({ role: 'user', content: `<hook-context>\n${startOut.additionalContext}\n</hook-context>` })
     }
   }
+  // 围栏根：构造时求值一次，不随子代理内 cd 漂移——漂移即围栏绕过（cd / 后可写任意路径）。
+  // 与 subCwd 是两个量：subCwd 管"在哪执行"，fenceRoot 管"允许碰哪"。
+  const fenceRoot = opts.worktreePath ?? ctx.cwd()
+  const parentPerm = ctx.parentPermission?.()
   const subCtx: ToolContext = {
     cwd: () => subCwd,
     setCwd: d => { subCwd = d }, // 独立变量：子代理内 Bash cd 漂移自身 cwd，不污染主 cwd
     get signal() { return signal }, // 前台=主 loop signal；后台=任务 AbortController（供 TaskStop）
     fileState: new Map(), // 独立 fileState，不污染主会话 read-before-edit 状态
     isSubagent: true, // 子代理纯执行：禁止起后台任务（防污染主会话通知队列）
+    denyPatterns: ctx.denyPatterns, // Glob/Grep 输出过滤：不继承则派个子代理 Grep 即可绕过 deny
+    subagentDepth: (ctx.subagentDepth ?? 0) + 1,
+    // 逐层传递：孙代理同样受约束（fenceRoot 已收窄），而非在第二层丢失
+    parentPermission: () => ({
+      mode: parentPerm?.mode ?? 'default',
+      rules: parentPerm?.rules ?? [],
+      deny: parentPerm?.deny,
+      denySources: parentPerm?.denySources,
+      ruleSources: parentPerm?.ruleSources,
+      askRules: parentPerm?.askRules,
+      askSources: parentPerm?.askSources,
+      additionalDirs: parentPerm?.additionalDirs,
+      classify: parentPerm?.classify,
+    }),
   }
   let subStopFired = false
   // L-044：声明 outputSchema → 注入 StructuredOutput 工具，强制子代理产出校验对象。
@@ -95,8 +137,9 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       model: opts.model,
       thinking: opts.thinking ?? false,
       effortLevel: opts.effortLevel,
-      // 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo+钳制，见 subagentPermissionDecision）。
-      permission: { mode: 'default', rules: [], saveRule: () => {}, ask: async (_n, desc) => subagentPermissionDecision(desc) },
+      // 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo+钳制，见 subagentPermissionDecision）；
+      // 继承父级安全约束（deny/ask/rules/mode/classify），围栏根固定为 fenceRoot，不随 cd 漂移。
+      permission: buildSubagentPermission(parentPerm, fenceRoot),
       ctx: subCtx,
       maxTurns: 30,
     })
