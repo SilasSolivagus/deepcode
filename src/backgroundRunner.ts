@@ -60,7 +60,14 @@ export async function runBackgroundSession(opts: {
   const activePreset = resolveActiveProvider(settings)
   const requestedModel = opts.model ?? loaded.meta.model ?? settings.model
   const model = resolveStartupModel(requestedModel, activePreset, availablePresets(settings), settings.availableModels)
-  if (requestedModel && requestedModel !== model) {
+  if (requestedModel && settings.availableModels && !settings.availableModels.includes(requestedModel)) {
+    // 绝不静默失效：白名单钳制拦掉模型时用专属文案，否则「不属于当前 provider」是假话（model 可能明明属于当前 provider）
+    updateJobState(opts.jobShort, {
+      model,
+      warning: `model=${requestedModel} 不在 availableModels 白名单内，已回落到 ${model}`,
+      updatedAt: Date.now(),
+    })
+  } else if (requestedModel && requestedModel !== model) {
     // 绝不静默失效。后台子进程 stdio:'ignore'，stderr 被丢弃 → 唯一可见通道是 job state（/stop 列表会显示）。
     updateJobState(opts.jobShort, {
       model,

@@ -217,6 +217,25 @@ describe('headless ask 桶·路径维度接线（不变量：绝不静默失效�
   })
 })
 
+describe('headless availableModels 白名单回落文案', () => {
+  afterEach(() => { delete (mockSettings as any).model; delete (mockSettings as any).availableModels })
+  it('白名单钳制回落时用白名单专属文案，不误说成"不属于当前 provider"', async () => {
+    // deepseek-v4-flash 明明属于 deepseek（当前 provider），只是没进白名单——若沿用旧文案会撒谎
+    ;(mockSettings as any).model = 'deepseek-v4-flash'
+    ;(mockSettings as any).availableModels = ['deepseek-v4-pro']
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+      await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
+      const msgs = errSpy.mock.calls.map(c => c.join(' '))
+      expect(msgs.some(m => m.includes('不在 availableModels 白名单内'))).toBe(true)
+      expect(msgs.some(m => m.includes('不属于当前 provider'))).toBe(false)
+    } finally {
+      errSpy.mockRestore()
+    }
+  })
+})
+
 import { checkPermission } from '../src/permissions.js'
 import { buildDenySourceMap, resolveDenyList } from '../src/deny.js'
 

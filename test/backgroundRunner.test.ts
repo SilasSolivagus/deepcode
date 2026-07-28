@@ -102,6 +102,26 @@ describe('runBackgroundSession', () => {
     }
   })
 
+  it('availableModels 白名单钳制回落时 job state warning 用白名单专属文案，不误说成"不属于当前 provider"', async () => {
+    ;(mockSettings as any).availableModels = ['deepseek-v4-pro']
+    try {
+      const { file, short } = seedSession()
+      writeJobState({
+        sessionId: path.basename(file).replace(/\.jsonl$/, ''), short, state: 'working', cwd: tmp,
+        name: 'x', pid: process.pid, model: 'glm-5.2', permMode: 'default', sessionFile: file,
+        backend: 'detached', createdAt: 1, updatedAt: 1,
+      })
+      script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+      // deepseek-v4-flash 明明属于 deepseek（当前默认 provider），只是没进白名单——若沿用旧文案会撒谎
+      await runBackgroundSession({ client: {} as any, resumeFile: file, jobShort: short, seed: 'x', model: 'deepseek-v4-flash', home: tmp })
+      const warning = readJobState(short)?.warning
+      expect(warning).toContain('不在 availableModels 白名单内')
+      expect(warning).not.toContain('不属于当前 provider')
+    } finally {
+      delete (mockSettings as any).availableModels
+    }
+  })
+
   it('client 抛错 → state failed', async () => {
     const { file, short } = seedSession()
     writeJobState({

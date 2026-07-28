@@ -74,7 +74,10 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   // activeProvider() 不带 flagPath，与 createClient(flagSettingsPath) 会分叉；用手里的 layered settings 解析
   const activePreset = resolveActiveProvider(settings)
   const model = resolveStartupModel(settings.model, activePreset, availablePresets(settings), settings.availableModels)
-  if (settings.model && settings.model !== model) {
+  if (settings.model && settings.availableModels && !settings.availableModels.includes(settings.model)) {
+    // 绝不静默失效：白名单钳制拦掉模型时用专属文案，否则「不属于当前 provider」是假话（model 可能明明属于当前 provider）
+    console.error(`[deepcode] settings.model=${settings.model} 不在 availableModels 白名单内，已回落到 ${model}`)
+  } else if (settings.model && settings.model !== model) {
     // 绝不静默失效：配置被推翻必须说出来（stderr，不污染 stdout 结果通道）
     console.error(`[deepcode] settings.model=${settings.model} 不属于当前 provider（${activePreset.id}），已回落到 ${model}`)
   }
