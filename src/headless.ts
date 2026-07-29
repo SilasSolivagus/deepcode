@@ -4,6 +4,8 @@ import os from 'node:os'
 import path from 'node:path'
 import type OpenAI from 'openai'
 import { runLoop } from './loop.js'
+import { isContextOverflowError } from './compact.js'
+import { planOverflowRetry } from './overflowRetry.js'
 import { allTools } from './tools/index.js'
 import { makeAgentTool } from './tools/agent.js'
 import { makeWorkflowTool } from './tools/workflow.js'
@@ -36,7 +38,10 @@ import type { Usage } from './api.js'
 
 export interface HeadlessResult {
   text: string
-  status: 'done' | 'aborted' | 'max_turns'
+  /** context_overflow：压缩后仍超窗，已停止。走返回而非抛出，
+   *  好让 index.ts 既有的 `exitCode = status === 'done' ? 0 : 1` 拿到非零码，
+   *  同时保住 text 里崩溃前的部分产出与 json 输出里的确切状态。 */
+  status: 'done' | 'aborted' | 'max_turns' | 'context_overflow'
   turns: number
   usage: Usage
   costCNY: number
@@ -176,43 +181,45 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     onWarn: msg => process.stderr.write(msg + '\n'),
     registry: createMcpRegistry(),
   })
-  const gen = runLoop(messages, {
-    client: opts.client,
-    tools: buildHeadlessToolset({ client: opts.client, addUsage, getModel: () => model, agents, settings, cwd, skills, mcpTools }),
-    model,
-    // headless 无会话状态可继承 TUI 的 /think，改由 settings 显式开关（缺省 false＝维持既有行为）。
-    // 参考实验的结论是自动化路径「关了思考跑难题」是 flaky 的一个来源，但是否划算须 A/B 验，
-    // 故给开关不改默认——默认改了就没有干净基线可比。
-    thinking: settings.headlessThinking ?? false,
-    // 撞 maxTurns 会被直接 seal 退出（无收尾降级），长任务评测可调高；不传＝沿用 loop.ts 的 80。
-    maxTurns: settings.maxTurns,
-    maxToolResultChars: settings.maxToolResultChars,
-    ctx,
-    permission: {
-      mode: opts.yolo ? 'yolo' : 'default',
-      rules: settings.permissions.allow,
-      deny: resolveDenyList(settings.permissions.deny),
-      cwd: roundCwd, // 与 ctx.parentPermission().cwd 同一份快照，二者必须同源
-      saveRule: () => { /* headless 不持久化规则 */ },
-      ask: async () => 'no', // 无人值守：默认拒绝，拒绝理由按正常机制喂回模型
-      unattended: true, // ask 恒 'no'，无法真正弹窗——yolo 危险命令门在此退化成硬拒，故豁免
-      ruleSources: layered.permissionSources.allow,
-      denySources,
-      askRules: settings.permissions.ask ?? [],
-      askSources: layered.permissionSources.ask,
-    },
-    reminders: () => {
-      taskList.tick()
-      const note = taskList.staleReminder()
-      return note ? [note] : []
-    },
-    drainInjections: () => injectionBuffer.splice(0),
-    injectTaskNotifications: true, // 运行中完成的后台任务在终止点注入续跑（单发模式无空闲订阅）
-    hooks: settings.hooks,
-    hookDeps,
-  })
-  let step
-  try {
+  // microcompact 重试后不能续用旧 generator（旧 generator 闭包的是压缩前的 messages 快照），
+  // 必须拿改写后的 messages 重开一个 runLoop——故整块搬进可重入的 drive()。
+  async function drive(): Promise<HeadlessResult['status']> {
+    const gen = runLoop(messages, {
+      client: opts.client,
+      tools: buildHeadlessToolset({ client: opts.client, addUsage, getModel: () => model, agents, settings, cwd, skills, mcpTools }),
+      model,
+      // headless 无会话状态可继承 TUI 的 /think，改由 settings 显式开关（缺省 false＝维持既有行为）。
+      // 参考实验的结论是自动化路径「关了思考跑难题」是 flaky 的一个来源，但是否划算须 A/B 验，
+      // 故给开关不改默认——默认改了就没有干净基线可比。
+      thinking: settings.headlessThinking ?? false,
+      // 撞 maxTurns 会被直接 seal 退出（无收尾降级），长任务评测可调高；不传＝沿用 loop.ts 的 80。
+      maxTurns: settings.maxTurns,
+      maxToolResultChars: settings.maxToolResultChars,
+      ctx,
+      permission: {
+        mode: opts.yolo ? 'yolo' : 'default',
+        rules: settings.permissions.allow,
+        deny: resolveDenyList(settings.permissions.deny),
+        cwd: roundCwd, // 与 ctx.parentPermission().cwd 同一份快照，二者必须同源
+        saveRule: () => { /* headless 不持久化规则 */ },
+        ask: async () => 'no', // 无人值守：默认拒绝，拒绝理由按正常机制喂回模型
+        unattended: true, // ask 恒 'no'，无法真正弹窗——yolo 危险命令门在此退化成硬拒，故豁免
+        ruleSources: layered.permissionSources.allow,
+        denySources,
+        askRules: settings.permissions.ask ?? [],
+        askSources: layered.permissionSources.ask,
+      },
+      reminders: () => {
+        taskList.tick()
+        const note = taskList.staleReminder()
+        return note ? [note] : []
+      },
+      drainInjections: () => injectionBuffer.splice(0),
+      injectTaskNotifications: true, // 运行中完成的后台任务在终止点注入续跑（单发模式无空闲订阅）
+      hooks: settings.hooks,
+      hookDeps,
+    })
+    let step
     while (!(step = await gen.next()).done) {
       const ev = step.value
       if (streaming) {
@@ -223,13 +230,37 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       }
       if (ev.type === 'turn_end') { turns++; addUsage(ev.usage) }
     }
+    return step.value
+  }
+  let overflowRetried = false
+  let status: HeadlessResult['status']
+  try {
+    try {
+      status = await drive()
+    } catch (e) {
+      const plan = planOverflowRetry(e, messages, overflowRetried)
+      if (plan.action === 'report') throw e
+      // 原地改写：messages 被 runLoop 入参与末尾抽 final 的 [...messages] 同时持有，
+      // 重新赋值只换局部指向，重试跑的会是旧内容。
+      messages.length = 0
+      messages.push(...plan.messages)
+      overflowRetried = true
+      process.stderr.write(`⚠ 上下文超长，已甩掉 ~${plan.tokensSaved} tok 旧工具输出后重试\n`)
+      try {
+        status = await drive()
+      } catch (e2) {
+        if (!isContextOverflowError(e2)) throw e2
+        process.stderr.write('⚠ 压缩后仍超长，已停止。请分块读取大文件或缩小任务范围。\n')
+        status = 'context_overflow'
+      }
+    }
   } finally {
-    await mcpCleanup()
+    await mcpCleanup()   // 只跑一次，不随重试重复执行
   }
   const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
   const result: HeadlessResult = {
     text: final?.content ?? '',
-    status: step!.value,
+    status,
     turns,
     usage: total,
     costCNY: costCNY(model, total.prompt_tokens, total.prompt_cache_hit_tokens, total.completion_tokens),
