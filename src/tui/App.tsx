@@ -287,12 +287,15 @@ export function App(props: {
       {/* 欢迎框交给 Transcript 作为 Static 首项：开机出现、随对话滚入历史留存，不消失也不反复重画 */}
       <Transcript items={viewItems} banner={<Banner cwd={props.cwd} model={state.model} provider={core.providerName()} />} />
       <Box flexDirection="column" marginTop={BLOCK_GAP}>
+      {/* key=挂起项 id：队列换队首时中间没有 null 帧，不给 key 组件就不卸载，
+          上一项的内部 state/ref 会串到下一项（见 pendingQueue.ts 的 Pending.id 注释）。
+          ⚠️ FullscreenApp.tsx 有一套平行接线，改这里必须同改那边。 */}
       {state.pendingQuestion
-        ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
+        ? <QuestionDialog key={state.pendingQuestion.id} questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
         : state.pendingAsk
-        ? <PermissionDialog ask={state.pendingAsk} queued={state.pendingAskCount} onDecide={d => core.resolveAsk(d)} />
+        ? <PermissionDialog key={state.pendingAsk.id} ask={state.pendingAsk} queued={state.pendingAskCount} onDecide={d => core.resolveAsk(d)} />
         : state.pendingPlanApproval
-        ? <PlanApprovalDialog pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
+        ? <PlanApprovalDialog key={state.pendingPlanApproval.id} pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
         : state.pendingKeyEntry
         ? <SoloKeyEntry
             label={state.pendingKeyEntry.label}

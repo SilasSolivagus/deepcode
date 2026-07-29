@@ -96,7 +96,7 @@ import type { CollapsedCounts } from './focusFold.js'
 import { resolveInitialFocus } from './viewMode.js'
 import { collectFleet } from '../fleet.js'
 import { loadWorkflowRuns } from './useFleet.js'
-import { createPendingQueue } from './pendingQueue.js'
+import { createPendingQueue, type Pending } from './pendingQueue.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -246,9 +246,10 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
   return [] // clear
 }
 
-export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; origin?: { agentId: string; agentType: string }; resolve: (d: Decision) => void }
-export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
-export interface PendingPlanApproval { plan: string; allowedPrompts?: AllowedPrompt[]; resolve: (approved: boolean) => void }
+// 三者都 extends Pending<V>：resolve 与队列写入的 id 由此而来（id 是 UI 的 React key，见 pendingQueue.ts）
+export interface PendingAsk extends Pending<Decision> { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; origin?: { agentId: string; agentType: string } }
+export interface PendingQuestion extends Pending<Answer[] | null> { questions: Question[] }
+export interface PendingPlanApproval extends Pending<boolean> { plan: string; allowedPrompts?: AllowedPrompt[] }
 /** /model 选中一个未配 key 的 provider 时挂起：UI 弹单 provider key 录入 overlay，core.resolveKeyEntry 回答。 */
 export interface PendingKeyEntry { providerId: string; label: string; baseURL: string; model: string; modelId: string }
 

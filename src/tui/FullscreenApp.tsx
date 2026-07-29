@@ -336,12 +336,14 @@ export function FullscreenApp(props: {
             ? `${info.moreAbove ? '▲ 上有更多' : '▲ 已到顶'} · ${info.moreBelow ? '▼ 下有更多' : '▼ 已到底'} · 行 ${info.top}–${info.bottom}/${info.total}${stuckRef.current ? ' · 跟随' : ''}`
             : ' '}
         </Text>
+        {/* key=挂起项 id：理由同 App.tsx（队列换队首时无 null 帧，不卸载就会串台）。
+            ⚠️ App.tsx 有一套平行接线，改这里必须同改那边。 */}
         {state.pendingQuestion
-          ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
+          ? <QuestionDialog key={state.pendingQuestion.id} questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
           : state.pendingAsk
-          ? <PermissionDialog ask={state.pendingAsk} queued={state.pendingAskCount} onDecide={d => core.resolveAsk(d)} />
+          ? <PermissionDialog key={state.pendingAsk.id} ask={state.pendingAsk} queued={state.pendingAskCount} onDecide={d => core.resolveAsk(d)} />
           : state.pendingPlanApproval
-          ? <PlanApprovalDialog pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
+          ? <PlanApprovalDialog key={state.pendingPlanApproval.id} pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
           : state.pendingKeyEntry
           ? <SoloKeyEntry
               label={state.pendingKeyEntry.label}
