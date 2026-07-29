@@ -63,6 +63,10 @@ export function makeHookRuntime(opts: {
       fileState: new Map(),
       isSubagent: true, // 纯执行 + 不注入 hookDispatch → 子回路 hooks-free 防递归
       denyPatterns: opts.denyPatterns, // Glob/Grep 输出过滤：不继承则派个 Grep 即可绕过 deny
+      // 转发通道透传：今天 HOOK_AGENT_TOOLS 只含只读工具、其中没有 Agent，hook 子回路无法再嵌套，
+      // 故此字段不可达（且缺失方向是 fail-closed）。仍然接上，是为了不依赖"恰好不可达"这个条件——
+      // 与 isSecurityGate 里 workflow/yolo 两条的理由一致，别在同一分支里两种风格。
+      askUp: opts.askUp,
       fenceRoot,
     }
     const messages: any[] = [{ role: 'user', content: prompt }]
