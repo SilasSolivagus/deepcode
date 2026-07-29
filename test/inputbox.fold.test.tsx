@@ -13,8 +13,9 @@ it('粘贴 >800 字符折叠成占位符，提交时回传完整原文', async (
   stdin.write(big)          // 模拟粘贴（ink 合并为单 input）
   await new Promise(r => setTimeout(r, 20))
   stdin.write('\r')         // 提交
-  await new Promise(r => setTimeout(r, 20))
-  expect(onSubmit).toHaveBeenCalledTimes(1)
+  // 轮询而非固定 sleep：提交要过粘贴去抖 + ink 渲染周期，固定 20ms 在机器繁忙时不够，
+  // 表现为与本用例逻辑无关的偶发 0 次调用。
+  await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
   const [text, attachments] = onSubmit.mock.calls[0]
   expect(text).toMatch(/\[Pasted text #1\]/)         // 显示文本是占位符
   expect(attachments[0].content).toBe(big)            // 附件携带完整原文

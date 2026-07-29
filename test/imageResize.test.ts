@@ -23,7 +23,9 @@ it('超维度大图缩到 ≤2000² 且 base64≤5MB', async () => {
   expect(back.width).toBeLessThanOrEqual(2000)
   expect(back.height).toBeLessThanOrEqual(2000)
   expect(out.base64.length).toBeLessThanOrEqual(MAX_B64)
-})
+// 3000×2500 的真实编解码+缩放是 CPU 密集活，空载就要 ~1.6s，默认 5s 超时只剩 3 倍余量；
+// 全量并发（350+ 文件）叠上机器本身的负载就会顶穿，表现为与本用例逻辑无关的偶发超时。
+}, 20_000)
 
 it('解码失败但原图≤5MB → 原样返回', async () => {
   const out = await normalizeForVision('bm90LWFuLWltYWdl', 'image/png') // "not-an-image"

@@ -18,8 +18,9 @@ describe('InputBox image capture', () => {
     stdin.write(`'${f}'`)            // 终端拖文件粘的带引号路径
     await new Promise(r => setTimeout(r, 20))
     stdin.write('\r')
-    await new Promise(r => setTimeout(r, 20))
-    expect(onSubmit).toHaveBeenCalledTimes(1)
+    // 轮询而非固定 sleep：提交要过「异步读文件 + ink 渲染周期」，固定 20ms 在全量并发
+    // 叠机器负载时不够用，表现为与本用例逻辑无关的偶发 0 次调用。
+    await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
     const [text, attachments] = onSubmit.mock.calls[0]
     expect(text).toMatch(/\[Image #1\]/)
     expect(attachments[0]).toMatchObject({ type: 'image', mime: 'image/png', source: 'file' })
