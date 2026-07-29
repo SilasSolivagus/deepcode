@@ -47,8 +47,8 @@ import { costCNY, cacheSavingsCNY } from '../pricing.js'
 import {
   summarize, rebuildMessages, rebuildFromPrecompute,
   microcompact, checkRapidRefill, recordCompact, bumpTurnCounter, newCompactState,
-  isContextOverflowError,
 } from '../compact.js'
+import { planOverflowRetry } from '../overflowRetry.js'
 import { PrecomputeRegistry, PRECOMPUTE_BUFFER_FRACTION } from '../precompute.js'
 import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold, resolveContextWindow } from '../tokenEstimate.js'
 import { TaskListStore } from '../taskList.js'
@@ -1327,16 +1327,14 @@ export function createChatCore(opts: {
       }
       // Task 8 反应式兜底：send 期间抛「上下文超长」
       // 且本轮尚未重试过 → microcompact 甩掉旧工具输出后重跑一次（单发，防死循环）。
-      if (isContextOverflowError(e) && !overflowRetried) {
-        const mc = microcompact(messages)
-        if (mc) {
-          overflowRetried = true
-          messages.length = 0; messages.push(...mc.messages)
-          lastPromptTokens = 0; baselineLen = 0
-          notice('warn', `[context 超长] microcompact 甩掉 ~${mc.tokensSaved} tok 后重试`)
-          try { const step2 = await drive(); if (step2.value === 'aborted') notice('warn', '[已中断]') }
-          catch (e2: any) { reportTurnError(e2) } // mc 后仍超 → 报错（下轮主动 mc 兜）
-        } else reportTurnError(e) // 无可甩 → 照常报错，不重试
+      const plan = planOverflowRetry(e, messages, overflowRetried)
+      if (plan.action === 'retry') {
+        overflowRetried = true
+        messages.length = 0; messages.push(...plan.messages)
+        lastPromptTokens = 0; baselineLen = 0
+        notice('warn', `[context 超长] microcompact 甩掉 ~${plan.tokensSaved} tok 后重试`)
+        try { const step2 = await drive(); if (step2.value === 'aborted') notice('warn', '[已中断]') }
+        catch (e2: any) { reportTurnError(e2) } // mc 后仍超 → 报错（下轮主动 mc 兜）
       } else {
         reportTurnError(e)
       }
