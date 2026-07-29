@@ -6,8 +6,8 @@ import type { Tool, ToolContext } from './tools/types.js'
 import type { Usage } from './api.js'
 import { runLoop } from './loop.js'
 import { makeStructuredOutputTool, structuredOutputReminder, MAX_STRUCTURED_OUTPUT_RETRIES } from './tools/structuredOutput.js'
-import { subagentPermissionDecision } from './tools/agent.js'
-import type { PermissionContext, PermissionSnapshot } from './permissions.js'
+import { isSecurityGate } from './tools/agent.js'
+import { isDangerous, type PermissionContext, type PermissionSnapshot } from './permissions.js'
 import { isInsideWorkspace } from './workspace.js'
 
 // 记忆 fork 专用信号量（独立于用户 subagent 池，防三连点火打爆限流）。
@@ -62,6 +62,8 @@ export function worktreeSubagentPrompt(parentCwd: string, worktreePath: string):
 export function buildSubagentPermission(
   parent: PermissionSnapshot | undefined,
   fenceRoot: string,
+  askUp?: ToolContext['askUp'],
+  origin?: { agentId: string; agentType: string },
 ): PermissionContext {
   // 父快照存在但缺 cwd 是异常路径：三处注入点（useChat/headless/backgroundRunner）都固定填了 cwd，
   // 缺失意味着将来新增第四个注入点忘填，会静默回落到调用方给定的 fenceRoot——不算错但不可观测，
@@ -81,7 +83,15 @@ export function buildSubagentPermission(
     classify: parent?.classify,
     cwd: fenceRoot,
     saveRule: () => {}, // 子代理不得持久化权限规则
-    ask: async (_n, desc, reason) => subagentPermissionDecision(desc, reason),
+    // 子代理不再本地拍板。分三档，改造后每一档都不比改造前更松：
+    //   安全门 / 危险命令 → 硬拒（与改造前同）
+    //   其余 → 转发给顶层（改造前是自动 'yes'，现在交给人；无人值守下顶层给 'no'）
+    //   askUp 缺失（新注入点漏接）→ 硬拒，不回落旧启发式
+    ask: async (toolName, desc, reason, previewRule) => {
+      if (isSecurityGate(reason)) return 'no'
+      if (isDangerous(desc)) return 'no'
+      return askUp ? askUp(toolName, desc, reason, previewRule, origin) : 'no'
+    },
   }
 }
 
@@ -130,6 +140,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
     denyPatterns: ctx.denyPatterns, // Glob/Grep 输出过滤：不继承则派个子代理 Grep 即可绕过 deny
     subagentDepth: (ctx.subagentDepth ?? 0) + 1,
     fenceRoot, // 注入自身定死的围栏根，供下一层子代理继承而非误用已漂移的 cwd()
+    askUp: ctx.askUp, // 原样透传：顶层是唯一真实提供者，中间层只做管道（孙代理同样抵达顶层）
     // 逐层传递：孙代理同样受约束（fenceRoot 已收窄），而非在第二层丢失
     parentPermission: () => ({
       mode: parentPerm?.mode ?? 'default',
@@ -158,9 +169,9 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       model: opts.model,
       thinking: opts.thinking ?? false,
       effortLevel: opts.effortLevel,
-      // 子代理无审批 UI：安全命令自动放行、危险命令拒绝（yolo+钳制，见 subagentPermissionDecision）；
+      // 子代理自身无审批 UI：安全门/危险命令就地硬拒，其余向上转发到顶层（交互式弹窗，无人值守硬拒）；
       // 继承父级安全约束（deny/ask/rules/mode/classify），围栏根固定为 fenceRoot，不随 cd 漂移。
-      permission: buildSubagentPermission(parentPerm, fenceRoot),
+      permission: buildSubagentPermission(parentPerm, fenceRoot, ctx.askUp, { agentId, agentType: type }),
       ctx: subCtx,
       maxTurns: 30,
     })

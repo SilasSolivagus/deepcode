@@ -62,6 +62,10 @@ describe('Critical 1：子代理 cd 出围栏 + 相对路径穿透', () => {
     const ctx: ToolContext = {
       cwd: () => fenceRoot, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(),
       parentPermission: () => parent,
+      // 本文件测的是围栏与 deny，不是「无人可问」的兜底硬拒：给转发通道喂最宽松答复，
+      // 下面每一条拒绝才证明是安全约束拦的。不给的话 cd 这步就被 fail-closed 拒掉，
+      // 攻击序列根本跑不起来，断言会平凡为真——逃逸即便重新引入也照样绿灯。
+      askUp: async () => 'yes',
     } as any
 
     await runSubagent({
@@ -89,6 +93,7 @@ describe('Critical 1：子代理 cd 出围栏 + 相对路径穿透', () => {
     const ctx: ToolContext = {
       cwd: () => fenceRoot, setCwd: () => {}, signal: new AbortController().signal, fileState: new Map(),
       parentPermission: () => parent,
+      askUp: async () => 'yes', // 同上：通道全开，剩下的拒绝才归功于 deny 与围栏
     } as any
 
     const sink: { last?: string } = {}

@@ -4,6 +4,10 @@
 // 单个单选题省略复核页、选完即结束（hideSubmitTab）。去掉 note。Esc 取消。
 // ink 同步连键安全：qi/cursor/drafts/mode/buf/submitCur 全配 ref——updateX 原子更新 ref+state，
 // handler 读 ref，render 读 state/tick。
+// ⚠️ 契约：本组件的全部状态（尤其只在首次挂载初始化、此后不再与 questions 重同步的 draftsRef）
+// 都依赖「每个挂起项一次挂载」。调用方必须给 key=挂起项 id（App.tsx / FullscreenApp.tsx 已给）；
+// 否则队列换队首时组件不卸载，上一组问题的 qi/drafts 会串到下一组——轻则拿 A 的答案冒充 B，
+// 重则 draftsRef 越界在 render 期抛错（ink 无 ErrorBoundary，整个 TUI 崩）。
 import React, { useState, useRef } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { useTheme } from '../theme.js'

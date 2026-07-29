@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isSecurityGate, subagentPermissionDecision } from '../src/tools/agent.js'
+import { isSecurityGate } from '../src/tools/agent.js'
 import { checkPermission, WORKSPACE_FENCE_REASON, WORKFLOW_USAGE_CONFIRM_REASON, YOLO_DANGEROUS_CONFIRM_REASON, type PermissionDecisionReason, type PermissionContext } from '../src/permissions.js'
 import type { Tool } from '../src/tools/types.js'
 
@@ -93,22 +93,6 @@ describe('isSecurityGate 与 checkPermission 的生产者/消费者耦合', () =
   })
 })
 
-describe('subagentPermissionDecision', () => {
-  it('网关来源一律拒，哪怕命令本身看着无害', () => {
-    expect(subagentPermissionDecision('cat notes.md', { type: 'other', reason: '工作目录围栏' })).toBe('no')
-  })
-
-  // 回归：S4 守卫把 desc 重写成中文警告串，此前纯文本判定读不出危险 → rm -rf / 反被放行
-  it('S4 守卫的警告串 desc + 网关 reason → 拒（语义反转回归）', () => {
-    const warnDesc = "危险删除操作：'/'——目标是关键系统目录或工作目录，会造成不可逆破坏。"
-    expect(subagentPermissionDecision(warnDesc, { type: 'other', reason: '保护路径守卫（根目录）' })).toBe('no')
-  })
-
-  it('无网关 + 危险命令 → 拒（沿用 isDangerous）', () => {
-    expect(subagentPermissionDecision('sudo rm -rf /etc')).toBe('no')
-  })
-
-  it('无网关 + 常规命令 → 放行（不打断现有能力）', () => {
-    expect(subagentPermissionDecision('npm test')).toBe('yes')
-  })
-})
+// 注：原先这里还有一组 subagentPermissionDecision 用例。该函数在向上转发改造后已无生产调用方，
+// 留着「非危险命令一律 yes」的语义+绿灯测试等于给旧的提权缺陷背书，故连函数一并删除；
+// 它承载的行为断言全部迁到真生产路径 buildSubagentPermission（test/subagentRunner.askForward.test.ts）。

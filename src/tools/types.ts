@@ -2,7 +2,7 @@
 import type { z } from 'zod'
 import type { TaskListStore } from '../taskList.js'
 import type { HookEvent, HookOutcome } from '../hooks.js'
-import type { PermissionSnapshot } from '../permissions.js'
+import type { Decision, PermissionDecisionReason, PermissionSnapshot } from '../permissions.js'
 
 export interface WorktreeSessionState {
   originalCwd: string
@@ -34,6 +34,16 @@ export interface ToolContext {
    *  子代理子 ctx **也注入**（值为子代理自己的快照），使约束逐层传递而非在第二层丢失。
    *  getter 形式：mode/cwd 等在会话中可变，必须每次现取。 */
   parentPermission?: () => PermissionSnapshot
+  /** 向上转发权限确认到顶层注入点（交互式=真弹窗，无人值守=硬拒）。
+   *  缺失即视为无人可问 → 子代理硬拒（fail-closed）。
+   *  origin 标明请求来自哪个子代理，供顶层 UI 显示——顶层自身的 ask 不带此参。 */
+  askUp?(
+    toolName: string,
+    desc: string,
+    reason?: PermissionDecisionReason,
+    previewRule?: string,
+    origin?: { agentId: string; agentType: string },
+  ): Promise<Decision>
   /** 子代理嵌套深度。顶层不注入 = 0；每下一层 +1。Agent 工具据此拒绝过深递归。 */
   subagentDepth?: number
   /** hooks 生命周期分派闭包（捕获会话 hooks 快照）。主会话与 headless 顶层 ctx 注入；子代理内部子 ctx 不注入。

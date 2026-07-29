@@ -115,6 +115,7 @@ export async function runBackgroundSession(opts: {
       askSources: layered.permissionSources.ask,
       cwd: roundCwd,
     }),
+    askUp: async () => 'no', // 后台无人值守：与本环境主代理的 ask 一致
     signal: new AbortController().signal,
     fileState: new Map(loaded.fileState),
     taskList,
@@ -129,7 +130,7 @@ export async function runBackgroundSession(opts: {
     total.prompt_tokens += u.prompt_tokens; total.completion_tokens += u.completion_tokens; total.prompt_cache_hit_tokens += u.prompt_cache_hit_tokens
   }
   const hookDeps = {
-    ...makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd, parentPermission: ctx.parentPermission, denyPatterns: ctx.denyPatterns }),
+    ...makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd, parentPermission: ctx.parentPermission, askUp: ctx.askUp, denyPatterns: ctx.denyPatterns }),
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
   }

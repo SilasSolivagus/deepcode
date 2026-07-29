@@ -5,8 +5,10 @@ import type { Tool, ToolContext } from '../src/tools/types.js'
 
 // 直接驱动 subagentRunner 导出的真实组装函数——不复刻，否则实现改了测试也发现不了。
 import { buildSubagentPermission, runSubagent } from '../src/subagentRunner.js'
+// askUp 恒 'yes'：本文件测的是继承来的 deny/围栏/危险命令判定，不是「无人可问」的兜底硬拒。
+// 给通道喂最宽松的答复，下面每一条拒绝才证明是安全约束拦的，而非通道缺失顺带拦的。
 const subagentPc = (parent: PermissionSnapshot | undefined, fenceRoot: string) =>
-  buildSubagentPermission(parent, fenceRoot)
+  buildSubagentPermission(parent, fenceRoot, async () => 'yes')
 
 // mock chatStream：驱动真实 runSubagent → runLoop，实跑权限检查（非空壳）。
 // 第一轮 yield 对 stub 工具的 tool_call，第二轮 yield 纯文本终止子循环。

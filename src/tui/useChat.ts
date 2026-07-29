@@ -96,6 +96,7 @@ import type { CollapsedCounts } from './focusFold.js'
 import { resolveInitialFocus } from './viewMode.js'
 import { collectFleet } from '../fleet.js'
 import { loadWorkflowRuns } from './useFleet.js'
+import { createPendingQueue, type Pending } from './pendingQueue.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -245,9 +246,10 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
   return [] // clear
 }
 
-export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; resolve: (d: Decision) => void }
-export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
-export interface PendingPlanApproval { plan: string; allowedPrompts?: AllowedPrompt[]; resolve: (approved: boolean) => void }
+// 三者都 extends Pending<V>：resolve 与队列写入的 id 由此而来（id 是 UI 的 React key，见 pendingQueue.ts）
+export interface PendingAsk extends Pending<Decision> { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; origin?: { agentId: string; agentType: string } }
+export interface PendingQuestion extends Pending<Answer[] | null> { questions: Question[] }
+export interface PendingPlanApproval extends Pending<boolean> { plan: string; allowedPrompts?: AllowedPrompt[] }
 /** /model 选中一个未配 key 的 provider 时挂起：UI 弹单 provider key 录入 overlay，core.resolveKeyEntry 回答。 */
 export interface PendingKeyEntry { providerId: string; label: string; baseURL: string; model: string; modelId: string }
 
@@ -347,6 +349,8 @@ export interface ChatState {
   effortLevel: 'low' | 'medium' | 'high'
   permMode: PermissionMode
   pendingAsk: PendingAsk | null
+  /** 队列里还剩多少个待确认（含队首）。UI 用来提示「还有 N 个」。 */
+  pendingAskCount: number
   pendingQuestion: PendingQuestion | null
   pendingPlanApproval: PendingPlanApproval | null
   pendingKeyEntry: PendingKeyEntry | null
@@ -376,6 +380,8 @@ export interface ChatCore {
   steer(text: string, attachments?: Attachment[]): void // busy 时 Enter：入队 next；若 toolInFlight 则同时软中断
   steerPop(): string | undefined
   steerQueue(): readonly SteeringItem[]
+  /** 权限确认桥：入队挂起 Promise，UI 用 resolveAsk 应答队首（resolveAsk 的另一半，语义对称） */
+  ask(toolName: string, desc: string, reason?: PermissionDecisionReason, previewRule?: string): Promise<Decision>
   resolveAsk(d: Decision): void // 权限弹窗回答
   resolveQuestion(answers: Answer[] | null): void // AskUserQuestion 弹窗回答
   resolvePlanApproval(approved: boolean): void // ExitPlanMode 计划审批回答
@@ -554,6 +560,8 @@ export function createChatCore(opts: {
       classify: (t: string, d: string, s: string) => classify(t, d, s, { onUsage: auxOnUsage }),
       cwd: roundCwd,
     }),
+    // 箭头包一层：ctx 声明早于 ask，直接写 askUp: ask 会踩 TDZ
+    askUp: (toolName, desc, reason, previewRule, origin) => ask(toolName, desc, reason, previewRule, origin),
     get signal() { return abort.signal },
     fileState: new Map(),
     taskList,
@@ -590,6 +598,7 @@ export function createChatCore(opts: {
       cwd: () => cwd,
       onProgress: (label?: string) => { hookProgress = label ?? null; setState() },
       parentPermission: ctx.parentPermission,
+      askUp: ctx.askUp,
       denyPatterns: ctx.denyPatterns,
     }),
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
@@ -611,10 +620,12 @@ export function createChatCore(opts: {
   // —— UI 状态 ——
   let currentTitle: string | null = null
   let transcript: TranscriptItem[] = []
-  let pendingPlanApproval: PendingPlanApproval | null = null
   let busy = false
-  let pendingAsk: PendingAsk | null = null
-  let pendingQuestion: PendingQuestion | null = null
+  // 单槽赋值下并发挂起会互相覆盖，被覆盖那个的 resolve 引用丢失、Promise 永不 resolve；
+  // setState 声明在本行之后，故用箭头函数延迟求值（TDZ，同 useChat.activityTDZ.test.ts 记录的事故）
+  const askQueue = createPendingQueue<Decision, PendingAsk>(() => setState())
+  const planApprovalQueue = createPendingQueue<boolean, PendingPlanApproval>(() => setState())
+  const questionQueue = createPendingQueue<Answer[] | null, PendingQuestion>(() => setState())
   let pendingKeyEntry: PendingKeyEntry | null = null
   let lastTokPerSec: number | null = null
   let turnStartAt: number | null = null
@@ -655,7 +666,7 @@ export function createChatCore(opts: {
   // 自动升级状态（后台异步写入，照 statusLineOutput 同样的闭包捕获 setState 范式）
   let updateStatus: UpdateStatus | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput, updateStatus,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk: askQueue.head(), pendingAskCount: askQueue.size(), pendingQuestion: questionQueue.head(), pendingPlanApproval: planApprovalQueue.head(), pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput, updateStatus,
   })
   let state = snap()
   const setState = (): void => {
@@ -873,8 +884,7 @@ export function createChatCore(opts: {
   // AskUserQuestion 桥：挂起 Promise + pendingQuestion 状态，UI 用 resolveQuestion 回答
   const questionAsk = (questions: Question[]): Promise<Answer[] | null> =>
     new Promise<Answer[] | null>(res => {
-      pendingQuestion = { questions, resolve: res }
-      setState()
+      questionQueue.push({ questions, resolve: res })
     })
 
   // 7.3：二选一确认弹窗，复用 questionAsk（同 AskUserQuestion UI，无新组件）
@@ -886,8 +896,7 @@ export function createChatCore(opts: {
   // ExitPlanMode 审批桥：挂起 Promise + pendingPlanApproval 状态，UI 用 resolvePlanApproval 回答
   const approvePlan = (plan: string, allowedPrompts?: AllowedPrompt[]): Promise<{ approved: boolean }> =>
     new Promise<{ approved: boolean }>(res => {
-      pendingPlanApproval = { plan, allowedPrompts, resolve: (approved: boolean) => res({ approved }) }
-      setState()
+      planApprovalQueue.push({ plan, allowedPrompts, resolve: (approved: boolean) => res({ approved }) })
     })
 
   // /setup 加改搜索 key 后即时生效：webSearchConfig 保持同一对象引用，reloadSettings 原地 Object.assign 更新。
@@ -1021,7 +1030,11 @@ export function createChatCore(opts: {
   }
 
   // 权限确认桥：挂起 Promise + pendingAsk 状态，UI 用 resolveAsk 回答
-  const ask = (toolName: string, desc: string, reason?: PermissionDecisionReason, previewRule?: string): Promise<Decision> =>
+  const ask = (
+    toolName: string, desc: string,
+    reason?: PermissionDecisionReason, previewRule?: string,
+    origin?: { agentId: string; agentType: string },
+  ): Promise<Decision> =>
     new Promise<Decision>(res => {
       // Notification hook：权限弹窗浮现给用户时通知（桌面通知转发等）。fire-and-forget。
       if (settings.hooks) {
@@ -1031,8 +1044,7 @@ export function createChatCore(opts: {
         }, settings.hooks, hookDeps).catch(() => {})
       }
       emitNotification(`deepcode 需要你确认：${toolName}`, notifChannel())
-      pendingAsk = { toolName, desc, dangerous: isDangerous(desc), reason, previewRule, resolve: res }
-      setState()
+      askQueue.push({ toolName, desc, dangerous: isDangerous(desc), reason, previewRule, origin, resolve: res })
     })
 
   /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact
@@ -2415,11 +2427,12 @@ export function createChatCore(opts: {
     send,
     cycleMode,
     interrupt: () => {
-      // 若权限弹窗挂起（pendingAsk），checkPermission 内的 ask Promise 永不 resolve，
+      // 若权限弹窗挂起，checkPermission 内的 ask Promise 永不 resolve，
       // generator 永不返回，busy 永远 true——必须先拒绝掉再 abort，否则死锁。
-      if (pendingAsk) { const p = pendingAsk; pendingAsk = null; setState(); p.resolve('no') }
-      if (pendingQuestion) { const p = pendingQuestion; pendingQuestion = null; setState(); p.resolve(null) }
-      if (pendingPlanApproval) { const p = pendingPlanApproval; pendingPlanApproval = null; setState(); p.resolve(false) }
+      // 必须排空【全队】：只排空队首会把其余项永久悬空（并行批里常见并发挂起）。
+      askQueue.drain('no')
+      questionQueue.drain(null)
+      planApprovalQueue.drain(false)
       compactAbort?.abort('user-cancel') // 压缩进行中：ESC 也能中断（否则卡在 doCompact 的 ac，永远逃不出）
       abort.abort('user-cancel')
     },
@@ -2431,24 +2444,16 @@ export function createChatCore(opts: {
     },
     steerPop: () => steerQueue.popLast()?.value,
     steerQueue: () => steerQueue.peek(),
-    resolveAsk: (d: Decision) => {
-      if (!pendingAsk) return
-      const p = pendingAsk
-      pendingAsk = null
-      setState()
-      p.resolve(d)
-    },
-    resolveQuestion: (answers: Answer[] | null) => {
-      if (!pendingQuestion) return
-      const p = pendingQuestion
-      pendingQuestion = null
-      setState()
-      p.resolve(answers)
-    },
+    ask,
+    resolveAsk: (d: Decision) => { askQueue.resolveHead(d) },
+    resolveQuestion: (answers: Answer[] | null) => { questionQueue.resolveHead(answers) },
     resolvePlanApproval: (approved: boolean) => {
-      if (!pendingPlanApproval) return
-      const p = pendingPlanApproval
-      pendingPlanApproval = null
+      const p = planApprovalQueue.head()
+      if (!p) return
+      // 先出队：resolveHead 里的 resolve 只是把 Promise 续跑排进微任务，
+      // 当前同步栈（下面的副作用）跑完才会执行，故提前出队安全，
+      // 且保证副作用里的 setState 看到的快照已不含本项（与改造前「先清空槽位再跑副作用」一致）
+      planApprovalQueue.resolveHead(approved)
       if (approved) {
         // 退出 plan 模式，恢复进入前的模式
         permMode = prePlanMode
@@ -2463,8 +2468,6 @@ export function createChatCore(opts: {
         if ((p.allowedPrompts ?? []).length > 0) fireConfigChange()
         notice('info', `计划已批准，已退出 plan 模式（恢复 ${permMode} 模式）`)
       }
-      setState()
-      p.resolve(approved)
     },
     resolveKeyEntry: (key: string | undefined) => {
       if (!pendingKeyEntry) return
