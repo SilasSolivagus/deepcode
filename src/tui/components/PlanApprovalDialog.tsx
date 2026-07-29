@@ -4,9 +4,10 @@
 // 注：此组件独立新建而非复用 PermissionDialog，原因：计划审批是纯 boolean 批准/拒绝语义，
 // 而 PermissionDialog 的决策类型为 yes/always/no 三态 Decision，语义不兼容；
 // 强行复用需要额外转接层，反而增加耦合和理解成本。
-import React, { useState, useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { useTheme } from '../theme.js'
+import { useSelection } from '../useSelection.js'
 import type { PendingPlanApproval } from '../useChat.js'
 
 const OPTIONS: Array<{ label: string; approved: boolean }> = [
@@ -22,15 +23,16 @@ export function PlanApprovalDialog(props: {
 }) {
   const T = useTheme()
   const { pending, onDecide } = props
-  const [idx, setIdx] = useState(0)
+  const sel = useSelection(OPTIONS.length)
+  const idx = sel.idx
 
   // 连续两个弹窗间重置选中位置
-  useEffect(() => { setIdx(0) }, [pending])
+  useEffect(() => { sel.set(0) }, [pending])
 
   useInput((input, key) => {
-    if (key.upArrow) { setIdx(i => Math.max(0, i - 1)); return }
-    if (key.downArrow) { setIdx(i => Math.min(OPTIONS.length - 1, i + 1)); return }
-    if (key.return) { onDecide(OPTIONS[idx].approved); return }
+    if (key.upArrow) { sel.prev(); return }
+    if (key.downArrow) { sel.next(); return }
+    if (key.return) { onDecide(OPTIONS[sel.current()].approved); return }
     if (key.escape) { onDecide(false); return }
     const k = input.toLowerCase()
     if (k === 'y' || k === '1') { onDecide(true); return }

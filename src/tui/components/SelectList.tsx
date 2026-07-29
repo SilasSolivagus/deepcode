@@ -4,6 +4,7 @@
 import React, { useState } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { useTheme } from '../theme.js'
+import { useSelection } from '../useSelection.js'
 import { computeLineWindow } from '../suggest.js'
 
 const WINDOW_LINES = 12
@@ -15,19 +16,20 @@ export function SelectList(p: {
   title?: string
 }) {
   const T = useTheme()
-  const [idx, setIdx] = useState(0)
+  const sel = useSelection(p.items.length)
+  const idx = sel.idx
 
   useInput((_input, key) => {
     if (key.upArrow) {
-      setIdx(i => Math.max(0, i - 1))
+      sel.prev()
       return
     }
     if (key.downArrow) {
-      setIdx(i => Math.min(p.items.length - 1, i + 1))
+      sel.next()
       return
     }
     if (key.return) {
-      p.onPick(idx)
+      p.onPick(sel.current())
       return
     }
     if (key.escape) {
