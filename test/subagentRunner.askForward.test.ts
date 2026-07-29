@@ -51,6 +51,18 @@ describe('子代理 ask 向上转发', () => {
     expect(seenOrigin).toEqual({ agentId: 'ag_1', agentType: 'Explore' })
   })
 
+  // 回归：S4 守卫会把 desc 重写成中文警告串，纯 desc 文本判定读不出危险（isDangerous 不匹配），
+  // 若不看结构化 reason，rm -rf / 反而会被转发上去当成普通确认。安全门必须先于文本兜底生效。
+  // （原挂在已删除的 subagentPermissionDecision 上，迁到真生产路径。）
+  it('S4 守卫的警告串 desc + 网关 reason → 不转发直接拒（语义反转回归）', async () => {
+    let forwarded = false
+    const askUp = async (): Promise<Decision> => { forwarded = true; return 'yes' }
+    const warnDesc = "危险删除操作：'/'——目标是关键系统目录或工作目录，会造成不可逆破坏。"
+    const pc = buildSubagentPermission(undefined, '/proj', askUp)
+    expect(await pc.ask('Bash', warnDesc, { type: 'other', reason: '保护路径守卫（根目录）' })).toBe('no')
+    expect(forwarded).toBe(false)
+  })
+
   // 回归 1.2：改造前 headless 主代理 ask 恒 'no'，而同环境子代理对非危险命令返回 'yes'。
   it('无人值守下子代理不再比主代理宽松', async () => {
     const unattendedAsk = async (): Promise<Decision> => 'no' // headless.ts / backgroundRunner.ts 的主代理实现

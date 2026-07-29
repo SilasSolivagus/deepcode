@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { checkPermission, YOLO_DANGEROUS_CONFIRM_REASON, type PermissionContext, type Decision, type PermissionDecisionReason } from '../src/permissions.js'
 import { readTool } from '../src/tools/read.js'
-import { subagentPermissionDecision } from '../src/tools/agent.js'
+import { buildSubagentPermission } from '../src/subagentRunner.js'
 
 // 本文件的 fakeTool 故意不设 workspacePaths/deniablePaths，好让 checkPermission
 // 直达 yolo 分支（:488）——工作目录围栏（:423）与 deny（:378）都要靠这两个字段
@@ -187,7 +187,7 @@ describe('只读工具的 ask 防护走路径维度', () => {
   // 注意本用例能钉住的是「needsPermission 恒 false」这个事实断言——行为断言那两条
   // 由 isReadOnly 短路与 desc===false 短路双重兜底，单独移除任一道都不会让它们变红。
   // 若将来有人给只读工具加上真实 needsPermission 描述，第三条断言会红，
-  // 提醒他一并评估弹窗文案／suggestRule／isDangerous／subagentPermissionDecision 的连带影响。
+  // 提醒他一并评估弹窗文案／suggestRule／isDangerous／buildSubagentPermission 三档的连带影响。
   it('既定语义：Tool(pattern) 命令维度规则对只读工具不触发', async () => {
     let asked = false
     const r = await checkPermission(readTool, { file_path: CONFIG }, pc({
@@ -209,32 +209,27 @@ describe('deny 无人值守链路', () => {
     deniablePaths: () => paths,
   })
 
-  it('子代理侧：deny 命中 Bash → ask 收到 deny 来源 → 判定为拒', async () => {
-    let seen: PermissionDecisionReason | undefined
+  // 下面两条走真生产路径 buildSubagentPermission，而不是另造一个判定函数（脱钩会让用例名
+  // 声称覆盖子代理路径、实际覆盖死代码）。askUp 固定给 'yes'（人在场且点了允许），
+  // 于是任何「拒」都只可能来自 deny/围栏判定本身，判别力全落在结构化 reason 有没有传到位上。
+  it('子代理侧：deny 命中 Bash → 安全门先于转发生效 → 判定为拒', async () => {
     const r = await checkPermission(
       bashTool('cat /home/u/.ssh/id_rsa', ['/home/u/.ssh/id_rsa']), {},
-      pc({
-        deny: ['**/id_rsa'],
-        ask: async (_n, desc, reason) => { seen = reason; return subagentPermissionDecision(desc, reason) },
-      }),
+      buildSubagentPermission({ mode: 'default', rules: [], deny: ['**/id_rsa'], cwd: '/repo' }, '/repo', async () => 'yes'),
     )
-    expect(r.ok).toBe(false)
     // 拒的依据必须是结构化 deny 来源，不是 desc 文本——命令 `cat …id_rsa` 本身不命中
-    // DANGEROUS_PATTERNS，所以若 reason 没传到位，isDangerous 兜底会放行。
-    expect(seen).toEqual({
-      type: 'rule',
-      rule: { source: 'builtin', behavior: 'deny', value: '**/id_rsa' },
-    })
+    // DANGEROUS_PATTERNS，且 askUp 恒 'yes'，所以若 reason 没传到位这条就会变绿灯放行。
+    expect(r.ok).toBe(false)
   })
 
-  it('回归：未命中 deny 的普通命令在无人值守下仍放行（网关不是"一律拒"）', async () => {
-    const r = await checkPermission(
-      bashTool('npm test', []), {},
-      pc({
-        deny: ['**/id_rsa'],
-        ask: async (_n, desc, reason) => subagentPermissionDecision(desc, reason),
-      }),
+  it('回归：未命中 deny 的普通命令转发给顶层，顶层允许即放行（网关不是"一律拒"）', async () => {
+    let forwarded: PermissionDecisionReason | undefined | 'never' = 'never'
+    const perm = buildSubagentPermission(
+      { mode: 'default', rules: [], deny: ['**/id_rsa'], cwd: '/repo' }, '/repo',
+      async (_n, _d, reason) => { forwarded = reason; return 'yes' },
     )
+    const r = await checkPermission(bashTool('npm test', []), {}, perm)
     expect(r.ok).toBe(true)
+    expect(forwarded).toBeUndefined() // 确实走了转发通道（而非被某道门短路），且无网关 reason
   })
 })

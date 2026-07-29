@@ -51,7 +51,7 @@ vi.mock('../src/subagentRunner.js', async orig => {
   }
 })
 
-import { makeAgentTool, subagentPermissionDecision } from '../src/tools/agent.js'
+import { makeAgentTool } from '../src/tools/agent.js'
 import { BUILTIN_AGENTS, GLOBAL_SUBAGENT_DENY, resolveAgentTools } from '../src/tools/agentTypes.js'
 import { parseAgentFile } from '../src/agentsLoader.js'
 import { STRUCTURED_OUTPUT_TOOL_NAME } from '../src/tools/structuredOutput.js'
@@ -236,13 +236,9 @@ describe('Agent 子代理类型路由', () => {
     expect(sentTools).not.toContain('Write')
     expect(sentTools).not.toContain('NotebookEdit')
   })
-
-  it('子代理 Bash 钳制：安全命令放行、危险命令拒绝', () => {
-    expect(subagentPermissionDecision('ls -la')).toBe('yes')
-    expect(subagentPermissionDecision('cat src/loop.ts')).toBe('yes')
-    expect(subagentPermissionDecision('rm -rf /')).toBe('no')
-    expect(subagentPermissionDecision('sudo reboot')).toBe('no')
-  })
+  // 注：原「子代理 Bash 钳制」用例钉的是已删除的 subagentPermissionDecision，
+  // 该函数无生产调用方且语义（非危险命令一律 yes）正是本分支修掉的提权缺陷。
+  // 子代理 Bash 钳制的现役断言在 test/subagentRunner.askForward.test.ts。
 })
 
 describe('Agent 后台化（run_in_background）', () => {
