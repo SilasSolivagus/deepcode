@@ -10,9 +10,11 @@ import { type Decision, permissionSourceName } from '../../permissions.js'
 export function PermissionDialog(props: {
   ask: PendingAsk
   onDecide: (d: Decision) => void
+  /** 队列里待确认的总数（含当前这个）。>1 时提示还有几个。 */
+  queued?: number
 }) {
   const T = useTheme()
-  const { ask, onDecide } = props
+  const { ask, onDecide, queued } = props
   const preview = buildPreview(ask.toolName, ask.desc)
   const [idx, setIdx] = useState(0)
 
@@ -50,6 +52,12 @@ export function PermissionDialog(props: {
       )}
       {ask.reason?.type === 'hook' && (
         <Text dimColor>权限被 hook {ask.reason.hookName} 拒绝</Text>
+      )}
+      {ask.origin && (
+        <Text color={T.dim}>来自子代理 {ask.origin.agentType}（{ask.origin.agentId}）</Text>
+      )}
+      {queued !== undefined && queued > 1 && (
+        <Text color={T.dim}>还有 {queued - 1} 个待确认</Text>
       )}
       {preview.lines.map((line, i) => (
         <Text key={i} color={line.sign === '+' ? T.ok : line.sign === '-' ? T.err : T.dim}>

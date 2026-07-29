@@ -34,6 +34,8 @@ export function makeHookRuntime(opts: {
   /** 父级安全约束快照（子代理继承用）。拿不到时 buildSubagentPermission 回落到 default+空规则，
    *  不放宽——不得比"接线前"更松。 */
   parentPermission?: () => PermissionSnapshot
+  /** 权限确认向上转发通道（交互式=真弹窗，无人值守=硬拒）。不接则 hook 子回路的确认硬拒。 */
+  askUp?: ToolContext['askUp']
   /** deny 规则列表（Glob/Grep 输出过滤用），与主会话/子代理同一份。 */
   denyPatterns?: () => string[]
 }): Pick<HookEngineDeps, 'llm' | 'runAgent' | 'registerAsync' | 'onProgress'> {
@@ -74,7 +76,10 @@ export function makeHookRuntime(opts: {
         tools,
         model: subModel,
         thinking: false,
-        permission: buildSubagentPermission(opts.parentPermission?.(), fenceRoot),
+        permission: buildSubagentPermission(
+          opts.parentPermission?.(), fenceRoot, opts.askUp,
+          { agentId: 'hook', agentType: 'hook-eval' }, // hook 评估子回路没有 agentId，用固定标识
+        ),
         ctx: subCtx,
         maxTurns: 10,
       })

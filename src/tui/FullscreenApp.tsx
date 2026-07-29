@@ -339,7 +339,7 @@ export function FullscreenApp(props: {
         {state.pendingQuestion
           ? <QuestionDialog questions={state.pendingQuestion.questions} onDone={a => core.resolveQuestion(a)} />
           : state.pendingAsk
-          ? <PermissionDialog ask={state.pendingAsk} onDecide={d => core.resolveAsk(d)} />
+          ? <PermissionDialog ask={state.pendingAsk} queued={state.pendingAskCount} onDecide={d => core.resolveAsk(d)} />
           : state.pendingPlanApproval
           ? <PlanApprovalDialog pending={state.pendingPlanApproval} onDecide={approved => core.resolvePlanApproval(approved)} />
           : state.pendingKeyEntry

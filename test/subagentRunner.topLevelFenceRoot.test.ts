@@ -66,6 +66,7 @@ describe('Critical 2：顶层会话 cwd 漂移不得污染子代理围栏根', (
         get signal() { return new AbortController().signal },
         fileState: new Map(),
         parentPermission: () => parentSnap,
+        askUp: async () => 'yes', // 顶层转发通道：本文件测的是围栏，不是「无人可问」的兜底硬拒
         // 顶层会话没有 fenceRoot 字段（与生产代码一致，见 tools/types.ts 注释）
       } as any
 
@@ -107,6 +108,7 @@ describe('Critical 2：顶层会话 cwd 漂移不得污染子代理围栏根', (
         get signal() { return new AbortController().signal },
         fileState: new Map(),
         parentPermission: () => parentSnap,
+        askUp: async () => 'yes', // 顶层转发通道：本文件测的是围栏，不是「无人可问」的兜底硬拒
         worktreeSession: { get: () => wsState, set: (s: any) => { wsState = s } },
       } as any
 
@@ -141,6 +143,7 @@ describe('Critical 2：顶层会话 cwd 漂移不得污染子代理围栏根', (
         get signal() { return new AbortController().signal },
         fileState: new Map(),
         parentPermission: () => parentSnap,
+        askUp: async () => 'yes', // 顶层转发通道：本文件测的是围栏，不是「无人可问」的兜底硬拒
       } as any
       const seen = { called: false }
       lastToolCallName = 'Write'

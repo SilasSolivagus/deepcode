@@ -110,6 +110,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       askSources: layered.permissionSources.ask,
       cwd: roundCwd,
     }),
+    askUp: async () => 'no', // 无人值守：与本环境主代理的 ask 一致，不存在「没人在所以放行」
     signal: new AbortController().signal,
     fileState: new Map(),
     taskList,
@@ -128,7 +129,7 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     total.prompt_cache_hit_tokens += u.prompt_cache_hit_tokens
   }
   const hookDeps = {
-    ...makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd, parentPermission: ctx.parentPermission, denyPatterns: ctx.denyPatterns }),
+    ...makeHookRuntime({ client: opts.client, getModel: () => model, onUsage: (u, _m) => addUsage(u), cwd: () => cwd, parentPermission: ctx.parentPermission, askUp: ctx.askUp, denyPatterns: ctx.denyPatterns }),
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
   }

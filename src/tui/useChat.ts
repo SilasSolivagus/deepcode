@@ -246,7 +246,7 @@ export function transcriptReducer(state: TranscriptItem[], a: ReducerAction): Tr
   return [] // clear
 }
 
-export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; resolve: (d: Decision) => void }
+export interface PendingAsk { toolName: string; desc: string; dangerous: boolean; reason?: PermissionDecisionReason; previewRule?: string; origin?: { agentId: string; agentType: string }; resolve: (d: Decision) => void }
 export interface PendingQuestion { questions: Question[]; resolve: (a: Answer[] | null) => void }
 export interface PendingPlanApproval { plan: string; allowedPrompts?: AllowedPrompt[]; resolve: (approved: boolean) => void }
 /** /model 选中一个未配 key 的 provider 时挂起：UI 弹单 provider key 录入 overlay，core.resolveKeyEntry 回答。 */
@@ -559,6 +559,8 @@ export function createChatCore(opts: {
       classify: (t: string, d: string, s: string) => classify(t, d, s, { onUsage: auxOnUsage }),
       cwd: roundCwd,
     }),
+    // 箭头包一层：ctx 声明早于 ask，直接写 askUp: ask 会踩 TDZ
+    askUp: (toolName, desc, reason, previewRule, origin) => ask(toolName, desc, reason, previewRule, origin),
     get signal() { return abort.signal },
     fileState: new Map(),
     taskList,
@@ -595,6 +597,7 @@ export function createChatCore(opts: {
       cwd: () => cwd,
       onProgress: (label?: string) => { hookProgress = label ?? null; setState() },
       parentPermission: ctx.parentPermission,
+      askUp: ctx.askUp,
       denyPatterns: ctx.denyPatterns,
     }),
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
@@ -1026,7 +1029,11 @@ export function createChatCore(opts: {
   }
 
   // 权限确认桥：挂起 Promise + pendingAsk 状态，UI 用 resolveAsk 回答
-  const ask = (toolName: string, desc: string, reason?: PermissionDecisionReason, previewRule?: string): Promise<Decision> =>
+  const ask = (
+    toolName: string, desc: string,
+    reason?: PermissionDecisionReason, previewRule?: string,
+    origin?: { agentId: string; agentType: string },
+  ): Promise<Decision> =>
     new Promise<Decision>(res => {
       // Notification hook：权限弹窗浮现给用户时通知（桌面通知转发等）。fire-and-forget。
       if (settings.hooks) {
@@ -1036,7 +1043,7 @@ export function createChatCore(opts: {
         }, settings.hooks, hookDeps).catch(() => {})
       }
       emitNotification(`deepcode 需要你确认：${toolName}`, notifChannel())
-      askQueue.push({ toolName, desc, dangerous: isDangerous(desc), reason, previewRule, resolve: res })
+      askQueue.push({ toolName, desc, dangerous: isDangerous(desc), reason, previewRule, origin, resolve: res })
     })
 
   /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact
