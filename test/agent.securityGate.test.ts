@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { isSecurityGate, subagentPermissionDecision } from '../src/tools/agent.js'
-import { checkPermission, WORKSPACE_FENCE_REASON, WORKFLOW_USAGE_CONFIRM_REASON, type PermissionDecisionReason, type PermissionContext } from '../src/permissions.js'
+import { checkPermission, WORKSPACE_FENCE_REASON, WORKFLOW_USAGE_CONFIRM_REASON, YOLO_DANGEROUS_CONFIRM_REASON, type PermissionDecisionReason, type PermissionContext } from '../src/permissions.js'
 import type { Tool } from '../src/tools/types.js'
 
 describe('isSecurityGate', () => {
@@ -31,6 +31,10 @@ describe('isSecurityGate', () => {
 
   it('workflow 用量确认 → 是网关', () => {
     expect(isSecurityGate({ type: 'other', reason: WORKFLOW_USAGE_CONFIRM_REASON })).toBe(true)
+  })
+
+  it('yolo 危险命令确认 → 是网关', () => {
+    expect(isSecurityGate({ type: 'other', reason: YOLO_DANGEROUS_CONFIRM_REASON })).toBe(true)
   })
 })
 
@@ -72,6 +76,19 @@ describe('isSecurityGate 与 checkPermission 的生产者/消费者耦合', () =
     const r = await checkPermission(workflowTool, {}, pc)
     expect(r.ok).toBe(false)
     expect(captured).toEqual({ type: 'other', reason: WORKFLOW_USAGE_CONFIRM_REASON })
+    expect(isSecurityGate(captured)).toBe(true)
+  })
+
+  it('真实 yolo 危险命令门触发的 reason，喂给 isSecurityGate 判定为网关', async () => {
+    let captured: PermissionDecisionReason | undefined
+    const pc: PermissionContext = {
+      mode: 'yolo', rules: [], cwd: '/repo', saveRule: () => {},
+      ask: async (_n, _d, reason) => { captured = reason; return 'no' },
+    }
+    const tool = mkTool({ name: 'Bash', needsPermission: () => 'dd if=/dev/zero of=/dev/sda', workspacePaths: undefined })
+    const r = await checkPermission(tool, {}, pc)
+    expect(r.ok).toBe(false)
+    expect(captured).toEqual({ type: 'other', reason: YOLO_DANGEROUS_CONFIRM_REASON })
     expect(isSecurityGate(captured)).toBe(true)
   })
 })

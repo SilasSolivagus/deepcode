@@ -102,6 +102,7 @@ export type PermissionDecisionReason =
  *  （tools/agent.ts 的 isSecurityGate）必须共用同一个常量——只改文案不改这里就会静默失效。 */
 export const WORKSPACE_FENCE_REASON = '工作目录围栏'
 export const WORKFLOW_USAGE_CONFIRM_REASON = 'workflow 用量确认'
+export const YOLO_DANGEROUS_CONFIRM_REASON = 'yolo 危险命令确认'
 
 const SOURCE_NAMES: Record<PermissionRuleSource, string> = {
   builtin: '内置规则',
@@ -148,6 +149,10 @@ export interface PermissionContext {
   autoDenials?: { consecutive: number; total: number }
   /** B7：workflow 用量确认「总是」时持久化 skipWorkflowUsageWarning:true。 */
   setSkipWorkflowWarning?: () => void
+  /** 无人值守（headless/后台会话）：ask 恒返回 'no'，无法真正弹窗问人。
+   *  仅影响 yolo 危险命令确认门——那道门在交互式下是"强制确认"，无人值守下会退化成硬拒，
+   *  与 yolo「别问我」的语义矛盾；deny/围栏/S4 保护路径/ask 规则等其余关卡不受此字段影响。 */
+  unattended?: boolean
 }
 
 /** 父级安全约束的只读快照，供子代理继承。刻意不含 saveRule/ask：
@@ -485,7 +490,22 @@ export async function checkPermission(
       await hooks?.onDenied?.(tool.name, desc, `ask 规则拒绝：${askMatched}`)
       return { ok: false, reason: '用户拒绝了此操作', decisionReason: reason }
     }
-    if (pc.mode === 'yolo' && !forceAsk) return { ok: true }
+    if (pc.mode === 'yolo' && !forceAsk) {
+      // yolo 语义是「别问我」，但危险命令是确定性安全兜底——与同文件 S4 保护路径守卫
+      // 一致：连 yolo 也拦。放行本次但不写规则（危险命令不可自动放行）。
+      // 无人值守（unattended）下没有人能应答这道强制确认，ask 桩恒返回拒绝会让它退化成
+      // 硬拒——那些场景里 yolo 就是「别问，直接跑」，故此门只在真能弹窗问人时生效。
+      if (isDangerous(desc) && !pc.unattended) {
+        const reason: PermissionDecisionReason = { type: 'other', reason: YOLO_DANGEROUS_CONFIRM_REASON }
+        const d = await prompt(tool.name, desc, reason)
+        if (d === 'no') {
+          await hooks?.onDenied?.(tool.name, desc, 'yolo 危险命令：用户拒绝')
+          return { ok: false, reason: 'yolo 危险命令：用户拒绝', decisionReason: reason }
+        }
+        return { ok: true, decisionReason: reason }
+      }
+      return { ok: true }
+    }
     if (pc.mode === 'acceptEdits' && !forceAsk && (tool.name === 'Edit' || tool.name === 'Write')) return { ok: true }
     const matched = tool.name === 'Bash'
       ? findBashMatchingRule(desc, pc.rules)
@@ -496,7 +516,11 @@ export async function checkPermission(
     }
     // auto 模式：无 allow 命中 → 静态 hard_deny 兜底 → 分类器兜底（规则先于分类器）
     if (pc.mode === 'auto' && !forceAsk && pc.classify) {
-      // acceptEdits fast-path：Edit/Write 在 acceptEdits 下本就放行 → 跳过分类器（省每次 ~3s 延迟）。
+      // acceptEdits fast-path：Edit/Write 在 acceptEdits 下本就放行 → 跳过分类器（省每次 ~3s 延迟），
+      // 也不进入下方 hard_deny 判定——HARD_DENY_PATTERNS 是为命令串（Bash 等 desc）设计的模式表，
+      // 对 `写入 <路径>`/`编辑 <路径>` 这类描述并不适用：例如其中一条只要求串里含 `@`（为拦截
+      // `curl -d @secret` 而写），套在文件路径上只会误伤含 `@` 的合法路径（scoped 包目录、
+      // 企业家目录），却拦不住真正的写入型后门（那些走的是重定向语法，不在这里的判定范围内）。
       // 安全性：越界写已被上方工作目录围栏拦；in-workspace 编辑走 acceptEdits 语义（可逆可 review）。
       if (tool.name === 'Edit' || tool.name === 'Write') return { ok: true }
       if (matchHardDeny(tool.name, desc)) {
@@ -534,7 +558,9 @@ export async function checkPermission(
     // PermissionRequest hook：交互 ask 前。allow→放行；deny/block→拒绝。
     if (hooks?.onRequest) {
       const out = await hooks.onRequest(tool.name, desc)
-      if (out.permission === 'allow') return { ok: true }
+      // deny 命中过（Bash 被降级为 forceAsk）时，hook 只能拒不能放——
+      // 否则一条 PermissionRequest hook 就能把 deny 名单整个架空。
+      if (out.permission === 'allow' && !denyHit) return { ok: true }
       if (out.permission === 'deny' || out.block) {
         const reason = out.permissionReason ?? out.blockReason ?? '权限被 hook 拒绝'
         await hooks.onDenied?.(tool.name, desc, reason)

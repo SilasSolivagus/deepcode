@@ -8,6 +8,7 @@ import {
 } from './config.js'
 import { parseMemoryConfig } from './memdir/memoryConfig.js'
 import { NOTIF_CHANNELS } from './notify.js'
+import { isDangerous } from './permissions.js'
 
 export type SettingScope = 'user' | 'project' | 'local' | 'flag'
 
@@ -26,6 +27,11 @@ export const DANGEROUS_TOP_KEYS = [
   'skillOverrides',
   // autoUpdates 决定是否后台改动用户机器上的全局安装（防恶意 repo 操纵升级行为）
   'autoUpdates',
+  // outputStyle 可强制选中 keepCodingInstructions:false 的风格 → 省掉整段编码纪律，
+  // 与已因「注入系统提示」被剥的 language 同类
+  'outputStyle',
+  // availableModels 是 model 的白名单闸门；project 层可写＝可自设白名单把贵档模型放进去，clamp 形同虚设
+  'availableModels',
 ] as const
 
 /** 深拷 raw 后剥离危险字段；嵌套删 permissions.allow / skills.sources。返回剥掉的键名（含嵌套路径）。 */
@@ -56,6 +62,79 @@ export function isGitTracked(filePath: string, cwd: string): boolean {
   } catch {
     return false
   }
+}
+
+/** 授予即等于任意代码执行的命令前缀：解释器、包运行器、shell、以及会把参数当命令执行的包装器。
+ *  这回答的问题与 DANGEROUS_PATTERNS 不同——不是「这条命令危不危险」，而是
+ *  「把这个前缀写进 allow 名单，是不是等于把整个 Bash 敞开」。`Bash(python:*)` 之后
+ *  一句 `python -c '...'` 就能跑任意代码，后面所有关卡都形同虚设。 */
+const CODE_EXEC_PREFIXES = [
+  // 解释器
+  'python', 'python3', 'python2', 'node', 'deno', 'tsx', 'ruby', 'perl', 'php', 'lua',
+  // 包运行器
+  'npx', 'bunx', 'npm run', 'yarn run', 'pnpm run', 'bun run',
+  // shell
+  'bash', 'sh', 'zsh', 'fish', 'csh', 'tcsh', 'ksh', 'dash',
+  // 把参数当命令执行的包装器
+  'eval', 'exec', 'env', 'xargs', 'nice', 'stdbuf', 'nohup', 'timeout', 'time',
+  // 提权与远程执行
+  'sudo', 'doas', 'pkexec', 'ssh',
+  // 内建执行原语：调用本身（无需特定参数）就具备任意命令执行能力，与解释器同类。
+  // awk/gawk 的 system()、find 的 -exec/-execdir、GNU sed 的 e 命令、
+  // make 的 $(shell …)/--eval、docker 挂载宿主根目录跑容器，均不需要"恰好命中某个危险参数"，
+  // 授予裸前缀即等同于授予任意命令执行。
+  'awk', 'gawk', 'find', 'make', 'sed', 'docker',
+] as const
+
+/** 取 token 的 basename（覆盖绝对路径写法，如 `/usr/bin/python` → `python`）再去掉
+ *  末尾纯数字/点号的版本号（`python3.11` → `python`、`node20` → `node`）。
+ *  只用于识别单 token 前缀（解释器/shell/内建执行原语）的等价拼写——多词前缀
+ *  （如 `npm run`）不存在路径/版本号变体问题，不套用此归一化。 */
+function normalizeHeadToken(token: string): string {
+  const base = token.includes('/') ? token.slice(token.lastIndexOf('/') + 1) : token
+  return base.replace(/[\d.]+$/, '')
+}
+
+/** 规则内容是否命中某个代码执行前缀。**逐形态精确相等，不做 startsWith**——
+ *  否则 `Bash(nodemon:*)` 会被 `node` 误伤。先小写以覆盖大小写变体。
+ *  五种形态：`python` / `python:*` / `python*` / `python *` / `python -…*`。
+ *  单 token 前缀额外比较 basename+去版本号后的形式，覆盖 `/usr/bin/python:*`、
+ *  `python3.11:*` 这类等价拼写；比较仍是精确相等，不做 startsWith，
+ *  故 `makefile-gen:*`、`find-my-thing:*` 这类名字撞前缀的合法工具不受影响。 */
+function isCodeExecPrefixRule(content: string): boolean {
+  const c = content.trim().toLowerCase()
+  const spaceIdx = c.search(/\s/)
+  const rawFirstToken = spaceIdx === -1 ? c : c.slice(0, spaceIdx)
+  const firstTokenBare = rawFirstToken.replace(/(:\*|\*)$/, '')
+  const restAfterFirst = c.slice(firstTokenBare.length)
+  const normalizedFirst = normalizeHeadToken(firstTokenBare)
+  const matchesTail = (rest: string): boolean =>
+    rest === '' || rest === ':*' || rest === '*' || rest === ' *' ||
+    (rest.startsWith(' -') && rest.endsWith('*'))
+  return CODE_EXEC_PREFIXES.some(p => {
+    if (p.includes(' ')) {
+      // 多词前缀（如 "npm run"）：沿用原判定，不做路径/版本号归一化。
+      return c === p || c === `${p}:*` || c === `${p}*` || c === `${p} *` ||
+        (c.startsWith(`${p} -`) && c.endsWith('*'))
+    }
+    return (firstTokenBare === p || normalizedFirst === p) && matchesTail(restAfterFirst)
+  })
+}
+
+/** 一条 allow 规则是否过宽或危险，不得生效。三类：
+ *  ① 过宽＝内容为空/纯星号（等于放行该工具全部用法）
+ *  ② 授权即任意代码执行＝内容是解释器/包装器前缀（见 CODE_EXEC_PREFIXES）
+ *  ③ 危险＝内容命中既有 DANGEROUS_PATTERNS
+ *  在加载期剥离而非匹配期复检：一次性、可解释、能把被剥清单告知用户；
+ *  匹配期复检则每次调用都付代价，且用户看着规则在配置里却不知为何不生效。 */
+export function isOverlyBroadAllowRule(rule: string): boolean {
+  const m = /^(\w+)\((.*)\)$/.exec(rule.trim())
+  const content = m ? m[2].trim() : rule.trim()
+  if (content === '' || /^[\s*]+$/.test(content)) return true
+  if (isCodeExecPrefixRule(content)) return true
+  // 小写后再判——DANGEROUS_PATTERNS 里 \bsudo\b 等模式区分大小写，
+  // 否则 `Bash(Sudo apt-get:*)` 这类大小写变体会漏剥（本函数的判定意图本就是大小写不敏感）。
+  return isDangerous(content.toLowerCase().replace(/:\*$/, ''))
 }
 
 export interface ScopePartial { scope: SettingScope; partial: Record<string, unknown> }
@@ -137,6 +216,19 @@ export interface LayeredResult {
   permissionSources: { allow: Record<string, SettingScope>; deny: Record<string, SettingScope>; ask: Record<string, SettingScope> }
   scopes: LoadedScope[]
   hookLayers: { scope: SettingScope; hooks: import('./hooks.js').HooksConfig }[]
+  /** 被剥掉的过宽/危险 allow 规则（不生效，需告知用户）。 */
+  strippedDangerousRules: string[]
+}
+
+/** `strippedDangerousRules` 的启动期告知文案。headless / 后台会话 / TUI 三个入口共用同一判定
+ *  与措辞——各写各的会在文案变更时静默分叉，出现"同样的剥离，一处说了一处没说"的情况
+ *  （同 modelFallbackReason 的共享判定理由）。无剥离返回 undefined。
+ *  措辞必须说清两件事：这些规则**不会生效**（不是"已记录待处理"），以及**为什么**
+ *  （过宽/危险，不是随机拒绝）——只报个清单会让用户以为是 bug。 */
+export function strippedRulesNotice(stripped: string[] | undefined): string | undefined {
+  if (!stripped?.length) return undefined
+  return `已剥离 ${stripped.length} 条过宽或危险的 allow 规则，它们不会生效：${stripped.join(' / ')}`
+    + '（这些规则等价于放开整个 Bash，或撞上内置的不可逆/破坏性命令模式，加载时被拒绝存续）'
 }
 
 /** 从各层 partial 收集配了 hooks 的层（保留 scope），供 /hooks 标注来源。按加载序。 */
@@ -235,5 +327,18 @@ export function loadLayeredSettings(cwd: string = process.cwd(), flagPath: strin
   }
   const { settings, provenance, permissionSources } = mergeScopePartials(layers)
   const hookLayers = deriveHookLayers(layers)
-  return { settings: settings as Settings, provenance, permissionSources, scopes, hookLayers }
+
+  const strippedDangerousRules: string[] = []
+  if (Array.isArray(settings.permissions?.allow)) {
+    const kept: string[] = []
+    for (const r of settings.permissions.allow) {
+      if (isOverlyBroadAllowRule(r)) {
+        strippedDangerousRules.push(r)
+        delete permissionSources.allow[r] // 已剥离的规则不该再在来源追溯里露面
+      } else kept.push(r)
+    }
+    settings.permissions.allow = kept
+  }
+
+  return { settings: settings as Settings, provenance, permissionSources, scopes, hookLayers, strippedDangerousRules }
 }

@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { Tool } from '../../tools/types.js'
 import { assertNotReserved } from '../../memdir/reserved.js'
 import { withWriteLock } from './writeLock.js'
+import { canonPath as canon } from '../../pathCanon.js'
 
 /** dream 传入才追加检索工具；不传 = extract fork 形态（只读 memdir，无 MemGrep/MemGlob）。 */
 export interface MemToolOpts {
@@ -38,23 +39,6 @@ export function assertInMemdir(memdir: string, target: string): string | null {
     return `拒绝：记忆工具只能写入 memory 目录（${root}）内，越界路径 ${path.resolve(target)} 被拦截。`
   }
   return null
-}
-
-/**
- * 归一化：`../` 折叠 + symlink 解析。
- * 路径不存在时（如尚未创建的文件）解析最深的存在祖先再拼回剩余段，
- * 否则 /var → /private/var 这类平台 symlink 会让存在与不存在的路径归一化结果不可比。
- */
-function canon(p: string): string {
-  let cur = path.resolve(p)
-  const rest: string[] = []
-  for (;;) {
-    try { return path.join(fs.realpathSync(cur), ...rest) } catch {}
-    const parent = path.dirname(cur)
-    if (parent === cur) return path.resolve(p) // 到根仍不存在
-    rest.unshift(path.basename(cur))
-    cur = parent
-  }
 }
 
 /** glob → RegExp。`**`/`*` 先换占位符，否则替换插入的 `.*` 会被后续的 `*` 规则再次改写。 */

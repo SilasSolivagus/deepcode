@@ -58,11 +58,17 @@ export function worktreeSubagentPrompt(parentCwd: string, worktreePath: string):
 
 /** 组装子代理的 PermissionContext：继承父级全部安全约束，ask 按 reason 来源二分。
  *  拿不到父快照 → 回落 default + 空规则（= 改动前行为），不放宽。
- *  fenceRoot 由调用方定死，函数本身无副作用，便于对抗性单测直接喂 checkPermission。 */
+ *  fenceRoot 由调用方定死，便于对抗性单测直接喂 checkPermission；唯一副作用是缺 cwd 时的告警。 */
 export function buildSubagentPermission(
   parent: PermissionSnapshot | undefined,
   fenceRoot: string,
 ): PermissionContext {
+  // 父快照存在但缺 cwd 是异常路径：三处注入点（useChat/headless/backgroundRunner）都固定填了 cwd，
+  // 缺失意味着将来新增第四个注入点忘填，会静默回落到调用方给定的 fenceRoot——不算错但不可观测，
+  // 故告警使其可发现，不静默吞掉。
+  if (parent && parent.cwd === undefined) {
+    console.error('[deepcode] 父级权限快照缺少 cwd，子代理围栏根回落到调用方给定值——请检查注入点是否漏填。')
+  }
   return {
     mode: parent?.mode ?? 'default',
     rules: parent?.rules ?? [],
@@ -105,7 +111,8 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
   // 优先级：worktree 隔离 > 调用方（子代理）自己不可变的 ctx.fenceRoot（孙代理场景，防继承漂移后的 cwd 造成跨层逃逸）
   // > parentPerm.cwd（顶层会话本回合的围栏根快照，与 useChat/headless/backgroundRunner 喂给 checkPermission 的
   //   pc.cwd 同源、回合内不随 Bash cd/EnterWorktree/ExitWorktree 漂移）> ctx.cwd()（兜底：两者都拿不到时的最后手段，
-  //   即改动前行为，不比之前更松）。
+  //   即改动前行为，不比之前更松；这一兜底若被触发，说明 parentPerm 缺 cwd，已由 buildSubagentPermission
+  //   里的告警覆盖，不会静默发生）。
   const fenceRoot = opts.worktreePath ?? ctx.fenceRoot ?? parentPerm?.cwd ?? ctx.cwd()
   // 子代理允许 cd 落脚的范围：围栏根 ∪ 继承的工作目录白名单。越界 cd 一律拒绝持久化——
   // 否则「判定用 fenceRoot 解析相对路径」与「执行用 subCwd 解析相对路径」会分裂成两个基准，

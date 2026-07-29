@@ -1,9 +1,10 @@
 // src/deny.ts
-// 敏感路径 deny：内置私钥类默认列表 + picomatch glob 匹配（~展开、不 realpath）。
+// 敏感路径 deny：内置私钥类默认列表 + picomatch glob 匹配（~展开、逻辑路径与真实路径双判）。
 import type { PermissionRuleSource } from './permissions.js'
 import picomatch from 'picomatch'
 import os from 'node:os'
 import path from 'node:path'
+import { canonPath } from './pathCanon.js'
 
 /** 内置默认 deny（只含高敏私钥类；不含 .env 以免误伤读配置请求）。 */
 export const BUILTIN_DENY = [
@@ -26,11 +27,17 @@ function expandTilde(p: string): string {
   return p.startsWith('~/') ? escapeGlob(os.homedir()) + '/' + p.slice(2) : p
 }
 
-/** absPath 命中任一 deny pattern 则返回该 pattern，否则 null。逻辑路径匹配，不解符号链接。 */
+/** absPath 命中任一 deny pattern 则返回该 pattern，否则 null。
+ *  双路径取并集：逻辑路径与真实路径任一命中即拒。
+ *  只判真实路径会反向失效——规则若按逻辑路径写（如 ~/.ssh/**）而该目录本身是软链，
+ *  归一化后就不再匹配那条 glob，原本被拒的会变成放行。 */
 export function isDeniedPath(absPath: string, patterns: string[]): string | null {
-  const target = path.resolve(absPath)
+  const logical = path.resolve(absPath)
+  const real = canonPath(absPath)
   for (const pat of patterns) {
-    if (picomatch.isMatch(target, expandTilde(pat), { dot: true })) return pat
+    const expanded = expandTilde(pat)
+    if (picomatch.isMatch(logical, expanded, { dot: true })) return pat
+    if (real !== logical && picomatch.isMatch(real, expanded, { dot: true })) return pat
   }
   return null
 }

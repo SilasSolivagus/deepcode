@@ -30,6 +30,7 @@ vi.mock('../src/settingsLayers.js', async orig => {
       provenance: {},
       permissionSources: { allow: {}, deny: {} },
       scopes: [],
+      strippedDangerousRules: [],
     })),
   }
 })
@@ -38,6 +39,7 @@ import { newSession } from '../src/session.js'
 import { writeJobState, readJobState } from '../src/backgroundSession.js'
 import { runBackgroundSession } from '../src/backgroundRunner.js'
 import { chatStream } from '../src/api.js'
+import { loadLayeredSettings } from '../src/settingsLayers.js'
 
 const usage = { prompt_tokens: 5, completion_tokens: 3, prompt_cache_hit_tokens: 0 }
 
@@ -100,6 +102,43 @@ describe('runBackgroundSession', () => {
     } finally {
       delete (mockSettings.permissions as any).ask
     }
+  })
+
+  it('availableModels 白名单钳制回落时 job state warning 与共享判定函数 modelFallbackReason 的产出逐字一致（耦合测试：判定条件只许有一份）', async () => {
+    ;(mockSettings as any).availableModels = ['deepseek-v4-pro']
+    try {
+      const { file, short } = seedSession()
+      writeJobState({
+        sessionId: path.basename(file).replace(/\.jsonl$/, ''), short, state: 'working', cwd: tmp,
+        name: 'x', pid: process.pid, model: 'glm-5.2', permMode: 'default', sessionFile: file,
+        backend: 'detached', createdAt: 1, updatedAt: 1,
+      })
+      script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+      // deepseek-v4-flash 明明属于 deepseek（当前默认 provider），只是没进白名单——期望值写死
+      // （不经运行时调用 modelFallbackReason 计算），与 providers.availableModels.test.ts 里的同款单测断言逐字同步
+      await runBackgroundSession({ client: {} as any, resumeFile: file, jobShort: short, seed: 'x', model: 'deepseek-v4-flash', home: tmp })
+      expect(readJobState(short)?.warning).toBe('model=deepseek-v4-flash 不在 availableModels 白名单内，已回落到 deepseek-v4-pro')
+    } finally {
+      delete (mockSettings as any).availableModels
+    }
+  })
+
+  it('剥离的 allow 规则经 job state warning 播报（后台 stdio:ignore，这是唯一可见通道）', async () => {
+    vi.mocked(loadLayeredSettings).mockReturnValueOnce({
+      settings: mockSettings, provenance: {}, permissionSources: { allow: {}, deny: {} },
+      scopes: [], strippedDangerousRules: ['Bash(npm run:*)', 'Bash(rm -rf dist)'],
+    } as any)
+    const { file, short } = seedSession()
+    writeJobState({
+      sessionId: path.basename(file).replace(/\.jsonl$/, ''), short, state: 'working', cwd: tmp,
+      name: 'x', pid: process.pid, model: 'glm-5.2', permMode: 'default', sessionFile: file,
+      backend: 'detached', createdAt: 1, updatedAt: 1,
+    })
+    script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+    await runBackgroundSession({ client: {} as any, resumeFile: file, jobShort: short, seed: 'x', home: tmp })
+    const w = readJobState(short)?.warning ?? ''
+    expect(w).toContain('Bash(npm run:*)')
+    expect(w).toContain('不会生效')
   })
 
   it('client 抛错 → state failed', async () => {

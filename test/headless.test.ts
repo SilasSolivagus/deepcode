@@ -55,6 +55,7 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
       provenance: {},
       permissionSources: { allow: {}, deny: {} },
       scopes: [],
+      strippedDangerousRules: [],
     })),
   }
 })
@@ -62,6 +63,7 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
 import { runHeadless } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
 import { runHooks } from '../src/hooks.js'
+import { loadLayeredSettings } from '../src/settingsLayers.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 10 }
 beforeEach(() => { script.length = 0; hookCalls.length = 0; vi.mocked(chatStream).mockClear() })
@@ -98,6 +100,27 @@ describe('runHeadless', () => {
     )
     const r = await runHeadless({ client: {} as any, prompt: '建个文件', yolo: false })
     expect(r.status).toBe('done') // 不挂起、不抛错，拒绝理由按正常机制喂回模型
+  })
+
+  it('yolo + 无人值守：命中危险命令正则的命令直接放行执行，不因确认门退化成硬拒', async () => {
+    // echo --force 的字面串命中 DANGEROUS_PATTERNS（--force），但真实执行毫无副作用——
+    // 用它做端到端断言：既验证命令真的跑了（stdout 含 --force），又不碰真实文件系统。
+    script.push(
+      {
+        result: {
+          content: '', toolCalls: [{ id: 'h9', name: 'Bash', args: '{"command":"echo --force"}' }],
+          usage, finishReason: 'tool_calls',
+        },
+      },
+      { result: { content: '完成', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '跑一下', yolo: true })
+    expect(r.status).toBe('done')
+    const allCalls = vi.mocked(chatStream).mock.calls
+    const allMessages: any[] = allCalls.flatMap(([_client, opts]) => opts.messages ?? [])
+    const toolMsg = allMessages.find(m => m.role === 'tool' && m.tool_call_id === 'h9')
+    expect(toolMsg?.content).toContain('--force') // 命令真的被执行了，不是被拦下的拒绝文案
+    expect(toolMsg?.content).not.toContain('yolo 危险命令')
   })
 
   it('todo 过期时在工具消息中注入 system-reminder', async () => {
@@ -214,6 +237,44 @@ describe('headless ask 桶·路径维度接线（不变量：绝不静默失效�
     const allMessages: any[] = allCalls.flatMap(([_client, opts]) => opts.messages ?? [])
     const toolMsg = allMessages.find(m => m.role === 'tool' && m.tool_call_id === 'ra1')
     expect(toolMsg?.content).toContain('ask 规则')
+  })
+})
+
+describe('headless availableModels 白名单回落文案', () => {
+  afterEach(() => { delete (mockSettings as any).model; delete (mockSettings as any).availableModels })
+  it('白名单钳制回落时的提示与共享判定函数 modelFallbackReason 的产出逐字一致（耦合测试：判定条件只许有一份）', async () => {
+    // deepseek-v4-flash 明明属于 deepseek（当前 provider），只是没进白名单——若沿用旧文案会撒谎；
+    // 期望值写死（不经运行时调用 modelFallbackReason 计算），这样若共享函数内部判定被删/改也能被本用例捕捉
+    // （与 test/providers.availableModels.test.ts 里 modelFallbackReason 的同款单测断言保持逐字同步）
+    ;(mockSettings as any).model = 'deepseek-v4-flash'
+    ;(mockSettings as any).availableModels = ['deepseek-v4-pro']
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+      await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
+      const msgs = errSpy.mock.calls.map(c => c.join(' '))
+      expect(msgs).toContain('[deepcode] settings.model=deepseek-v4-flash 不在 availableModels 白名单内，已回落到 deepseek-v4-pro')
+    } finally {
+      errSpy.mockRestore()
+    }
+  })
+})
+
+describe('headless 剥离的 allow 规则告知', () => {
+  it('strippedDangerousRules 非空时经 console.error 播报（绝不只在 /config 里才看得见）', async () => {
+    vi.mocked(loadLayeredSettings).mockReturnValueOnce({
+      settings: mockSettings, provenance: {}, permissionSources: { allow: {}, deny: {} },
+      scopes: [], strippedDangerousRules: ['Bash(npm run:*)', 'Bash(rm -rf dist)'],
+    } as any)
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+      await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
+      const msgs = errSpy.mock.calls.map(c => c.join(' '))
+      expect(msgs.some(m => m.includes('Bash(npm run:*)') && m.includes('不会生效'))).toBe(true)
+    } finally {
+      errSpy.mockRestore()
+    }
   })
 })
 

@@ -34,7 +34,7 @@ import type { Settings, OnboardingKeys } from '../config.js'
 import { loadAppState, saveAppState } from '../tipsState.js'
 import { selectTip, recordTipShown } from './tips.js'
 import { formatPermissionRules, resolveRuleRemoval } from '../permissionsView.js'
-import { loadLayeredSettings } from '../settingsLayers.js'
+import { loadLayeredSettings, strippedRulesNotice } from '../settingsLayers.js'
 import { runHooks } from '../hooks.js'
 import { newFlushState, computeFlush, type FlushState } from './messageDisplayFlush.js'
 import { makeHookRuntime } from '../hookRuntime.js'
@@ -77,7 +77,7 @@ import { DEFAULT_MEMORY_CONFIG } from '../memdir/memoryConfig.js'
 import { createMemoryExtractor } from '../services/memory/extractMemories.js'
 import { SteeringQueue, formatSteeringMessage, type SteeringItem } from '../steering.js'
 import { type SessionMemoryState, shouldUpdateSessionMemory, runSessionMemoryUpdate } from '../services/memory/sessionMemory.js'
-import { activeFastModel, activeModelMeta, activeProvider, allModelList, availablePresets, belongsToProvider, foreignProviderOf, providerKeyReady, providerLabel, resolveActiveProvider, resolveStartupModel, resolveSubModel, type ProviderId } from '../providers.js'
+import { activeFastModel, activeModelMeta, activeProvider, allModelList, availablePresets, belongsToProvider, foreignProviderOf, modelFallbackReason, providerKeyReady, providerLabel, resolveActiveProvider, resolveStartupModel, resolveSubModel, type ProviderId } from '../providers.js'
 import { buildCarryFlags, buildResumeArgs, guardSwitch } from './tuiSwitch.js'
 import { resolveResumeModel, rotateModel } from './resumeModel.js'
 import { messagesToTranscript } from './restoreTranscript.js'
@@ -512,7 +512,7 @@ export function createChatCore(opts: {
   const foreignStartupModel = settings.model
     ? foreignProviderOf(activePreset, settings.model, availablePresets(settings))
     : undefined
-  let model = resolveStartupModel(settings.model, activePreset, availablePresets(settings))
+  let model = resolveStartupModel(settings.model, activePreset, availablePresets(settings), settings.availableModels)
   // Task6 focus 视图：由 settings.viewMode 初始化；locked（viewMode:focus）时 /focus 不可关
   const initialFocus = resolveInitialFocus(settings)
   let focusMode = initialFocus.focusMode
@@ -793,8 +793,17 @@ export function createChatCore(opts: {
   // Task6：--resume 精确恢复优先（/tui 切换回带同一会话文件）；文件不存在则回落 continue/新建
   let recovered: { file: string } | undefined
   if (foreignStartupModel) {
+    // 跨 provider 回落有更详细的专属文案（带出具体是哪个 provider），不走 modelFallbackReason 共享判定
     notice('warn', `settings.model=${settings.model} 属于 ${foreignStartupModel} provider，当前 provider 是 ${activePreset.id}，已回落到 ${model}`)
+  } else {
+    // 绝不静默失效：白名单钳制拦掉一个模型时也要可观测（同 headless/backgroundRunner 共用同一判定与措辞）
+    const modelFallback = modelFallbackReason(settings.model, model, activePreset, settings.availableModels)
+    if (modelFallback) notice('warn', `settings.model=${modelFallback}`)
   }
+  // 绝不静默失效：always/plan 批准存下的规则若被剥，不能只在用户手动敲 /config 时才说出来
+  // （同 headless/backgroundRunner 共用同一判定与措辞）。
+  const strippedNotice = strippedRulesNotice(layered.strippedDangerousRules)
+  if (strippedNotice) notice('warn', strippedNotice)
   if (opts.resumeFile) {
     try { fs.accessSync(opts.resumeFile); recovered = { file: opts.resumeFile } }
     catch { recovered = undefined }

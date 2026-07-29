@@ -41,9 +41,10 @@ describe('checkPermission', () => {
     expect(asked).toBe(false)
   })
 
-  it('yolo 模式全放行（保护路径 rm 例外见 permissions.protectedPath.test）', async () => {
-    // 用非保护路径的危险 rm：yolo 仍放行（S4 只拦根/家目录/一级系统目录/整树 rm）
-    const r = await checkPermission(fakeTool('Bash', false, 'rm -rf node_modules'), {}, pc({ mode: 'yolo' }))
+  it('yolo 模式全放行（保护路径 rm 例外见 permissions.protectedPath.test，危险命令例外见 permissions.gates.test）', async () => {
+    // 普通命令：yolo 仍放行（rm -rf 等 DANGEROUS_PATTERNS 命中项现由 Task5 yolo 危险命令门单独覆盖，
+    // 见 permissions.gates.test.ts；此处只测非危险命令的基线放行行为）
+    const r = await checkPermission(fakeTool('Bash', false, 'npm install left-pad'), {}, pc({ mode: 'yolo' }))
     expect(r.ok).toBe(true)
   })
 
