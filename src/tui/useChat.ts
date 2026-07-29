@@ -2440,9 +2440,12 @@ export function createChatCore(opts: {
     resolveAsk: (d: Decision) => { askQueue.resolveHead(d) },
     resolveQuestion: (answers: Answer[] | null) => { questionQueue.resolveHead(answers) },
     resolvePlanApproval: (approved: boolean) => {
-      // 队首 allowedPrompts 只用于批准时的副作用，先取值再 resolveHead（resolveHead 会移出队列）
       const p = planApprovalQueue.head()
       if (!p) return
+      // 先出队：resolveHead 里的 resolve 只是把 Promise 续跑排进微任务，
+      // 当前同步栈（下面的副作用）跑完才会执行，故提前出队安全，
+      // 且保证副作用里的 setState 看到的快照已不含本项（与改造前「先清空槽位再跑副作用」一致）
+      planApprovalQueue.resolveHead(approved)
       if (approved) {
         // 退出 plan 模式，恢复进入前的模式
         permMode = prePlanMode
@@ -2457,7 +2460,6 @@ export function createChatCore(opts: {
         if ((p.allowedPrompts ?? []).length > 0) fireConfigChange()
         notice('info', `计划已批准，已退出 plan 模式（恢复 ${permMode} 模式）`)
       }
-      planApprovalQueue.resolveHead(approved)
     },
     resolveKeyEntry: (key: string | undefined) => {
       if (!pendingKeyEntry) return
