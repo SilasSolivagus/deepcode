@@ -45,6 +45,48 @@ vi.mock('../src/mcp.js', async orig => {
   return { ...actual, initMcpTools: vi.fn(async () => ({ tools: [], cleanup: async () => { cleanupCalls++ } })) }
 })
 
+// 隔离真实设置：不这样做的话 loadLayeredSettings 会读本机 ~/.deepcode/settings.json（真实
+// model/provider/permissions/memory 等），测试结果就绑死在开发者个人配置上——换台机器、或本机
+// 改了 memory.enabled / 加了 mcpServers / 配了 permissions.deny，结果可能跟着变且看不出是环境导致的。
+// 照抄 test/headless.test.ts:18-61 的结构（hooks.js + config.js + settingsLayers.js 三件套）。
+vi.mock('../src/hooks.js', async orig => {
+  const actual = await orig<typeof import('../src/hooks.js')>()
+  return {
+    ...actual,
+    runHooks: vi.fn(async () => ({ block: false, preventContinuation: false, stop: false, results: [] })),
+  }
+})
+
+const mockSettings = {
+  permissions: { allow: [] },
+  compactTokens: 200_000,
+  costWarnCNY: 15,
+  hooks: {
+    SessionStart: [{ matcher: '*', hooks: [] }],
+    InstructionsLoaded: [{ matcher: '*', hooks: [] }],
+    UserPromptSubmit: [{ matcher: '*', hooks: [] }],
+  },
+}
+
+vi.mock('../src/config.js', async orig => {
+  const actual = await orig<typeof import('../src/config.js')>()
+  return { ...actual, loadSettings: vi.fn(() => mockSettings) }
+})
+
+vi.mock('../src/settingsLayers.js', async orig => {
+  const actual = await orig<typeof import('../src/settingsLayers.js')>()
+  return {
+    ...actual,
+    loadLayeredSettings: vi.fn(() => ({
+      settings: mockSettings,
+      provenance: {},
+      permissionSources: { allow: {}, deny: {} },
+      scopes: [],
+      strippedDangerousRules: [],
+    })),
+  }
+})
+
 import { runHeadless } from '../src/headless.js'
 
 const usage = { prompt_tokens: 1, completion_tokens: 1, prompt_cache_hit_tokens: 0 }
