@@ -62,7 +62,7 @@ export function registerAsync(args: RegisterAsyncArgs): void {
       // asyncRewake：仅 exit 2 唤醒；非 2 静默。
       if (code === 2) {
         updateTask(id, { status: 'failed', endTime: Date.now(), result: (stderr || stdout).trim() })
-        enqueueNotification(getTask(id)!)
+        enqueueNotification(getTask(id))
       } else {
         updateTask(id, { status: code === 0 ? 'completed' : 'failed', endTime: Date.now() })
       }
@@ -71,7 +71,7 @@ export function registerAsync(args: RegisterAsyncArgs): void {
     // 普通 async：解析输出，有可注入内容才入队。
     const ctx = parseAsyncHookOutput(stdout, code, stderr)
     updateTask(id, { status: code === 0 ? 'completed' : 'failed', endTime: Date.now(), result: ctx })
-    if (ctx) enqueueNotification(getTask(id)!)
+    if (ctx) enqueueNotification(getTask(id))
   }
   child.once('close', (code: number | null) => settle(code ?? 0))
   child.once('error', () => { if (settled) return; settled = true; clearTimeout(timer); updateTask(id, { status: 'failed', endTime: Date.now() }) })

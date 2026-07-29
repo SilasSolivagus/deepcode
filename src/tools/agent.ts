@@ -137,7 +137,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
             if (wt && !wt.hookBased) await removeWorktree(wt).catch(() => {})
             updateTask(id, { status: ac.signal.aborted ? 'killed' : 'failed', endTime: Date.now() })
           } finally {
-            enqueueNotification(getTask(id)!)
+            enqueueNotification(getTask(id))
             ctx.hookDispatch?.('TaskCompleted', { hook_event_name: 'TaskCompleted', task_kind: 'background', task_id: id, status: getTask(id)!.status }).catch(() => {})
           }
         })()

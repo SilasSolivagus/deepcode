@@ -108,9 +108,12 @@ function statusZh(status: TaskStatus): string {
   }
 }
 
-/** 完成通知入队。先 check-and-set notified（去重灵魂），已通知则跳过；再 push 并触发订阅者。 */
-export function enqueueNotification(task: BackgroundTask): void {
-  if (task.notified) return
+/** 完成通知入队。先 check-and-set notified（去重灵魂），已通知则跳过；再 push 并触发订阅者。
+ *  收 undefined：四个调用点都是 `enqueueNotification(getTask(id)!)`，而任务表是模块级单例——
+ *  任务在 exit 回调跑到之前被移除（测试并发清表、或将来加了清理逻辑），getTask 就返回 undefined，
+ *  非空断言骗过类型检查、读 .notified 在后台 promise 里抛 TypeError。丢一条通知远好过炸掉整条链路。 */
+export function enqueueNotification(task: BackgroundTask | undefined): void {
+  if (!task || task.notified) return
   updateTask(task.id, { notified: true })
   queue.push(toNotification(task))
   for (const cb of subscribers) cb()
