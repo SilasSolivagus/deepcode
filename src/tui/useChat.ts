@@ -616,12 +616,12 @@ export function createChatCore(opts: {
   // —— UI 状态 ——
   let currentTitle: string | null = null
   let transcript: TranscriptItem[] = []
-  let pendingPlanApproval: PendingPlanApproval | null = null
   let busy = false
   // 单槽赋值下并发挂起会互相覆盖，被覆盖那个的 resolve 引用丢失、Promise 永不 resolve；
   // setState 声明在本行之后，故用箭头函数延迟求值（TDZ，同 useChat.activityTDZ.test.ts 记录的事故）
   const askQueue = createPendingQueue<Decision, PendingAsk>(() => setState())
-  let pendingQuestion: PendingQuestion | null = null
+  const planApprovalQueue = createPendingQueue<boolean, PendingPlanApproval>(() => setState())
+  const questionQueue = createPendingQueue<Answer[] | null, PendingQuestion>(() => setState())
   let pendingKeyEntry: PendingKeyEntry | null = null
   let lastTokPerSec: number | null = null
   let turnStartAt: number | null = null
@@ -662,7 +662,7 @@ export function createChatCore(opts: {
   // 自动升级状态（后台异步写入，照 statusLineOutput 同样的闭包捕获 setState 范式）
   let updateStatus: UpdateStatus | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk: askQueue.head(), pendingAskCount: askQueue.size(), pendingQuestion, pendingPlanApproval, pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput, updateStatus,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk: askQueue.head(), pendingAskCount: askQueue.size(), pendingQuestion: questionQueue.head(), pendingPlanApproval: planApprovalQueue.head(), pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput, updateStatus,
   })
   let state = snap()
   const setState = (): void => {
@@ -880,8 +880,7 @@ export function createChatCore(opts: {
   // AskUserQuestion 桥：挂起 Promise + pendingQuestion 状态，UI 用 resolveQuestion 回答
   const questionAsk = (questions: Question[]): Promise<Answer[] | null> =>
     new Promise<Answer[] | null>(res => {
-      pendingQuestion = { questions, resolve: res }
-      setState()
+      questionQueue.push({ questions, resolve: res })
     })
 
   // 7.3：二选一确认弹窗，复用 questionAsk（同 AskUserQuestion UI，无新组件）
@@ -893,8 +892,7 @@ export function createChatCore(opts: {
   // ExitPlanMode 审批桥：挂起 Promise + pendingPlanApproval 状态，UI 用 resolvePlanApproval 回答
   const approvePlan = (plan: string, allowedPrompts?: AllowedPrompt[]): Promise<{ approved: boolean }> =>
     new Promise<{ approved: boolean }>(res => {
-      pendingPlanApproval = { plan, allowedPrompts, resolve: (approved: boolean) => res({ approved }) }
-      setState()
+      planApprovalQueue.push({ plan, allowedPrompts, resolve: (approved: boolean) => res({ approved }) })
     })
 
   // /setup 加改搜索 key 后即时生效：webSearchConfig 保持同一对象引用，reloadSettings 原地 Object.assign 更新。
@@ -2425,8 +2423,8 @@ export function createChatCore(opts: {
       // generator 永不返回，busy 永远 true——必须先拒绝掉再 abort，否则死锁。
       // 必须排空【全队】：只排空队首会把其余项永久悬空（并行批里常见并发挂起）。
       askQueue.drain('no')
-      if (pendingQuestion) { const p = pendingQuestion; pendingQuestion = null; setState(); p.resolve(null) }
-      if (pendingPlanApproval) { const p = pendingPlanApproval; pendingPlanApproval = null; setState(); p.resolve(false) }
+      questionQueue.drain(null)
+      planApprovalQueue.drain(false)
       compactAbort?.abort('user-cancel') // 压缩进行中：ESC 也能中断（否则卡在 doCompact 的 ac，永远逃不出）
       abort.abort('user-cancel')
     },
@@ -2440,17 +2438,11 @@ export function createChatCore(opts: {
     steerQueue: () => steerQueue.peek(),
     ask,
     resolveAsk: (d: Decision) => { askQueue.resolveHead(d) },
-    resolveQuestion: (answers: Answer[] | null) => {
-      if (!pendingQuestion) return
-      const p = pendingQuestion
-      pendingQuestion = null
-      setState()
-      p.resolve(answers)
-    },
+    resolveQuestion: (answers: Answer[] | null) => { questionQueue.resolveHead(answers) },
     resolvePlanApproval: (approved: boolean) => {
-      if (!pendingPlanApproval) return
-      const p = pendingPlanApproval
-      pendingPlanApproval = null
+      // 队首 allowedPrompts 只用于批准时的副作用，先取值再 resolveHead（resolveHead 会移出队列）
+      const p = planApprovalQueue.head()
+      if (!p) return
       if (approved) {
         // 退出 plan 模式，恢复进入前的模式
         permMode = prePlanMode
@@ -2465,8 +2457,7 @@ export function createChatCore(opts: {
         if ((p.allowedPrompts ?? []).length > 0) fireConfigChange()
         notice('info', `计划已批准，已退出 plan 模式（恢复 ${permMode} 模式）`)
       }
-      setState()
-      p.resolve(approved)
+      planApprovalQueue.resolveHead(approved)
     },
     resolveKeyEntry: (key: string | undefined) => {
       if (!pendingKeyEntry) return
