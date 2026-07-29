@@ -44,6 +44,14 @@ export interface Settings {
   costWarnCNY: number
   /** 工具结果字符级兜底上限，超出截断后再回灌 messages（保护上下文/前缀缓存）。缺省 100,000。 */
   maxToolResultChars: number
+  /** headless（`-p` / 程序化调用）是否开启 thinking。缺省 false＝维持既有行为。
+   *  TUI 的 thinking 是会话状态（/think 切换、存 session meta），headless 无会话状态可继承，
+   *  故单列此开关。做成开关而非直接默认开：思考会增加 token 与轮次，是否划算要靠 A/B 测，
+   *  默认改了就没有干净的基线可比。 */
+  headlessThinking?: boolean
+  /** 单轮最大工具循环步数。缺省 undefined＝沿用 loop.ts 的 80。
+   *  自动化长任务撞上限会被直接砍断（无收尾降级），评测场景可调高；同样做成开关以便 A/B。 */
+  maxTurns?: number
   /** 启动默认模型（undefined = 内置缺省 deepseek-v4-flash） */
   model?: string
   /** model 白名单：设了则 model 必须命中其一，否则忽略回落默认档；undefined = 全允许、[] = 仅默认档。
@@ -198,6 +206,8 @@ export function loadRawUserSettings(): Settings {
     precomputeCompactionEnabled: raw?.precomputeCompactionEnabled,
     costWarnCNY: raw?.costWarnCNY ?? raw?.costWarnUSD ?? 15,
     maxToolResultChars: raw?.maxToolResultChars ?? 100_000,
+    headlessThinking: typeof raw?.headlessThinking === 'boolean' ? raw.headlessThinking : undefined,
+    maxTurns: typeof raw?.maxTurns === 'number' && raw.maxTurns > 0 ? raw.maxTurns : undefined,
     model: raw?.model, baseURL: raw?.baseURL, apiKey: raw?.apiKey, inline: raw?.inline,
     tui: raw?.tui === 'inline' || raw?.tui === 'fullscreen' ? raw.tui : undefined,
     viewMode: raw?.viewMode === 'default' || raw?.viewMode === 'focus' ? raw.viewMode : undefined,

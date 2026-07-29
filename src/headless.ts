@@ -180,7 +180,12 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     client: opts.client,
     tools: buildHeadlessToolset({ client: opts.client, addUsage, getModel: () => model, agents, settings, cwd, skills, mcpTools }),
     model,
-    thinking: false,
+    // headless 无会话状态可继承 TUI 的 /think，改由 settings 显式开关（缺省 false＝维持既有行为）。
+    // 参考实验的结论是自动化路径「关了思考跑难题」是 flaky 的一个来源，但是否划算须 A/B 验，
+    // 故给开关不改默认——默认改了就没有干净基线可比。
+    thinking: settings.headlessThinking ?? false,
+    // 撞 maxTurns 会被直接 seal 退出（无收尾降级），长任务评测可调高；不传＝沿用 loop.ts 的 80。
+    maxTurns: settings.maxTurns,
     maxToolResultChars: settings.maxToolResultChars,
     ctx,
     permission: {

@@ -32,6 +32,9 @@ export const DANGEROUS_TOP_KEYS = [
   'outputStyle',
   // availableModels 是 model 的白名单闸门；project 层可写＝可自设白名单把贵档模型放进去，clamp 形同虚设
   'availableModels',
+  // maxTurns 可被拉到天上（单轮无限烧 token 与时长）、headlessThinking 可悄悄开思考（成本翻倍）；
+  // 两者都是成本面，不可信仓库不得设置。
+  'maxTurns', 'headlessThinking',
 ] as const
 
 /** 深拷 raw 后剥离危险字段；嵌套删 permissions.allow / skills.sources。返回剥掉的键名（含嵌套路径）。 */
@@ -264,6 +267,10 @@ function parsePresent(raw: any): Record<string, unknown> {
   for (const k of ['compactTokens', 'costWarnCNY', 'maxToolResultChars', 'model', 'baseURL', 'apiKey', 'inline', 'provider'] as const) {
     if (raw[k] !== undefined) p[k] = raw[k]
   }
+  // 这两个是成本面开关，投影时就地校验类型：本层是裸赋值，
+  // 非法值（'120' 字符串、0、负数）若穿过去会让 loop.ts 的 `deps.maxTurns ?? 80` 拿到假值。
+  if (typeof raw.headlessThinking === 'boolean') p.headlessThinking = raw.headlessThinking
+  if (typeof raw.maxTurns === 'number' && raw.maxTurns > 0) p.maxTurns = raw.maxTurns
   if (typeof raw.precomputeCompactionEnabled === 'boolean') p.precomputeCompactionEnabled = raw.precomputeCompactionEnabled
   if (typeof raw.outputStyle === 'string') p.outputStyle = raw.outputStyle
   if (typeof raw.language === 'string' && raw.language.trim()) p.language = raw.language.trim()
