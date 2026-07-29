@@ -3,46 +3,70 @@
 //     而它默认选中「允许」——权限层的默认值在放行方向，误触必须按放行成本来防。
 // I3：子代理来源走 buildSubagentPermission，那里 saveRule 是 no-op，always 实际只等于放行本次；
 //     照抄「本会话不再询问」等于对用户陈述假的后果。
-import { describe, it, expect, vi } from 'vitest'
+//
+// 时钟：去抖窗口用绝对墙钟判定，而全量跑（350+ 文件并发）下事件循环随时可能被饿住几十毫秒，
+// 真等待会让正反两个方向的断言都随机翻车。故用 mockClock 冻住 Date.now、由用例显式推进：
+// 墙钟耗多久都不影响判定。窗口长度从 PermissionDialog 导入，不再抄一份常量（抄了改常量会静默漂移）。
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import React from 'react'
 import { render } from 'ink-testing-library'
-import { PermissionDialog } from '../src/tui/components/PermissionDialog.js'
+import { PermissionDialog, INPUT_GUARD_MS } from '../src/tui/components/PermissionDialog.js'
 import type { PendingAsk } from '../src/tui/useChat.js'
+import { mockClock } from './helpers.js'
 
-const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
+/** 真等待，只用来让 ink 完成挂载/重绘与 effect 落地——与去抖判定无关（那由假时钟决定）。 */
+const settle = (ms = 20) => new Promise(r => setTimeout(r, ms))
 const DOWN = '\x1B[B'
-const GUARD = 150
 
 const mkAsk = (over: Partial<PendingAsk> = {}): PendingAsk =>
   ({ toolName: 'Write', desc: 'a.txt', dangerous: false, ...over } as PendingAsk)
 
 describe('PermissionDialog 输入去抖', () => {
+  let clock: ReturnType<typeof mockClock>
+  beforeEach(() => { clock = mockClock() })
+  afterEach(() => { clock.restore() })
+
+  /** 把时钟推过去抖窗口（多推 1ms：判定是 Date.now() < guardUntil 的严格小于）。 */
+  const passGuard = () => clock.advance(INPUT_GUARD_MS + 1)
+
   it('上屏后的去抖窗口内 Enter 被丢弃，不误判「允许」', async () => {
     const onDecide = vi.fn()
     const { stdin } = render(<PermissionDialog ask={mkAsk()} onDecide={onDecide} />)
-    await delay(5)
-    stdin.write('\r')
-    await delay(20)
+    await settle()
+    stdin.write('\r')          // 时钟未推进 → 仍在窗口内
+    await settle()
     expect(onDecide).not.toHaveBeenCalled()
   })
 
   it('去抖窗口过后 Enter 正常生效（不影响单个弹窗的常规操作）', async () => {
     const onDecide = vi.fn()
     const { stdin } = render(<PermissionDialog ask={mkAsk()} onDecide={onDecide} />)
-    await delay(GUARD + 40)
+    await settle()
+    passGuard()
     stdin.write('\r')
-    await delay(20)
+    await settle()
     expect(onDecide).toHaveBeenCalledWith('yes')
+  })
+
+  it('恰好卡在窗口边界上仍算窗口内（判定是严格小于）', async () => {
+    const onDecide = vi.fn()
+    const { stdin } = render(<PermissionDialog ask={mkAsk()} onDecide={onDecide} />)
+    await settle()
+    clock.advance(INPUT_GUARD_MS - 1)
+    stdin.write('\r')
+    await settle()
+    expect(onDecide).not.toHaveBeenCalled()
   })
 
   it('窗口期内方向键仍可用：只挡决策不挡挪光标', async () => {
     const onDecide = vi.fn()
     const { stdin } = render(<PermissionDialog ask={mkAsk()} onDecide={onDecide} />)
-    await delay(5)
-    stdin.write(DOWN); stdin.write(DOWN)  // 挪到「拒绝」
-    await delay(GUARD + 40)
+    await settle()
+    stdin.write(DOWN); stdin.write(DOWN)  // 窗口期内挪到「拒绝」
+    await settle()
+    passGuard()
     stdin.write('\r')
-    await delay(20)
+    await settle()
     expect(onDecide).toHaveBeenCalledWith('no')
   })
 
@@ -50,9 +74,9 @@ describe('PermissionDialog 输入去抖', () => {
     for (const keySeq of ['y', 'a', '\x1b[Z']) {
       const onDecide = vi.fn()
       const { stdin } = render(<PermissionDialog ask={mkAsk()} onDecide={onDecide} />)
-      await delay(5)
+      await settle()
       stdin.write(keySeq)
-      await delay(20)
+      await settle()
       expect(onDecide, `按键 ${JSON.stringify(keySeq)} 不该在去抖窗口内生效`).not.toHaveBeenCalled()
     }
   })
@@ -62,11 +86,12 @@ describe('PermissionDialog 输入去抖', () => {
   it('组件不卸载、只换 ask 时窗口重新起算', async () => {
     const onDecide = vi.fn()
     const r = render(<PermissionDialog ask={mkAsk({ desc: 'a.txt' })} onDecide={onDecide} />)
-    await delay(GUARD + 40)
+    await settle()
+    passGuard()                // 第一个 ask 的窗口已过
     r.rerender(<PermissionDialog ask={mkAsk({ desc: 'b.txt' })} onDecide={onDecide} />)
-    await delay(5)
-    r.stdin.write('\r')
-    await delay(20)
+    await settle()             // 等 effect 落地重新武装窗口
+    r.stdin.write('\r')        // 时钟未再推进 → 落在新窗口内
+    await settle()
     expect(onDecide).not.toHaveBeenCalled()
   })
 })

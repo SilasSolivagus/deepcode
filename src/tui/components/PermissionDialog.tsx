@@ -12,7 +12,7 @@ import { type Decision, permissionSourceName } from '../../permissions.js'
  *  若晚一拍落地就打在刚上屏的下一个弹窗上，而它的默认选中项是「允许」——
  *  权限层的默认值在放行方向，误触必须按放行成本来防。150ms 低于人对新弹窗的反应时间，
  *  不影响单个弹窗的常规操作；期间方向键仍可用，只是不接受「决策」。 */
-const INPUT_GUARD_MS = 150
+export const INPUT_GUARD_MS = 150
 
 export function PermissionDialog(props: {
   ask: PendingAsk

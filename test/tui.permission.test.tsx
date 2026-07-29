@@ -1,9 +1,10 @@
 // test/tui.permission.test.tsx
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import React from 'react'
 import { render } from 'ink-testing-library'
 import { buildPreview } from '../src/tui/diffPreview.js'
-import { PermissionDialog } from '../src/tui/components/PermissionDialog.js'
+import { PermissionDialog, INPUT_GUARD_MS } from '../src/tui/components/PermissionDialog.js'
+import { mockClock } from './helpers.js'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -72,12 +73,17 @@ describe('buildPreview', () => {
 })
 
 const delay = (ms = 0) => new Promise(res => setTimeout(res, ms))
-// PermissionDialog 上屏后有 INPUT_GUARD_MS(150ms) 的输入去抖窗口，决策键在窗口内会被丢弃；
-// 凡是要按决策键的用例，render 之后必须先等过窗口（方向键不受影响，仍可用 delay()）。
-const armed = () => delay(190)
 
 describe('PermissionDialog', () => {
   const base = { toolName: 'Edit', desc: '{"file_path":"/tmp/x","old_string":"a","new_string":"b"}', dangerous: false }
+  // PermissionDialog 上屏后有 INPUT_GUARD_MS 的输入去抖窗口，决策键在窗口内会被丢弃。
+  // 窗口用绝对墙钟判定，真等待在全量并发下不可靠（事件循环被饿住几十毫秒是常态，
+  // 于是 sleep 完其实还没出窗口 → 决策键被吞 → 断言随机翻车）。故冻住 Date.now 手动推进：
+  // armed() = 等 ink 挂载完（真等待）+ 把时钟推过窗口（假时钟），墙钟耗时多少都不影响判定。
+  let clock: ReturnType<typeof mockClock>
+  beforeEach(() => { clock = mockClock() })
+  afterEach(() => { clock.restore() })
+  const armed = async () => { await delay(); clock.advance(INPUT_GUARD_MS + 1) }
   it('y/n/a 按键回调对应决策', async () => {
     const onDecide = vi.fn()
     const r = render(<PermissionDialog ask={{ ...base, resolve: onDecide }} onDecide={onDecide} />)
