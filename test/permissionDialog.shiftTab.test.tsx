@@ -10,7 +10,8 @@ describe('PermissionDialog Shift+Tab = 允许并本会话不再问', () => {
   it('Shift+Tab 触发 onDecide("always")', async () => {
     const onDecide = vi.fn()
     const { stdin } = render(<PermissionDialog ask={ask} onDecide={onDecide} />)
-    await new Promise(r => setTimeout(r, 20))
+    // 190ms > 弹窗上屏后的输入去抖窗口（INPUT_GUARD_MS=150，见 PermissionDialog）
+    await new Promise(r => setTimeout(r, 190))
     stdin.write('\x1b[Z')            // Shift+Tab（CSI Z / backtab）
     await new Promise(r => setTimeout(r, 20))
     expect(onDecide).toHaveBeenCalledWith('always')

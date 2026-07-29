@@ -1,11 +1,18 @@
 // src/tui/components/PermissionDialog.tsx
 // 权限确认弹窗：accent 边框面板，diff 预览，高危警告，1/2/3 编号菜单（↑↓+Enter 方向键 / 数字键 / y/n/a 快捷键）。
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { useTheme } from '../theme.js'
 import { buildPreview } from '../diffPreview.js'
 import type { PendingAsk } from '../useChat.js'
 import { type Decision, permissionSourceName } from '../../permissions.js'
+
+/** 弹窗上屏后丢弃决策键的时长（ms）。
+ *  队列化之后两个权限弹窗会真正背靠背出现在同一批里，用户为上一个按下的 Enter
+ *  若晚一拍落地就打在刚上屏的下一个弹窗上，而它的默认选中项是「允许」——
+ *  权限层的默认值在放行方向，误触必须按放行成本来防。150ms 低于人对新弹窗的反应时间，
+ *  不影响单个弹窗的常规操作；期间方向键仍可用，只是不接受「决策」。 */
+const INPUT_GUARD_MS = 150
 
 export function PermissionDialog(props: {
   ask: PendingAsk
@@ -18,20 +25,33 @@ export function PermissionDialog(props: {
   const preview = buildPreview(ask.toolName, ask.desc)
   const [idx, setIdx] = useState(0)
 
-  const alwaysLabel = ask.previewRule ? `总是允许 — ${ask.previewRule}` : '总是允许（本会话不再询问）'
+  // 子代理来源的确认走 buildSubagentPermission，那里的 saveRule 是 no-op（子代理不得持久化规则），
+  // 所以 always 实际只等于放行本次、下次同类操作照样问。若照抄「本会话不再询问」，
+  // 权限界面就是在对用户陈述假的后果，训练出「点了也没用，闭眼点」的习惯——
+  // 恰好抵消掉向上转发想拿回的那道人工闸门。选项保留（去掉会打乱 1/2/3 与 a 的键位映射），只把文案说实话。
+  const alwaysLabel = ask.origin
+    ? '允许本次（子代理规则不落盘，下次仍会问）'
+    : ask.previewRule ? `总是允许 — ${ask.previewRule}` : '总是允许（本会话不再询问）'
   const options: Array<{ label: string; decision: Decision }> = [
     { label: '允许', decision: 'yes' },
     { label: alwaysLabel, decision: 'always' },
     { label: '拒绝', decision: 'no' },
   ]
 
-  // 连续两个弹窗间组件可能不卸载（resolve→下一个 ask 仅隔一个微任务），
-  // 选中位置必须随 ask 重置，否则上一个弹窗选到"总是允许"后快速 Enter 会误授下一个工具。
-  useEffect(() => { setIdx(0) }, [ask])
+  // 上屏时刻起算的输入去抖窗口。App/FullscreenApp 给了 key=ask.id，换队首即重新挂载，
+  // 初值天然就是本 ask 的上屏时刻；这里再按 ask 重挂一次是为了不把正确性押在调用方给了 key 上。
+  const guardUntil = useRef(Date.now() + INPUT_GUARD_MS)
+
+  // 同上：有 key 时换项即重挂，这条 effect 跑不到；留着是兜底——
+  // 万一将来某个接线点忘了给 key，选中位置与去抖窗口至少还会随 ask 重置，
+  // 而不是把上一个弹窗选到的"总是允许"连同一次快速 Enter 直接误授给下一个工具。
+  useEffect(() => { setIdx(0); guardUntil.current = Date.now() + INPUT_GUARD_MS }, [ask])
 
   useInput((input, key) => {
+    // 方向键先放行：去抖只挡「决策」，不挡挪光标，用户可以在窗口期内就把选择挪到位。
     if (key.upArrow) { setIdx(i => Math.max(0, i - 1)); return }
     if (key.downArrow) { setIdx(i => Math.min(options.length - 1, i + 1)); return }
+    if (Date.now() < guardUntil.current) return
     if (key.return) { onDecide(options[idx].decision); return }
     if (key.shift && key.tab) { onDecide('always'); return }
     if (key.escape) { onDecide('no'); return }
