@@ -1,10 +1,11 @@
 // src/tui/components/Suggestions.tsx
 // 斜杠命令 + @文件 浮动补全菜单：↑↓ 移动，Tab/Enter 确认补全。
 // 技能描述菜单简写（第一句）+ 最多 2 行动态截断 + 行预算视口 + 前景高亮两栏对齐。
-import React, { useState, useEffect } from 'react'
+import React, { useEffect } from 'react'
 import { Box, Text, useInput, useStdout } from 'ink'
 import stringWidth from 'string-width'
 import { useTheme, GUTTER } from '../theme.js'
+import { useSelection } from '../useSelection.js'
 import { layoutDescription, computeLineWindow, type Suggestion } from '../suggest.js'
 
 const NAME_CAP = 24 // 命令名列宽上限
@@ -17,16 +18,17 @@ export function Suggestions(props: {
   const T = useTheme()
   const { stdout } = useStdout()
   const { items, onPick } = props
-  const [idx, setIdx] = useState(0)
+  const sel = useSelection(items.length)
+  const idx = sel.idx
 
-  useEffect(() => { setIdx(0) }, [items])
+  useEffect(() => { sel.set(0) }, [items])
 
   useInput((input, key) => {
     if (!items.length) return
-    if (key.downArrow) { setIdx(i => Math.min(i + 1, items.length - 1)); return }
-    if (key.upArrow) { setIdx(i => Math.max(i - 1, 0)); return }
+    if (key.downArrow) { sel.next(); return }
+    if (key.upArrow) { sel.prev(); return }
     // Shift+Tab 归权限模式循环（App/FullscreenApp），不可当成确认补全
-    if ((key.tab && !key.shift) || key.return) { if (items[idx]) onPick(items[idx].value); return }
+    if ((key.tab && !key.shift) || key.return) { const c = sel.current(); if (items[c]) onPick(items[c].value); return }
   })
 
   if (!items.length) return null

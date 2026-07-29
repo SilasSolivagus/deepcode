@@ -1,8 +1,9 @@
 // src/tui/components/PermissionDialog.tsx
 // 权限确认弹窗：accent 边框面板，diff 预览，高危警告，1/2/3 编号菜单（↑↓+Enter 方向键 / 数字键 / y/n/a 快捷键）。
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { Box, Text, useInput } from 'ink'
 import { useTheme } from '../theme.js'
+import { useSelection } from '../useSelection.js'
 import { buildPreview } from '../diffPreview.js'
 import type { PendingAsk } from '../useChat.js'
 import { type Decision, permissionSourceName } from '../../permissions.js'
@@ -23,7 +24,6 @@ export function PermissionDialog(props: {
   const T = useTheme()
   const { ask, onDecide, queued } = props
   const preview = buildPreview(ask.toolName, ask.desc)
-  const [idx, setIdx] = useState(0)
 
   // 子代理来源的确认走 buildSubagentPermission，那里的 saveRule 是 no-op（子代理不得持久化规则），
   // 所以 always 实际只等于放行本次、下次同类操作照样问。若照抄「本会话不再询问」，
@@ -37,6 +37,8 @@ export function PermissionDialog(props: {
     { label: alwaysLabel, decision: 'always' },
     { label: '拒绝', decision: 'no' },
   ]
+  const sel = useSelection(options.length)
+  const idx = sel.idx
 
   // 上屏时刻起算的输入去抖窗口。App/FullscreenApp 给了 key=ask.id，换队首即重新挂载，
   // 初值天然就是本 ask 的上屏时刻；这里再按 ask 重挂一次是为了不把正确性押在调用方给了 key 上。
@@ -45,14 +47,14 @@ export function PermissionDialog(props: {
   // 同上：有 key 时换项即重挂，这条 effect 跑不到；留着是兜底——
   // 万一将来某个接线点忘了给 key，选中位置与去抖窗口至少还会随 ask 重置，
   // 而不是把上一个弹窗选到的"总是允许"连同一次快速 Enter 直接误授给下一个工具。
-  useEffect(() => { setIdx(0); guardUntil.current = Date.now() + INPUT_GUARD_MS }, [ask])
+  useEffect(() => { sel.set(0); guardUntil.current = Date.now() + INPUT_GUARD_MS }, [ask])
 
   useInput((input, key) => {
     // 方向键先放行：去抖只挡「决策」，不挡挪光标，用户可以在窗口期内就把选择挪到位。
-    if (key.upArrow) { setIdx(i => Math.max(0, i - 1)); return }
-    if (key.downArrow) { setIdx(i => Math.min(options.length - 1, i + 1)); return }
+    if (key.upArrow) { sel.prev(); return }
+    if (key.downArrow) { sel.next(); return }
     if (Date.now() < guardUntil.current) return
-    if (key.return) { onDecide(options[idx].decision); return }
+    if (key.return) { onDecide(options[sel.current()].decision); return }
     if (key.shift && key.tab) { onDecide('always'); return }
     if (key.escape) { onDecide('no'); return }
     const k = input.toLowerCase()
