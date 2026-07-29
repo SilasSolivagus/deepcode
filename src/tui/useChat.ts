@@ -96,6 +96,7 @@ import type { CollapsedCounts } from './focusFold.js'
 import { resolveInitialFocus } from './viewMode.js'
 import { collectFleet } from '../fleet.js'
 import { loadWorkflowRuns } from './useFleet.js'
+import { createPendingQueue } from './pendingQueue.js'
 
 /** ! 直跑：同步执行，30s 超时，stdout+stderr 合并，超 20k 截断 */
 export function runBang(cmd: string, cwd: string): { output: string; code: number } {
@@ -347,6 +348,8 @@ export interface ChatState {
   effortLevel: 'low' | 'medium' | 'high'
   permMode: PermissionMode
   pendingAsk: PendingAsk | null
+  /** 队列里还剩多少个待确认（含队首）。UI 用来提示「还有 N 个」。 */
+  pendingAskCount: number
   pendingQuestion: PendingQuestion | null
   pendingPlanApproval: PendingPlanApproval | null
   pendingKeyEntry: PendingKeyEntry | null
@@ -376,6 +379,8 @@ export interface ChatCore {
   steer(text: string, attachments?: Attachment[]): void // busy 时 Enter：入队 next；若 toolInFlight 则同时软中断
   steerPop(): string | undefined
   steerQueue(): readonly SteeringItem[]
+  /** 权限确认桥：入队挂起 Promise，UI 用 resolveAsk 应答队首（resolveAsk 的另一半，语义对称） */
+  ask(toolName: string, desc: string, reason?: PermissionDecisionReason, previewRule?: string): Promise<Decision>
   resolveAsk(d: Decision): void // 权限弹窗回答
   resolveQuestion(answers: Answer[] | null): void // AskUserQuestion 弹窗回答
   resolvePlanApproval(approved: boolean): void // ExitPlanMode 计划审批回答
@@ -613,7 +618,9 @@ export function createChatCore(opts: {
   let transcript: TranscriptItem[] = []
   let pendingPlanApproval: PendingPlanApproval | null = null
   let busy = false
-  let pendingAsk: PendingAsk | null = null
+  // 单槽赋值下并发挂起会互相覆盖，被覆盖那个的 resolve 引用丢失、Promise 永不 resolve；
+  // setState 声明在本行之后，故用箭头函数延迟求值（TDZ，同 useChat.activityTDZ.test.ts 记录的事故）
+  const askQueue = createPendingQueue<Decision, PendingAsk>(() => setState())
   let pendingQuestion: PendingQuestion | null = null
   let pendingKeyEntry: PendingKeyEntry | null = null
   let lastTokPerSec: number | null = null
@@ -655,7 +662,7 @@ export function createChatCore(opts: {
   // 自动升级状态（后台异步写入，照 statusLineOutput 同样的闭包捕获 setState 范式）
   let updateStatus: UpdateStatus | null = null
   const snap = (): ChatState => ({
-    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk, pendingQuestion, pendingPlanApproval, pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput, updateStatus,
+    transcript, busy, model, thinking, effortLevel, permMode, pendingAsk: askQueue.head(), pendingAskCount: askQueue.size(), pendingQuestion, pendingPlanApproval, pendingKeyEntry, usageLog, lastTokPerSec, turnStartAt, turnOutTokens, hookProgress, spinnerTip, sessionCost, cacheHitRate, cacheSavings, contextPct, contextUsed, contextWindow, tokenBudget: tokenBudgetGet, budgetUsed: budgetUsedGet, statusLineOutput, updateStatus,
   })
   let state = snap()
   const setState = (): void => {
@@ -1031,8 +1038,7 @@ export function createChatCore(opts: {
         }, settings.hooks, hookDeps).catch(() => {})
       }
       emitNotification(`deepcode 需要你确认：${toolName}`, notifChannel())
-      pendingAsk = { toolName, desc, dangerous: isDangerous(desc), reason, previewRule, resolve: res }
-      setState()
+      askQueue.push({ toolName, desc, dangerous: isDangerous(desc), reason, previewRule, resolve: res })
     })
 
   /** 非斜杠输入：边界 reminders → user 消息落盘 → runLoop 驱动 →落盘 + 自动 compact
@@ -2415,9 +2421,10 @@ export function createChatCore(opts: {
     send,
     cycleMode,
     interrupt: () => {
-      // 若权限弹窗挂起（pendingAsk），checkPermission 内的 ask Promise 永不 resolve，
+      // 若权限弹窗挂起，checkPermission 内的 ask Promise 永不 resolve，
       // generator 永不返回，busy 永远 true——必须先拒绝掉再 abort，否则死锁。
-      if (pendingAsk) { const p = pendingAsk; pendingAsk = null; setState(); p.resolve('no') }
+      // 必须排空【全队】：只排空队首会把其余项永久悬空（并行批里常见并发挂起）。
+      askQueue.drain('no')
       if (pendingQuestion) { const p = pendingQuestion; pendingQuestion = null; setState(); p.resolve(null) }
       if (pendingPlanApproval) { const p = pendingPlanApproval; pendingPlanApproval = null; setState(); p.resolve(false) }
       compactAbort?.abort('user-cancel') // 压缩进行中：ESC 也能中断（否则卡在 doCompact 的 ac，永远逃不出）
@@ -2431,13 +2438,8 @@ export function createChatCore(opts: {
     },
     steerPop: () => steerQueue.popLast()?.value,
     steerQueue: () => steerQueue.peek(),
-    resolveAsk: (d: Decision) => {
-      if (!pendingAsk) return
-      const p = pendingAsk
-      pendingAsk = null
-      setState()
-      p.resolve(d)
-    },
+    ask,
+    resolveAsk: (d: Decision) => { askQueue.resolveHead(d) },
     resolveQuestion: (answers: Answer[] | null) => {
       if (!pendingQuestion) return
       const p = pendingQuestion
