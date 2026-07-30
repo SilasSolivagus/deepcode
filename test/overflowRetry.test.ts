@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { planOverflowRetry } from '../src/overflowRetry.js'
-import { MICROCOMPACT_FLOOR_TOKENS } from '../src/compact.js'
+import { MICROCOMPACT_FLOOR_TOKENS, MICROCOMPACT_KEEP_RECENT, MICROCOMPACT_PLACEHOLDER } from '../src/compact.js'
 
 /** 造一份含大工具结果的对话：足够让 microcompact 有东西可甩。 */
 function fatMessages() {
@@ -34,6 +34,14 @@ describe('planOverflowRetry', () => {
     if (p.action !== 'retry') throw new Error('unreachable')
     expect(p.tokensSaved).toBeGreaterThan(0)
     expect(p.messages.length).toBe(fatMessages().length) // 消息条数不变，只是内容被换成占位符
+    // 核心不变量：最近 MICROCOMPACT_KEEP_RECENT(5) 条 tool 结果原文保留，更早的换成占位符——
+    // 保证 tool_call↔tool 配对不被破坏（消息本身还在，只换内容），近期上下文不被误伤。
+    // fatMessages() 有 7 条 tool 消息，故恰好 2 条（t1/t2）被换、5 条（t3~t7）保留原文。
+    const toolMsgs = p.messages.filter((m: any) => m.role === 'tool')
+    expect(toolMsgs).toHaveLength(7)
+    const cleared = toolMsgs.filter((m: any) => m.content === MICROCOMPACT_PLACEHOLDER)
+    expect(cleared).toHaveLength(toolMsgs.length - MICROCOMPACT_KEEP_RECENT)
+    expect(toolMsgs.slice(-MICROCOMPACT_KEEP_RECENT).every((m: any) => m.content !== MICROCOMPACT_PLACEHOLDER)).toBe(true)
   })
 
   it('非超窗错误 → report', () => {
