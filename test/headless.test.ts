@@ -281,6 +281,29 @@ describe('headless 剥离的 allow 规则告知', () => {
 import { checkPermission } from '../src/permissions.js'
 import { buildDenySourceMap, resolveDenyList } from '../src/deny.js'
 
+describe('headless thinking / headlessMaxTurns 开关真的接线（不只测 settings 解析，断言 runLoop 实际收到的值）', () => {
+  afterEach(() => { delete (mockSettings as any).headlessThinking; delete (mockSettings as any).headlessMaxTurns })
+
+  it('headlessThinking:true → chatStream 收到的 opts.thinking === true', async () => {
+    ;(mockSettings as any).headlessThinking = true
+    script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+    await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
+    const [[, callOpts]] = vi.mocked(chatStream).mock.calls
+    expect(callOpts.thinking).toBe(true)
+  })
+
+  it('headlessMaxTurns:2 → 撞上限后 status 为 max_turns 且恰好只跑了 2 轮（证明真的传进了 runLoop 的 maxTurns，不是默认 80）', async () => {
+    ;(mockSettings as any).headlessMaxTurns = 2
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'm1', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'm2', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
+    expect(r.status).toBe('max_turns')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(2)
+  })
+})
+
 describe('headless deny 文本含来源', () => {
   it('内置私钥路径硬拒绝文本带 来自 内置规则', async () => {
     const tool: any = { name: 'Read', isReadOnly: false, needsPermission: () => 'x', deniablePaths: () => ['/h/.ssh/id_rsa'] }
