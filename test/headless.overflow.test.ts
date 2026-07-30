@@ -163,6 +163,15 @@ describe('headless 上下文超窗恢复', () => {
     script.push({ throw: overflow() })
     script.push({ abort: true })
     const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, home: home() })
-    expect(r.status).not.toBe('context_overflow')
+    expect(r.status).toBe('aborted')
+  })
+
+  // Critical 1：超窗但 microcompact 无可甩（mc === null）此前会被误判为「非超窗→抛出」，
+  // 堆栈穿出 runHeadless、index.ts 的 exitCode 赋值被跳过、崩溃前部分产出全丢。
+  // 首请求就超窗（无工具调用、messages 只有 system+user）正是这条路径最常见的入口之一。
+  it('薄 messages（无可甩的旧工具输出）+ 单次超窗 → context_overflow，不抛出', async () => {
+    script.push({ throw: overflow() })
+    const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, home: home() })
+    expect(r.status).toBe('context_overflow')
   })
 })

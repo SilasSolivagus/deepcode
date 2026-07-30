@@ -183,7 +183,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   })
   // microcompact 重试后不能续用旧 generator（旧 generator 闭包的是压缩前的 messages 快照），
   // 必须拿改写后的 messages 重开一个 runLoop——故整块搬进可重入的 drive()。
-  async function drive(): Promise<HeadlessResult['status']> {
+  // maxTurnsOverride：重试时收窄的剩余预算（见调用处）。undefined＝沿用 settings.headlessMaxTurns。
+  async function drive(maxTurnsOverride?: number): Promise<HeadlessResult['status']> {
     const gen = runLoop(messages, {
       client: opts.client,
       tools: buildHeadlessToolset({ client: opts.client, addUsage, getModel: () => model, agents, settings, cwd, skills, mcpTools }),
@@ -192,8 +193,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       // 参考实验的结论是自动化路径「关了思考跑难题」是 flaky 的一个来源，但是否划算须 A/B 验，
       // 故给开关不改默认——默认改了就没有干净基线可比。
       thinking: settings.headlessThinking ?? false,
-      // 撞 maxTurns 会被直接 seal 退出（无收尾降级），长任务评测可调高；不传＝沿用 loop.ts 的 80。
-      maxTurns: settings.maxTurns,
+      // 撞 headlessMaxTurns 会被直接 seal 退出（无收尾降级），长任务评测可调高；不传＝沿用 loop.ts 的 80。
+      maxTurns: maxTurnsOverride ?? settings.headlessMaxTurns,
       maxToolResultChars: settings.maxToolResultChars,
       ctx,
       permission: {
@@ -239,19 +240,33 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       status = await drive()
     } catch (e) {
       const plan = planOverflowRetry(e, messages, overflowRetried)
-      if (plan.action === 'report') throw e
-      // 原地改写：messages 被 runLoop 入参与末尾抽 final 的 [...messages] 同时持有，
-      // 重新赋值只换局部指向，重试跑的会是旧内容。
-      messages.length = 0
-      messages.push(...plan.messages)
-      overflowRetried = true
-      process.stderr.write(`⚠ 上下文超长，已甩掉 ~${plan.tokensSaved} tok 旧工具输出后重试\n`)
-      try {
-        status = await drive()
-      } catch (e2) {
-        if (!isContextOverflowError(e2)) throw e2
-        process.stderr.write('⚠ 压缩后仍超长，已停止。请分块读取大文件或缩小任务范围。\n')
+      if (plan.action === 'report') {
+        // 二分依据必须是「是否超窗错误」而非 plan.action：plan.action==='report' 还覆盖了
+        // 「超窗但 microcompact 无可甩」这条本分支要修的路径——它不该抛出，应正常返回可诊断状态。
+        // 真正该抛的只有非超窗错误（如 provider 502）。
+        if (!isContextOverflowError(e)) throw e
+        process.stderr.write('⚠ 上下文超长且无可回收的旧工具输出，已停止。\n')
         status = 'context_overflow'
+      } else {
+        // 原地改写：messages 被 runLoop 入参与末尾抽 final 的 [...messages] 同时持有，
+        // 重新赋值只换局部指向，重试跑的会是旧内容。
+        messages.length = 0
+        messages.push(...plan.messages)
+        overflowRetried = true
+        process.stderr.write(`⚠ 上下文超长，已甩掉 ~${plan.tokensSaved} tok 旧工具输出后重试\n`)
+        try {
+          // 重试复用同一预算而非满血重开：drive() 内部的 turn 计数器随每次调用归零，
+          // 两次 drive() 若都给满 headlessMaxTurns，有效步数上限会悄悄翻倍，
+          // 用 headlessMaxTurns 卡成本的用户预算形同虚设。turns 是已完成的真实轮数。
+          const remaining = settings.headlessMaxTurns !== undefined
+            ? Math.max(1, settings.headlessMaxTurns - turns)
+            : undefined
+          status = await drive(remaining)
+        } catch (e2) {
+          if (!isContextOverflowError(e2)) throw e2
+          process.stderr.write('⚠ 压缩后仍超长，已停止。请分块读取大文件或缩小任务范围。\n')
+          status = 'context_overflow'
+        }
       }
     }
   } finally {
