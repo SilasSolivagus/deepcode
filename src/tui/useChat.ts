@@ -1365,8 +1365,12 @@ export function createChatCore(opts: {
     // 判据与状态全在 compactionManager 里（mc 互斥 / C1 前缀守卫 / 3a·3b 熔断 / precompute 消费）。
     // 与 deps.beforeSend 里那次的分工：那次管一次 send【内部】的轮间增长，这次管回合收尾。
     // 交互式一定还有下一次 send，故这次压的结果下次就会用上；且发生在 busy 期间，
-    // 比推迟到下次 send 开始时压更好，不占用用户下一次交互的等待。两者幂等——
-    // beforeSend 刚压过的话 lastPromptTokens 已被归零，这里算出的 estimated 很小，直接 no-op。
+    // 比推迟到下次 send 开始时压更好，不占用用户下一次交互的等待。两者幂等——但不是靠
+    // 「lastPromptTokens 已被归零」：那一轮的 turn_end 随后必然到达，observeTurnEnd 会把
+    // 真实 prompt_tokens 重新写回，回合末算 estimated 时 lastPromptTokens 从来不是 0。
+    // 真正让这里 no-op 的是：beforeSend 压过之后，那一轮实际发出去的就是瘦身后的消息数组，
+    // 于是 turn_end 报上来的 prompt_tokens 本身就小，回合末 estimated = 小 + 末条 assistant
+    // 产出 < 阈值，自然不再触发。
     await compaction.maybeCompact(messages)
     // arm 必须【在 maybeCompact 之后】调：它读的是 maybeCompact 末尾记下的同一个 estimated
     // （含压缩后的 C3 重估、3b reminder 注入），顺序颠倒或单独调会读到 0/陈旧值。

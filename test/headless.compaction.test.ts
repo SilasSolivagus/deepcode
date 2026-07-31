@@ -159,4 +159,28 @@ describe('headless 逐轮压缩', () => {
     // 末尾会多出一个 'compact'，这条就会红。
     expect(trace[trace.length - 1]).toBe('send')
   })
+
+  // 回归网：run 结束时若还有一个在途的 precompute arm（后台预热 summarize），必须被
+  // clearPrecompute() abort 掉，不能悬空拖住事件循环——armPrecompute 是 fire-and-forget，
+  // 没有 COMPACT_TIMEOUT_MS 那样的超时，无人消费也不会自己收尾，其底层 summarize 请求
+  // （生产里是一条到 provider 的 HTTPS 连接）会一直挂着；而 -p 分支只设 exitCode 不调
+  // process.exit()，Node 要等事件循环排空，CLI 便会在结果已产出后继续挂起。
+  //
+  // 构造：第 1 轮 turn_end 报 17000（落进 arm 触发带 [thr×0.8, thr) = [16000,20000)，
+  // thr=20000，precomputeCompactionEnabled 默认开——mockSettings 未设该字段，
+  // compactionManager.ts 的门控是 `!== false`，undefined 落在开的一侧）。
+  // 第 2 轮 beforeSend 因而 arm 一次预热摘要，随即以 'stop' 结束整个 run，
+  // 这次 arm 从未被下一轮 maybeCompact 消费——只能靠 finally 里的 clearPrecompute() 收摊。
+  it('run 结束时在途的 arm 必须被 clearPrecompute abort', async () => {
+    const f = smallFile()
+    script.push(readTurn(f, 0, 17000))
+    script.push(stop('完成', 5000))
+    const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, home: home() })
+    expect(r.status).toBe('done')
+    const calls = vi.mocked(summarize).mock.calls
+    // 反向锚点：arm 确实发生了一次 summarize 调用，不是压根没触发才让下面的断言侥幸通过。
+    expect(calls.length).toBeGreaterThan(0)
+    const [, , signal] = calls[calls.length - 1] // summarize(client, messages, signal)
+    expect(signal.aborted).toBe(true)
+  })
 })

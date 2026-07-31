@@ -323,6 +323,13 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     // rebuildMessages 会把落在最近 8 条之外的 assistant 文本连同产出一起砍掉——
     // 正是本文件开头承诺要保住的「崩溃前的部分产出」（超窗路径实测能压成空串）。
   } finally {
+    // armPrecompute 是 fire-and-forget：拿的是 entry 自己的 AbortController，没有像
+    // compactNow 那样的 COMPACT_TIMEOUT_MS 超时，无人消费也不会自己收尾——它发起的一次真实
+    // summarize 请求（到 provider 的 HTTPS 连接）会拖住事件循环，而 -p 分支（index.ts）
+    // 只设 process.exitCode 不调 process.exit()，Node 要等事件循环排空，CLI 便会在结果
+    // 已产出后继续挂起。beforeSend 逐轮化后，一次 run 的 arm 机会从「回合末最多 1 次」
+    // 变成「每轮一次，可达 80-120 次」，run 结束时必须主动收摊，不能指望它自然耗尽。
+    compaction.clearPrecompute()
     await mcpCleanup()   // 只跑一次，不随重试重复执行
   }
   const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)

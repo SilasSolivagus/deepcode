@@ -229,7 +229,7 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
                 //
                 // 判 deps.abortSignal 而非 compactNow 内部那个 ac：ac 是 compactNow 的局部变量、
                 // finally 已把 compactAbort 置 null，此处访问不到。两者可分靠的是中止源差异——
-                // interrupt()（useChat.ts:2308-2317）里 abortInFlight() 与 abort.abort() 紧挨两行，
+                // interrupt()（useChat.ts:2318-2326）里 abortInFlight()（:2325）与 abort.abort()（:2326）紧挨两行，
                 // ESC 必然让外层 signal 也 aborted；而压缩超时（:124）只中止内部 ac、不碰外层。
                 // 不判 reason：steering 软中断用的是 'interrupt'，同样是用户动作，同样不算故障。
                 if (!deps.abortSignal.aborted) {
