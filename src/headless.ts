@@ -311,14 +311,18 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
         }
       }
     }
-    // 主动压缩：drive() 结束（含超窗重试后）就对当前 messages 判定一次，防长跑上下文无界累积——
-    // 反应式超窗恢复（上面的 catch 分支）是单发熔断，压过一次后本 run 内后续超窗直接收摊，
-    // 这里补上本 run 内持续生效的主动闸门。
-    // 不调 armPrecompute：headless 单发，runHeadless 返回后 manager 与 precompute 注册表整体丢弃，
-    // 不存在「下一轮」消费预热摘要，而 arm 会后台发一次真实 summarize 请求——
-    // 无人消费却拖住事件循环，而 -p 分支只设 exitCode 不调 process.exit()，
-    // 会让 CLI 在结果已产出后继续挂起等一次白烧的调用。故不预热。
-    await compaction.maybeCompact(messages)
+    // 这里**不**调 maybeCompact/armPrecompute，尽管上面接好了 manager。两条理由：
+    // 1) 本 run 内零收益：drive() 已结束，messages 再也不发给 API，只剩下方抽 final 文本一个消费者；
+    //    persistCompact 在 headless 是 no-op。而代价是真金白银——一次 summarize 调用（最长等
+    //    COMPACT_TIMEOUT_MS 才 abort）、PreCompact/PostCompact 各触发一次、onUsage 把它计进
+    //    对外的 usage 与 costCNY。armPrecompute 更糟：无人消费还拖住事件循环，而 -p 分支只设
+    //    exitCode 不调 process.exit()，会让 CLI 在结果已产出后继续挂起。
+    // 2) 会吃掉产出：压缩用 rebuildMessages 把历史砍成 [system, 总结, 最近 8 条]，
+    //    最后一条带文本的 assistant 一旦落在 last-8 之外，下方抽 final 就抽空了——
+    //    正是本文件开头承诺要保住的「崩溃前的部分产出」（超窗路径实测能压成空串）。
+    // 真正的主动闸门必须落在 runLoop 的轮间（-p 只有一条用户消息，增长全在那一个 runLoop 的
+    // 80-120 轮里），需要给 runLoop 加逐轮接缝，另有一份 spec。manager 接线与 observeTurnEnd
+    // 的 token 基线观测在此保留，供那份 spec 直接接上。
   } finally {
     await mcpCleanup()   // 只跑一次，不随重试重复执行
   }
