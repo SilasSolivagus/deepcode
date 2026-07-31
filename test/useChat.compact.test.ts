@@ -250,3 +250,66 @@ describe('Task 9【3a】：连续失败熔断后不再尝试全量 compact', () 
     core.dispose()
   })
 })
+
+// Task 1（阶段一 · 抽共享层前的特征测试）：钉住两道「不压缩」守卫，供后续抽取 useChat.ts 主动压缩热路径时当回归网。
+// 实读 src/compact.ts:106-134 得出的逐轮推演见 SDD brief；这两条不是 TDD 红灯，一开始就该绿。
+describe('特征：快速回填熔断（3b）', () => {
+  it('连续超阈值：第 4 轮跳闸不压且注入 thrashing reminder，第 7 轮自愈恢复压缩', async () => {
+    // precomputeCompactionEnabled:false → 不 arm/consume，阈值时必走 doCompact('auto') → summarize
+    writeSettings({ compactTokens: 20000, precomputeCompactionEnabled: false })
+    // Task 9 用例末尾把 summarize 改成了 mockRejectedValue；beforeEach 的 vi.clearAllMocks() 只清
+    // calls/results，不清自定义 implementation，会跨用例泄漏。这里显式复位为默认成功实现，
+    // 否则本用例前 3 轮 compact 全部失败，第 4 轮会先撞上 3a 连续失败熔断（「已暂停」），
+    // 而非本用例要钉的 3b 快速回填熔断（「反复填满」）——两个熔断分支互斥，被抢先的那个会让
+    // rapidRefills 因 compacted 从未置 true 而恒为 0，永远走不到目标分支。
+    ;(summarize as any).mockResolvedValue({
+      summary: '历史总结', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false,
+    })
+    const core = mkCore()
+
+    // 轮 1-3：每轮都超阈值且无旧 tool 可甩（microcompact 返回 null）→ 必走全量
+    for (let i = 0; i < 3; i++) {
+      script.push({ prompt_tokens: 25000 })
+      await core.send(`轮${i + 1}`)
+      await new Promise(r => setTimeout(r, 40))
+    }
+    expect(summarize).toHaveBeenCalledTimes(3)
+
+    // 轮 4：rapidRefills 累到 3 → 跳闸。不压缩、给告警、往 messages 注入 thrashing reminder
+    script.push({ prompt_tokens: 25000 })
+    await core.send('轮4')
+    await new Promise(r => setTimeout(r, 40))
+    expect(summarize).toHaveBeenCalledTimes(3) // 未新增调用
+    expect(hasNotice(core, '反复填满')).toBe(true)
+
+    // 轮 5、6：turnCounter 仍 <3 → 继续跳闸
+    for (const n of [5, 6]) {
+      script.push({ prompt_tokens: 25000 })
+      await core.send(`轮${n}`)
+      await new Promise(r => setTimeout(r, 40))
+    }
+    expect(summarize).toHaveBeenCalledTimes(3)
+
+    // 轮 7：turnCounter 达 3 → checkRapidRefill 归零 → 压缩恢复（无永久 latch）
+    script.push({ prompt_tokens: 25000 })
+    await core.send('轮7')
+    await new Promise(r => setTimeout(r, 40))
+    expect(summarize).toHaveBeenCalledTimes(4)
+    core.dispose()
+  })
+})
+
+describe('特征：前缀不可压守卫（C1）', () => {
+  it('system + 最近 8 条本身已超阈值 → 不调 summarize，给「compaction 帮不上」告警', async () => {
+    writeSettings({ compactTokens: 20000, precomputeCompactionEnabled: false })
+    // 8 条 HUGE（每条 ≈21000 tok）全部落在 last-COMPACT_KEEP(8) 窗口内 →
+    // 不可压前缀（system + 最近 8 条）自身远超 thr=20000 → compaction 帮不上
+    script.push({ push: Array.from({ length: 8 }, () => tool(HUGE)), prompt_tokens: 25000 })
+    const core = mkCore()
+    await core.send('问题')
+    await new Promise(r => setTimeout(r, 40))
+    expect(summarize).not.toHaveBeenCalled()
+    expect(hasNotice(core, '帮不上')).toBe(true)
+    core.dispose()
+  })
+})
