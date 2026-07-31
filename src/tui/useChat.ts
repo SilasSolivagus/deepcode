@@ -44,13 +44,9 @@ import { resolveDenyList, buildDenySourceMap } from '../deny.js'
 import type { ToolContext, WorktreeSessionState } from '../tools/types.js'
 import { newSession, openSession, listSessions, loadSession, sessionIdFromFile, stripBranchSuffix, nextBranchTitle, type SessionHandle, type UsageRecord } from '../session.js'
 import { costCNY, cacheSavingsCNY } from '../pricing.js'
-import {
-  summarize, rebuildMessages, rebuildFromPrecompute,
-  microcompact, checkRapidRefill, recordCompact, bumpTurnCounter, newCompactState,
-} from '../compact.js'
 import { planOverflowRetry } from '../overflowRetry.js'
-import { PrecomputeRegistry, PRECOMPUTE_BUFFER_FRACTION } from '../precompute.js'
-import { estimateTextTokens, estimateMessagesTokens, effectiveThreshold, resolveContextWindow } from '../tokenEstimate.js'
+import { createCompactionManager } from '../compactionManager.js'
+import { estimateTextTokens, effectiveThreshold, resolveContextWindow } from '../tokenEstimate.js'
 import { TaskListStore } from '../taskList.js'
 import { loadCustomCommands, expandCommand, INIT_PROMPT, formatContext, parseLoopCommand, LOOP_GUIDANCE } from '../commands.js'
 import { generateRecap } from '../recap.js'
@@ -363,7 +359,7 @@ export interface ChatState {
   sessionCost(): number
   cacheHitRate(): number // usageLog 累计 hit/prompt，DeepSeek 状态行核心指标
   cacheSavings(): number // usageLog 累计缓存省下金额（CNY），DeepSeek 状态行
-  contextPct(): number // 上下文占比：lastPromptTokens / 生效阈值（0-100），用于状态栏上下文条
+  contextPct(): number // 上下文占比：上次真实 prompt_tokens / 生效阈值（0-100），用于状态栏上下文条
   contextUsed(): number // 上次真实 prompt_tokens（状态栏上下文条分子）
   contextWindow(): number // 当前模型生效阈值（状态栏上下文条分母）
   tokenBudget(): number | null // 2.1 sticky token 预算目标（null=未设）
@@ -447,8 +443,8 @@ export interface ChatCore {
   addDirs(): string[]
 }
 
-/** 压缩（summarize LLM 调用）超时上限：到点自动 abort，防 provider 卡住流时 /compact 与自动压缩无限挂起。 */
-export const COMPACT_TIMEOUT_MS = 120_000
+/** 压缩超时上限：定义搬进 compactionManager（压缩本体在那里），此处只转出口，保持既有 import 路径可用。 */
+export { COMPACT_TIMEOUT_MS } from '../compactionManager.js'
 
 /** Shift+Tab 五态循环的纯函数；disableAuto=true 时跳过 auto 态。可被测试直接 import。 */
 export function nextPermMode(cur: PermissionMode, disableAuto: boolean): PermissionMode {
@@ -604,18 +600,57 @@ export function createChatCore(opts: {
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
   }
-  let compactAbort: AbortController | null = null // 进行中压缩的中止句柄（超时 + interrupt/ESC 用；空闲为 null）
   let compacted = false       // compact 后首条用户消息的一次性提醒
-  let lastPromptTokens = 0    // 自动 compact 触发依据
-  let baselineLen = 0         // 与 lastPromptTokens 原子配对：lastPromptTokens 覆盖的 messages 前缀长度（发送前预估只估超出此前缀的新消息）
   let costWarned = false      // $阈值提醒只发一次
   let compactWarned = false   // 上下文≥90% 一次性提示
   let workflowWarnShown = false // ultracode 消费门：首次弹一次
-  const MAX_AUTO_COMPACT_FAILURES = 3
-  let consecutiveCompactFailures = 0
-  const precomputeReg = new PrecomputeRegistry() // ② 后台预算摘要注册表（内存版）
-  const compactState = newCompactState()         // 3b 快速回填熔断状态（turnCounter/rapidRefills）
-  const COMPACT_KEEP = 8 // rebuildMessages 默认保留条数，C1 prefix-overflow 守卫用
+
+  // 主动压缩的全部状态与决策都在 compactionManager 里（与 headless 共用一份，避免两侧分叉）；
+  // 这里只注入 TUI 的环境实现。model/settings/abortSignal 必须用 getter：/model 切换、/config 重载、
+  // 每轮新 AbortController 都会换掉它们，传值会让 manager 永远用建它那一刻的旧引用。
+  // notice/session/hookDeps 等都在下方才声明，故一律包进闭包延迟求值（对象字面量的属性是立即求值的，
+  // 直接写 `notice,` 会在这里踩 TDZ）。
+  const compaction = createCompactionManager({
+    client: opts.client,
+    get model() { return model },
+    get settings() { return settings },
+    get abortSignal() { return abort.signal },
+    notice: (level, msg) => notice(level, msg),
+    onUsage: (u, sub) => { usageLog.push({ usage: u, model: sub }); session.appendUsage(u, sub) },
+    persistCompact: async messages => {
+      // compact 把整段尾部历史重新 append 一遍（precompute 路径下可能几十条）。不 suppress 的话，
+      // 这段活动会被写进日志第二遍 → dream 重复摘要。事件标记要在 suppress 之外补（让 dream 看得见这里压缩过）。
+      session.suppressActivity(() => {
+        session.appendCompact()
+        for (const m of messages) session.appendMessage(m)
+      })
+      session.appendActivityEvent('compact')
+      compacted = true
+      compactWarned = false
+    },
+    sessionMemoryContent: () => {
+      // SessionMemory 并入：若 summary.md 存在，其内容会被 manager 作为 user 前置消息注入 summarize 输入
+      const sid = ctx.sessionId?.()
+      if (!(mem.enabled && mem.sessionMemory.enabled && sid)) return undefined
+      try { return fs.readFileSync(sessionMemoryPathFor(cwd, sid, home), 'utf8') }
+      catch { return undefined } // summary.md 不存在则跳过
+    },
+    runPreCompactHook: async (trigger, messagesCount) => {
+      if (!settings.hooks) return
+      await runHooks('PreCompact', {
+        hook_event_name: 'PreCompact', cwd, trigger, messages_count: messagesCount,
+      }, settings.hooks, hookDeps)
+    },
+    runPostCompactHook: async meta => {
+      if (!settings.hooks) return
+      await runHooks('PostCompact', {
+        hook_event_name: 'PostCompact', cwd, trigger: meta.trigger,
+        summary: meta.summary, truncated: meta.truncated,
+        messages_before: meta.messagesBefore, messages_after: meta.messagesAfter,
+      }, settings.hooks, hookDeps)
+    },
+    activeFastModel,
+  })
 
   // —— UI 状态 ——
   let currentTitle: string | null = null
@@ -652,9 +687,9 @@ export function createChatCore(opts: {
     usageLog.filter(u => !u.kind).reduce((s, u) => s + cacheSavingsCNY(u.model, u.usage.prompt_cache_hit_tokens), 0)
   const contextPct = () => {
     const thr = effectiveThreshold(model, settings.compactTokens)
-    return thr ? Math.min(100, Math.round((lastPromptTokens / thr) * 100)) : 0
+    return thr ? Math.min(100, Math.round((compaction.contextTokens / thr) * 100)) : 0
   }
-  const contextUsed = () => lastPromptTokens
+  const contextUsed = () => compaction.contextTokens
   const contextWindow = () => resolveContextWindow(model)
   const tokenBudgetGet = () => tokenBudget
   const budgetUsedGet = () => budgetUsed
@@ -739,8 +774,8 @@ export function createChatCore(opts: {
     const slug = loaded.meta.title ?? (typeof firstUser?.content === 'string' ? firstUser.content : undefined)
     session = openSession(file, f => makeActivityWriter(f, { slug }))
     // 恢复后重置会话内状态，防止旧 todo/compact 标记/token 计数泄漏到新对话
-    taskList.bind(sessionIdFromFile(session.file)); compacted = false; lastPromptTokens = 0; baselineLen = 0; consecutiveCompactFailures = 0; compactWarned = false
-    precomputeReg.clear(); Object.assign(compactState, newCompactState()) // A1：/resume 切换到不同会话历史线，旧 precompute 快照与新历史不同源必须弃用
+    taskList.bind(sessionIdFromFile(session.file)); compacted = false; compactWarned = false
+    compaction.reset() // A1：/resume 切换到不同会话历史线，旧 precompute 快照与新历史不同源必须弃用（连带 token 计数与两个熔断计数）
     // 强制重建 system prompt（不管落盘的 messages[0] 是不是 system）：全局记忆红线/项目记忆/skills/CLAUDE.md/
     // 环境信息(日期/cwd) 必须刷新到「现在」，否则 /resume 一个旧会话会永远缺席今天才记下的红线（opus 评审 gap）。
     // 用户拍板接受代价：内存态 system prompt 可能与落盘记录不一致；doCompact 崩溃兜底（原无 system 消息）合并到同一处，不再重复实现。
@@ -951,83 +986,6 @@ export function createChatCore(opts: {
     onWarn: msg => notice('warn', msg),
     onChange: () => setState(),
   })
-
-  /** compact 结果落地：替换 messages + 落盘 compact 记录与新前缀 + 状态重置 + PostCompact hook。
-   *  全量 doCompact 与 precompute swap 共用，避免两处漂移。 */
-  const applyCompactResult = async (
-    rebuilt: any[],
-    meta: { trigger: 'auto' | 'manual'; summary: string; truncated: boolean },
-  ): Promise<void> => {
-    const before = messages.length
-    messages.length = 0
-    messages.push(...rebuilt)
-    // compact 把整段尾部历史重新 append 一遍（precompute 路径下可能几十条）。不 suppress 的话，
-    // 这段活动会被写进日志第二遍 → dream 重复摘要。事件标记要在 suppress 之外补（让 dream 看得见这里压缩过）。
-    session.suppressActivity(() => {
-      session.appendCompact()
-      for (const m of messages) session.appendMessage(m)
-    })
-    session.appendActivityEvent('compact')
-    compacted = true
-    lastPromptTokens = 0
-    baselineLen = 0
-    compactWarned = false
-    if (settings.hooks) {
-      await runHooks('PostCompact', {
-        hook_event_name: 'PostCompact', cwd, trigger: meta.trigger,
-        summary: meta.summary, truncated: meta.truncated,
-        messages_before: before, messages_after: messages.length,
-      }, settings.hooks, hookDeps)
-    }
-    notice('info', 'compact 完成：历史已压缩为总结 + 最近 8 条（fileState 保留）')
-    if (meta.truncated) notice('warn', '[compact 警告] 总结被长度截断，信息可能有损')
-  }
-
-  /** precompute 命中：用预算好的摘要 + arm 后尾部重建，无 LLM 等待。 */
-  const swapPrecomputed = async (summary: string, truncated: boolean, armLen: number): Promise<void> => {
-    const rebuilt = rebuildFromPrecompute(messages, summary, armLen)
-    await applyCompactResult(rebuilt, { trigger: 'auto', summary, truncated })
-    notice('info', '[precompute] 已换入预算摘要（无阻塞等待）')
-  }
-
-  /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
-  const doCompact = async (trigger: 'auto' | 'manual' = 'auto'): Promise<void> => {
-    notice('info', '[compact 总结中…]')
-    // ac 须可被中止：① 超时定时器（防 provider 卡住流无限挂起）② interrupt()/ESC（compactAbort 引用）。
-    const ac = new AbortController()
-    compactAbort = ac
-    const timeoutTimer = setTimeout(() => ac.abort(new Error(`compact 超时（${COMPACT_TIMEOUT_MS / 1000}s 内 provider 无响应）`)), COMPACT_TIMEOUT_MS)
-    try {
-      if (settings.hooks) {
-        await runHooks('PreCompact', {
-          hook_event_name: 'PreCompact', cwd, trigger, messages_count: messages.length,
-        }, settings.hooks, hookDeps)
-      }
-      // SessionMemory 并入：若 summary.md 存在，将其内容作为 user 前置消息注入 summarize 输入，保留会话状态
-      let messagesForSummarize = messages
-      const sid = ctx.sessionId?.()
-      if (mem.enabled && mem.sessionMemory.enabled && sid) {
-        const smPath = sessionMemoryPathFor(cwd, sid, home)
-        try {
-          const smContent = fs.readFileSync(smPath, 'utf8')
-          messagesForSummarize = [
-            ...messages.slice(0, 1), // system
-            { role: 'user', content: `<会话记忆>\n${smContent}\n</会话记忆>` },
-            ...messages.slice(1),
-          ]
-        } catch { /* summary.md 不存在则跳过 */ }
-      }
-      const { summary, usage: u, truncated } = await summarize(opts.client, messagesForSummarize, ac.signal)
-      const sub = activeFastModel()
-      usageLog.push({ usage: u, model: sub })
-      session.appendUsage(u, sub)
-      const rebuilt = rebuildMessages(messages, summary)
-      await applyCompactResult(rebuilt, { trigger, summary, truncated })
-    } finally {
-      clearTimeout(timeoutTimer)
-      compactAbort = null
-    }
-  }
 
   // 权限确认桥：挂起 Promise + pendingAsk 状态，UI 用 resolveAsk 回答
   const ask = (
@@ -1276,9 +1234,9 @@ export function createChatCore(opts: {
           if (mdEnabled) mdEndBlock() // 悬空 assistant 块在 seal（turn_end 复用 seal 语义）前先 final flush，防止段已 done 后 close_segment 因 !it.done 守卫 no-op 丢失 patch
           usageLog.push({ usage: ev.usage, model })
           session.appendUsage(ev.usage, model)
-          lastPromptTokens = ev.usage.prompt_tokens
-          // baselineLen 原子配对：lastPromptTokens 覆盖发送时的 messages 前缀（sentLen，含本轮 user，但不含本轮 assistant 产出）
-          baselineLen = ev.sentLen
+          // 第二参必须是 ev.sentLen（发送时的 messages 前缀长度，含本轮 user、不含本轮 assistant 产出），
+          // 不是 messages.length——后者已含本轮新增，会让下面的发送前预估漏算这部分。
+          compaction.observeTurnEnd(ev.usage.prompt_tokens, ev.sentLen)
           // turn 边界用真实累计输出 token 校准估算值（覆盖本 turn 期间的粗估）
           sendOutTokens += ev.usage.completion_tokens
           turnOutTokens = sendOutTokens
@@ -1295,7 +1253,7 @@ export function createChatCore(opts: {
             notice('warn', `[花费提醒] 本会话已超 ¥${settings.costWarnCNY}（/cost 查看明细，阈值在 settings.json 的 costWarnCNY）`)
           }
           const warnThr = effectiveThreshold(model, settings.compactTokens)
-          const ctxPct = warnThr ? (lastPromptTokens / warnThr) * 100 : 0
+          const ctxPct = warnThr ? (compaction.contextTokens / warnThr) * 100 : 0
           if (!compactWarned && ctxPct >= 90) {
             compactWarned = true
             notice('warn', `上下文已用 ${Math.round(ctxPct)}%，接近自动压缩阈值`)
@@ -1331,7 +1289,9 @@ export function createChatCore(opts: {
       if (plan.action === 'retry') {
         overflowRetried = true
         messages.length = 0; messages.push(...plan.messages)
-        lastPromptTokens = 0; baselineLen = 0
+        // microcompact 换掉了整段历史，旧 prompt_tokens 与其前缀长度都作废；只归零这一对（0,0 即「无基线」），
+        // 不动两个熔断计数——本轮是被动 overflow 兜底，不是一次成功压缩。
+        compaction.observeTurnEnd(0, 0)
         notice('warn', `[context 超长] microcompact 甩掉 ~${plan.tokensSaved} tok 后重试`)
         try { const step2 = await drive(); if (step2.value === 'aborted') notice('warn', '[已中断]') }
         catch (e2: any) { reportTurnError(e2) } // mc 后仍超 → 报错（下轮主动 mc 兜）
@@ -1395,87 +1355,12 @@ export function createChatCore(opts: {
       dreamLastScanAt = now
     }
 
-    // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）
-    // 发送前预估：上次真实 prompt_tokens + 自 baseline 以来新增消息的估算（含本轮 assistant 产出）。
-    // clamp Math.min 守 rewind/截断（baselineLen 可能 > 当前 messages.length）。
-    // ===== Compact 演进：mc 互斥 + prefix 守卫 + 3b block-before + consume-or-fallback + precompute arm =====
-    let estimated = lastPromptTokens + estimateMessagesTokens(messages.slice(Math.min(baselineLen, messages.length)))
-    const thr = effectiveThreshold(model, settings.compactTokens)
-    let compactedThisTurn = false
-
-    if (estimated >= thr) {
-      // C1 prefix-overflow 守卫：不可压前缀（system + 最近 COMPACT_KEEP 条）本身 ≥ thr → compaction 帮不上
-      // slice 从 max(1, …) 起，短对话下也不把 system(messages[0]) 重复计入
-      const keepTail = messages.slice(Math.max(1, messages.length - COMPACT_KEEP))
-      const incompressible = estimateMessagesTokens([messages[0], ...keepTail])
-      if (incompressible >= thr) {
-        notice('warn', 'compaction 帮不上：固定前缀（system + 最近消息）已超阈值，请 /clear 重开或分块读大文件')
-      } else {
-        // A2 互斥：先算 microcompact，仅当它单独就能压回阈值下才 apply
-        const mc = microcompact(messages)
-        if (mc && estimated - mc.tokensSaved < thr) {
-          messages.length = 0
-          messages.push(...mc.messages)
-          lastPromptTokens = 0
-          baselineLen = 0
-          estimated = estimateMessagesTokens(messages)
-          notice('info', `[microcompact] 甩掉 ~${mc.tokensSaved} tok 旧工具输出`)
-          // 本轮不 compact（原始 tool 结果仍在转录，仅内存瘦身，不 appendCompact）
-        } else {
-          // A3 block-before：先查快速回填熔断
-          const rr = checkRapidRefill(compactState)
-          if (rr.tripped) {
-            notice('warn', '上下文在 3 轮内反复填满 3 次，某文件或工具输出可能过大，请分块读或用 /clear 重开')
-            messages.push({ role: 'user', content: '<system-reminder>\n上下文反复被填满（thrashing）。请停止重复读取大文件/大工具输出，改为分块读取，或提示用户用 /clear。\n</system-reminder>' })
-            // 本轮不 compact；turnCounter 由下方统一 ++，≥3 时 checkRapidRefill 归零自愈（无永久 latch）
-          } else if (consecutiveCompactFailures >= MAX_AUTO_COMPACT_FAILURES) {
-            // 3a 熔断已跳闸：停本会话自动全量 compact（直到 /compact 手动重置计数或会话重置），本轮不再尝试。
-            // 首次达阈时 catch 分支已告警「已暂停」，此处静默跳过，不重复告警、不再烧 API。
-          } else {
-            try {
-              const c = precomputeReg.consume(messages, estimateMessagesTokens, thr)
-              if (c.kind === 'ready') {
-                await swapPrecomputed(c.summary, c.truncated, c.armLen)
-                compactedThisTurn = true
-              } else if (c.kind === 'pending') {
-                const aborted = await Promise.race([
-                  c.settled.then(() => false),
-                  new Promise<boolean>(res => abort.signal.addEventListener('abort', () => res(true), { once: true })),
-                ])
-                if (!aborted) {
-                  const c2 = precomputeReg.consume(messages, estimateMessagesTokens, thr)
-                  if (c2.kind === 'ready') { await swapPrecomputed(c2.summary, c2.truncated, c2.armLen); compactedThisTurn = true }
-                  else { await doCompact('auto'); compactedThisTurn = true } // C4：settled 后仍非 ready → 全量
-                }
-                // aborted：本轮不 compact，entry 留待下轮
-              } else {
-                // none/failed/stale → 阻塞全量
-                await doCompact('auto')
-                compactedThisTurn = true
-              }
-              if (compactedThisTurn) {
-                recordCompact(compactState, rr.rapidRefills)
-                consecutiveCompactFailures = 0
-                estimated = lastPromptTokens + estimateMessagesTokens(messages.slice(Math.min(baselineLen, messages.length))) // C3 重估
-              }
-            } catch (e: any) {
-              consecutiveCompactFailures++
-              if (consecutiveCompactFailures >= MAX_AUTO_COMPACT_FAILURES) notice('warn', '自动压缩连续失败 3 次，已暂停（用 /compact 手动重试）')
-              else notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`)
-            }
-          }
-        }
-      }
-    }
-
-    if (!compactedThisTurn) bumpTurnCounter(compactState) // 本轮无全量 compact/swap 才 ++
-
-    // precompute arm（下一轮预热）：过 arm 带且启用且空闲
-    if (settings.precomputeCompactionEnabled !== false
-        && estimated >= thr - PRECOMPUTE_BUFFER_FRACTION * thr
-        && !precomputeReg.busy) {
-      precomputeReg.arm(messages, messages.length, (m, sig) => summarize(opts.client, m, sig))
-    }
+    // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）。
+    // 判据与状态全在 compactionManager 里（mc 互斥 / C1 前缀守卫 / 3a·3b 熔断 / precompute 消费）。
+    await compaction.maybeCompact(messages)
+    // arm 必须【在 maybeCompact 之后】调：它读的是 maybeCompact 末尾记下的同一个 estimated
+    // （含压缩后的 C3 重估、3b reminder 注入），顺序颠倒或单独调会读到 0/陈旧值。
+    compaction.armPrecompute(messages)
 
     busy = false
     turnStartAt = null
@@ -1852,11 +1737,10 @@ export function createChatCore(opts: {
       busy = true
       idleNotifier.cancel()
       setState()
-      precomputeReg.clear() // 避免与在途 precompute 竞争
+      // 清 precompute（避免与在途预算竞争）、成功后归零连续失败计数、recordCompact 保持 3b 计数一致，
+      // 这三件事已收进 compactNow 的 manual 分支——此处再做一遍会让 recordCompact 双计、3b 时序错乱。
       try {
-        await doCompact('manual')
-        consecutiveCompactFailures = 0
-        recordCompact(compactState, checkRapidRefill(compactState).rapidRefills) // 手动也是一次 compact，3b 计数保持一致
+        await compaction.compactNow(messages, 'manual')
       } catch (e: any) { notice('error', `[compact 失败] ${e?.message ?? e}`) }
       busy = false
       idleNotifier.arm()
@@ -1868,11 +1752,8 @@ export function createChatCore(opts: {
       messages.length = 1 // 保留 system
       ctx.fileState.clear()
       compacted = false
-      lastPromptTokens = 0
-      baselineLen = 0
       compactWarned = false
-      consecutiveCompactFailures = 0
-      precomputeReg.clear(); Object.assign(compactState, newCompactState()) // A1：新会话历史线与旧 precompute 快照不同源，作废
+      compaction.reset() // A1：新会话历史线与旧 precompute 快照不同源，作废（连带 token 计数与两个熔断计数）
       pendingSessionContext = null
       // /clear 是「从头开始」：不带 parent（历史一条不留），新会话新日志。
       session = newSession({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id }, sessionDir, makeActivityWriter)
@@ -1916,7 +1797,7 @@ export function createChatCore(opts: {
       })
       session = newS
       currentTitle = forkTitle
-      precomputeReg.clear() // 新会话上下文不同，旧 precompute 快照作废
+      compaction.clearPrecompute() // 新会话上下文不同，旧 precompute 快照作废；历史是逐条拷过去的（上面那个循环），压缩基线与熔断计数仍然适用，故不是 reset()
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))
       extractor = createMemoryExtractor({
@@ -2431,7 +2312,7 @@ export function createChatCore(opts: {
       askQueue.drain('no')
       questionQueue.drain(null)
       planApprovalQueue.drain(false)
-      compactAbort?.abort('user-cancel') // 压缩进行中：ESC 也能中断（否则卡在 doCompact 的 ac，永远逃不出）
+      compaction.abortInFlight() // 压缩进行中：ESC 也能中断（否则卡在 compactNow 的 ac，只能等超时）
       abort.abort('user-cancel')
     },
     steer: (text: string, attachments?: Attachment[]) => {
@@ -2559,7 +2440,7 @@ export function createChatCore(opts: {
           }
           transcript = transcript.slice(0, cut)
           session.appendRewind(toTurnId)
-          precomputeReg.clear(); Object.assign(compactState, newCompactState()) // A1：rewind 改写历史线，precompute 快照与新历史不同源必须弃用
+          compaction.clearForRewind() // A1：rewind 改写历史线，precompute 快照与 3b 计数必须弃用；token 基线靠 maybeCompact 的 Math.min clamp 兜、3a 是 provider 健康信号，两者都不归零，故不是 reset()
           setState()
           notice('info', `[rewind] 对话已回退到第 ${toTurnId} 轮之前`)
         } else {

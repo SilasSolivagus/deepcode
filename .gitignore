@@ -9,3 +9,6 @@ bench/
 docs-site/node_modules/
 docs-site/.vitepress/dist/
 docs-site/.vitepress/cache/
+.DS_Store
+demo.tape
+assets/demo-full.gif
