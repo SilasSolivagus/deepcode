@@ -160,4 +160,58 @@ describe('compactionManager', () => {
     await m.maybeCompact(messages)
     expect(summarize).toHaveBeenCalledTimes(6)
   })
+
+  it('clearPrecompute 只作废预热快照：token 基线与熔断计数原封不动（与 reset 的分界）', async () => {
+    // /fork 的窄口。它把 messages 逐条拷进新会话、历史完整保留，所以压缩状态仍然适用——
+    // 只有 precompute 快照因会话文件换了才必须弃用。若这里误用 reset()，一个正在 thrash 的会话
+    // fork 之后熔断保护会从零开始，本用例即红。
+    const { deps } = mkDeps()
+    deps.settings.precomputeCompactionEnabled = false
+    const m = createCompactionManager(deps as any)
+    const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]
+
+    // 阶段一：连 3 次失败把 3a 熔断打跳闸（计数非零的可观测代理）
+    ;(summarize as any).mockRejectedValue(new Error('boom'))
+    for (let i = 0; i < 3; i++) {
+      m.observeTurnEnd(25000, messages.length)
+      await m.maybeCompact(messages)
+    }
+    expect(summarize).toHaveBeenCalledTimes(3)
+
+    // 阶段二：开 precompute 并 arm 一个永不 settle 的在途预算，捕获它的 signal
+    deps.settings.precomputeCompactionEnabled = true
+    let armSignal: AbortSignal | undefined
+    ;(summarize as any).mockImplementation((_c: any, _m: any, signal: AbortSignal) => {
+      if (!armSignal) { armSignal = signal; return new Promise(() => {}) }
+      return Promise.resolve({
+        summary: '摘要', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false,
+      })
+    })
+    messages.push({ role: 'tool', tool_call_id: 't', content: 'ok' }, { role: 'tool', tool_call_id: 't', content: 'ok' })
+    m.observeTurnEnd(18000, messages.length) // 落 arm 带 [16000,20000)，未到压缩阈值；armLen=4 达 PRECOMPUTE_MIN_ARM_LEN
+    await m.maybeCompact(messages)
+    m.armPrecompute(messages)
+    expect(summarize).toHaveBeenCalledTimes(4)
+    expect(armSignal?.aborted).toBe(false)
+    expect(m.contextTokens).toBe(18000)
+
+    // ——— 被测调用 ———
+    m.clearPrecompute()
+
+    // ① 预热快照确实被作废（在途那次被 abort）
+    expect(armSignal?.aborted).toBe(true)
+    // ② token 基线原封不动（reset() 会把它归零）
+    expect(m.contextTokens).toBe(18000)
+    // ③ 3a 熔断计数原封不动：仍跳闸，本轮静默跳过，不再调 summarize
+    m.observeTurnEnd(25000, messages.length)
+    await m.maybeCompact(messages)
+    expect(summarize).toHaveBeenCalledTimes(4)
+
+    // 对照：reset() 才归零计数——同样一轮立刻恢复压缩，证明上面第 ③ 条不是「压不动」而是「计数还在」
+    m.reset()
+    expect(m.contextTokens).toBe(0)
+    m.observeTurnEnd(25000, messages.length)
+    await m.maybeCompact(messages)
+    expect(summarize).toHaveBeenCalledTimes(5)
+  })
 })

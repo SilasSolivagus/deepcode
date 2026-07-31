@@ -59,7 +59,13 @@ describe('doCompact 中止（超时 + ESC）', () => {
   it('压缩中 interrupt()（ESC）→ 中断压缩 → 失败通知，不挂起', async () => {
     const core = mkCore()
     const p = core.send('/compact')
-    await Promise.resolve() // 让 doCompact 跑到 await summarize（compactAbort 已设）
+    // ⚠️ 这两个 tick 是有预算的：要让压缩跑到 `await summarize` 之后再 interrupt。
+    // summarize 的 mock 只挂 abort 监听、不判 signal.aborted，所以 abort 若早于 summarize 被调用，
+    // 那个 Promise 永远不 resolve、本用例挂到超时。
+    // 现在 /compact 走 compactionManager.compactNow，途中有一处【无条件】`await deps.runPreCompactHook(...)`
+    // （原 useChat 实现是 `if (settings.hooks)` 包着的，无 hooks 时零 tick），已经吃掉预算里的一个 tick。
+    // 谁再往 compactNow 到 summarize 之间加一层 await，这里就要同步加一个 tick，否则会莫名其妙地红。
+    await Promise.resolve() // 让压缩跑到 await summarize（manager 内的 compactAbort 已设）
     await Promise.resolve()
     core.interrupt()
     await p

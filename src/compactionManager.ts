@@ -61,6 +61,11 @@ export interface CompactionManager {
   compactNow(messages: any[], trigger: 'auto' | 'manual'): Promise<void>
   /** ESC/中断：abort 在途压缩（空闲时是 no-op）。没有它，压缩期间的中断只能等 120s 超时。 */
   abortInFlight(): void
+  /** 只作废 precompute 快照，不动 token 基线与两个熔断计数。
+   *  /fork 用：它把 messages 逐条拷进新会话、历史完整保留，压缩状态仍然适用，
+   *  只有 precompute 快照因会话文件换了而必须弃用。与 reset() 的区别正在于此——
+   *  用 reset() 会把一个正在 thrash 的会话 fork 之后的快速回填保护清零重来。 */
+  clearPrecompute(): void
   /** /resume、/rewind 后作废预热快照与计数（TUI 现有语义）。 */
   reset(): void
 }
@@ -242,6 +247,10 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
 
     abortInFlight(): void {
       compactAbort?.abort('user-cancel') // 压缩进行中：ESC 也能中断（否则卡在 compactNow 的 ac，只能等超时）
+    },
+
+    clearPrecompute(): void {
+      precomputeReg.clear()
     },
 
     reset(): void {

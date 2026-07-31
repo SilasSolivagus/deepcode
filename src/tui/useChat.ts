@@ -1797,7 +1797,7 @@ export function createChatCore(opts: {
       })
       session = newS
       currentTitle = forkTitle
-      compaction.reset() // 新会话上下文不同，旧 precompute 快照作废（manager 只提供整体作废，连带归零计数）
+      compaction.clearPrecompute() // 新会话上下文不同，旧 precompute 快照作废；历史是逐条拷过去的（上面那个循环），压缩基线与熔断计数仍然适用，故不是 reset()
       checkpointer = createCheckpointer(checkpointStoreFor(session.file))
       taskList.bind(sessionIdFromFile(session.file))
       extractor = createMemoryExtractor({
