@@ -48,6 +48,9 @@ export interface CompactionDeps {
 }
 
 export interface CompactionManager {
+  /** 上次真实 prompt_tokens（状态栏上下文占比的分子）。只读暴露的理由：它同时是压缩触发依据，
+   *  且在 compact/microcompact/reset 三处被归零——注入方另存一份必然在这三处漂移。 */
+  readonly contextTokens: number
   observeTurnEnd(promptTokens: number, messagesLen: number): void
   maybeCompact(messages: any[]): Promise<void>   // 原地改 messages
   armPrecompute(messages: any[]): void
@@ -138,6 +141,8 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
   }
 
   return {
+    get contextTokens(): number { return lastPromptTokens },
+
     observeTurnEnd(promptTokens: number, messagesLen: number): void {
       lastPromptTokens = promptTokens
       // baselineLen 原子配对：lastPromptTokens 覆盖发送时的 messages 前缀（sentLen，含本轮 user，但不含本轮 assistant 产出）
