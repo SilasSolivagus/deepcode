@@ -1,10 +1,12 @@
 // src/headless.ts
 import crypto from 'node:crypto'
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type OpenAI from 'openai'
 import { runLoop } from './loop.js'
 import { isContextOverflowError } from './compact.js'
+import { createCompactionManager } from './compactionManager.js'
 import { planOverflowRetry } from './overflowRetry.js'
 import { allTools } from './tools/index.js'
 import { makeAgentTool } from './tools/agent.js'
@@ -30,7 +32,7 @@ import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
 import { resolveDenyList, buildDenySourceMap } from './deny.js'
 import { streamInit, streamFromLoopEvent, streamResult } from './streamJson.js'
-import { globalMemdirFor } from './memdir/paths.js'
+import { globalMemdirFor, sessionMemoryPathFor } from './memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from './memdir/memoryConfig.js'
 import { availablePresets, modelFallbackReason, resolveActiveProvider, resolveStartupModel, resolveSubModel } from './providers.js'
 import type { ToolContext, WorktreeSessionState } from './tools/types.js'
@@ -139,6 +141,41 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     httpHookAllowedEnvVars: settings.httpHookAllowedEnvVars,
   }
   ctx.hookDispatch = (event, payload) => runHooks(event, payload, settings.hooks, hookDeps)
+  // 主动压缩：与 TUI(useChat.ts) 共用同一个 manager 实现（src/compactionManager.ts），这里只注入
+  // headless 侧的环境差异。此前 headless 全程无主动压缩，唯一防线是单发的反应式超窗恢复
+  // （见下方 catch 分支）——压过一次后本 run 内后续超窗直接收摊，长跑上下文无界累积。
+  const compaction = createCompactionManager({
+    client: opts.client,
+    model,
+    settings,
+    abortSignal: ctx.signal,
+    // stderr，与本文件既有的 `⏺ 工具名(...)` 轨迹同流；不得写 stdout，会污染 --output-format json。
+    notice: (_level, msg) => process.stderr.write(`${msg}\n`),
+    onUsage: u => addUsage(u),
+    persistCompact: async () => { /* headless 无转录，落盘无处可去 */ },
+    sessionMemoryContent: () => {
+      // 门控同 useChat.ts：全局记忆开关 + 会话记忆子开关都开才读。sessionId 恒定（headless 单发不切会话）。
+      if (!(mem.enabled && mem.sessionMemory.enabled)) return undefined
+      try { return fs.readFileSync(sessionMemoryPathFor(cwd, sessionId, home), 'utf8') }
+      catch { return undefined } // summary.md 不存在（headless 从不写它）则跳过，不当错误
+    },
+    runPreCompactHook: async (trigger, messagesCount) => {
+      if (!settings.hooks) return
+      await runHooks('PreCompact', {
+        hook_event_name: 'PreCompact', cwd, trigger, messages_count: messagesCount,
+      }, settings.hooks, hookDeps)
+    },
+    runPostCompactHook: async meta => {
+      if (!settings.hooks) return
+      await runHooks('PostCompact', {
+        hook_event_name: 'PostCompact', cwd, trigger: meta.trigger,
+        summary: meta.summary, truncated: meta.truncated,
+        messages_before: meta.messagesBefore, messages_after: meta.messagesAfter,
+      }, settings.hooks, hookDeps)
+    },
+    // headless 无 TUI 那套 provider fast-model 解析路径，压缩摘要的用量记账直接记到主模型上。
+    activeFastModel: () => model,
+  })
   // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
   const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, undefined, resolveOutputStyle(settings.outputStyle, loadOutputStyles()), undefined, undefined, settings.language, globalMemdir, mem.global.maxBytes) }]
   if (settings.hooks) {
@@ -229,7 +266,12 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       } else if (ev.type === 'tool_start') {
         process.stderr.write(`⏺ ${ev.name}(${headlessToolArg(ev.name, ev.desc)})\n`)
       }
-      if (ev.type === 'turn_end') { turns++; addUsage(ev.usage) }
+      if (ev.type === 'turn_end') {
+        turns++; addUsage(ev.usage)
+        // 第二参必须是 ev.sentLen（发送时的 messages 前缀长度，含本轮 user、不含本轮 assistant 产出），
+        // 不是 messages.length——后者已含本轮新增，会让 maybeCompact 的发送前预估基线偏大、压缩偏晚。
+        compaction.observeTurnEnd(ev.usage.prompt_tokens, ev.sentLen)
+      }
     }
     return step.value
   }
@@ -269,6 +311,12 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
         }
       }
     }
+    // 主动压缩：drive() 结束（含超窗重试后）就对当前 messages 判定一次，防长跑上下文无界累积——
+    // 反应式超窗恢复（上面的 catch 分支）是单发熔断，压过一次后本 run 内后续超窗直接收摊，
+    // 这里补上本 run 内持续生效的主动闸门。armPrecompute 必须在 maybeCompact 之后调用：
+    // 它读的是 maybeCompact 末尾记下的估算值，顺序颠倒或单独调会读到 0/陈旧值。
+    await compaction.maybeCompact(messages)
+    compaction.armPrecompute(messages)
   } finally {
     await mcpCleanup()   // 只跑一次，不随重试重复执行
   }
