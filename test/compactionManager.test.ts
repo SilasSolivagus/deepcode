@@ -92,4 +92,72 @@ describe('compactionManager', () => {
     await m.maybeCompact(messages)
     expect(summarize).toHaveBeenCalledTimes(3)
   })
+
+  it('abortInFlight 中断在途压缩：以 user-cancel 失败结束，不破坏现场也不留悬挂句柄', async () => {
+    // summarize 挂住直到 signal abort——既验证 signal 真的被串到 summarize，也验证 abort 后能逃出
+    ;(summarize as any).mockImplementation((_c: any, _m: any, signal: AbortSignal) =>
+      new Promise((_res, rej) => {
+        if (signal.aborted) return rej(signal.reason) // abort 早于 summarize 调用时（PreCompact hook 的 await 之后才调）
+        signal.addEventListener('abort', () => rej(signal.reason), { once: true })
+      }))
+    const { deps } = mkDeps()
+    const m = createCompactionManager(deps as any)
+    const messages = [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]
+
+    const p = m.compactNow(messages, 'auto')
+    m.abortInFlight()
+    await expect(p).rejects.toBe('user-cancel') // 是被 abortInFlight 中断的，不是 120s 超时
+    expect(messages.length).toBe(2)             // 失败不破坏现场（messages 仅在成功后替换）
+
+    // 不留悬挂：句柄已归 null（再 abort 是 no-op），下一次压缩能正常跑完
+    expect(() => m.abortInFlight()).not.toThrow()
+    ;(summarize as any).mockResolvedValue({
+      summary: '摘要2', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false,
+    })
+    await m.compactNow(messages, 'auto')
+    expect(messages.some(x => typeof x.content === 'string' && x.content.includes('摘要2'))).toBe(true)
+  })
+
+  it("compactNow(…, 'manual')：清 precompute 在途预算 + 成功后归零失败计数（熔断解除）", async () => {
+    const { deps } = mkDeps()
+    deps.settings.precomputeCompactionEnabled = false // 阶段一：先把 3a 熔断打跳闸（不掺 precompute）
+    const m = createCompactionManager(deps as any)
+    const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]
+
+    ;(summarize as any).mockRejectedValue(new Error('boom'))
+    for (let i = 0; i < 3; i++) {
+      m.observeTurnEnd(25000, messages.length)
+      await m.maybeCompact(messages)
+    }
+    m.observeTurnEnd(25000, messages.length)
+    await m.maybeCompact(messages)
+    expect(summarize).toHaveBeenCalledTimes(3) // 第 4 轮已被熔断挡住
+
+    // 阶段二：开 precompute，arm 一次并把它挂在 pending（捕获它的 signal，用于验证 clear 真的 abort 了它）
+    deps.settings.precomputeCompactionEnabled = true
+    let armSignal: AbortSignal | undefined
+    ;(summarize as any).mockImplementation((_c: any, _m: any, signal: AbortSignal) => {
+      if (!armSignal) { armSignal = signal; return new Promise(() => {}) } // arm 那次永不 settle
+      return Promise.resolve({
+        summary: '摘要', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false,
+      })
+    })
+    messages.push({ role: 'tool', tool_call_id: 't', content: 'ok' }, { role: 'tool', tool_call_id: 't', content: 'ok' })
+    m.observeTurnEnd(18000, messages.length) // 落在 arm 带 [16000,20000)，未到压缩阈值
+    await m.maybeCompact(messages)
+    m.armPrecompute(messages)
+    expect(summarize).toHaveBeenCalledTimes(4)
+    expect(armSignal?.aborted).toBe(false)
+
+    // 阶段三：手动 compact —— 清 precompute（在途预算被 abort）+ 压缩成功
+    await m.compactNow(messages, 'manual')
+    expect(armSignal?.aborted).toBe(true)
+    expect(summarize).toHaveBeenCalledTimes(5)
+    expect(messages.some(x => typeof x.content === 'string' && x.content.includes('摘要'))).toBe(true)
+
+    // 阶段四：失败计数已归零 → 自动路径恢复（若没归零，这轮会被 3a 熔断静默跳过）
+    m.observeTurnEnd(25000, messages.length)
+    await m.maybeCompact(messages)
+    expect(summarize).toHaveBeenCalledTimes(6)
+  })
 })

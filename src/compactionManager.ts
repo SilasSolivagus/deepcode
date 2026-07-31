@@ -51,8 +51,13 @@ export interface CompactionManager {
   observeTurnEnd(promptTokens: number, messagesLen: number): void
   maybeCompact(messages: any[]): Promise<void>   // 原地改 messages
   armPrecompute(messages: any[]): void
-  /** 供 /compact 手动路径复用；本计划不改 TUI 的手动入口，但 manager 提供它以免将来两处分叉。 */
+  /** 供 /compact 手动路径复用；本计划不改 TUI 的手动入口，但 manager 提供它以免将来两处分叉。
+   *  trigger='manual' 时连带做手动路径的三件事：清 precompute（避免与在途预算竞争）、
+   *  成功后归零连续失败计数、recordCompact 保持 3b 计数一致。'auto' 不做——自动路径的
+   *  计数更新在 maybeCompact 内另有时机（用的是本轮算出的 rr），两条路径不能合并。 */
   compactNow(messages: any[], trigger: 'auto' | 'manual'): Promise<void>
+  /** ESC/中断：abort 在途压缩（空闲时是 no-op）。没有它，压缩期间的中断只能等 120s 超时。 */
+  abortInFlight(): void
   /** /resume、/rewind 后作废预热快照与计数（TUI 现有语义）。 */
   reset(): void
 }
@@ -66,6 +71,7 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
   // maybeCompact 末尾的估算值，供紧随其后的 armPrecompute 读——C3 同轮重估的唯一读者就是 arm 门，
   // 两者必须共用同一个数，重算会把 3b 注入的 thrashing reminder 一并算进去（与原实现不同源）。
   let lastEstimated = 0
+  let compactAbort: AbortController | null = null // 进行中压缩的中止句柄（超时 + interrupt/ESC 用；空闲为 null）
 
   const threshold = (): number => effectiveThreshold(deps.model, deps.settings.compactTokens)
 
@@ -97,9 +103,11 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
 
   /** compact：总结→重建消息→落盘 compact 记录与新前缀。失败不破坏现场（messages 仅在成功后替换）。 */
   const compactNow = async (messages: any[], trigger: 'auto' | 'manual' = 'auto'): Promise<void> => {
+    if (trigger === 'manual') precomputeReg.clear() // 避免与在途 precompute 竞争
     deps.notice('info', '[compact 总结中…]')
-    // ac 须可被中止：超时定时器（防 provider 卡住流无限挂起）。
+    // ac 须可被中止：① 超时定时器（防 provider 卡住流无限挂起）② interrupt()/ESC（abortInFlight）。
     const ac = new AbortController()
+    compactAbort = ac
     const timeoutTimer = setTimeout(() => ac.abort(new Error(`compact 超时（${COMPACT_TIMEOUT_MS / 1000}s 内 provider 无响应）`)), COMPACT_TIMEOUT_MS)
     try {
       await deps.runPreCompactHook(trigger, messages.length)
@@ -117,8 +125,15 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
       deps.onUsage(u, deps.activeFastModel())
       const rebuilt = rebuildMessages(messages, summary)
       await applyCompactResult(messages, rebuilt, { trigger, summary, truncated })
+      // 手动也是一次 compact：失败计数归零 + 3b 计数保持一致。抛错则跳过（与原 /compact 的 try 内落点一致）。
+      // 自动路径不走这里——它在 maybeCompact 内用本轮算出的 rr 落 recordCompact，两条路径不可合并。
+      if (trigger === 'manual') {
+        consecutiveCompactFailures = 0
+        recordCompact(compactState, checkRapidRefill(compactState).rapidRefills)
+      }
     } finally {
       clearTimeout(timeoutTimer)
+      compactAbort = null
     }
   }
 
@@ -219,6 +234,10 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
     },
 
     compactNow,
+
+    abortInFlight(): void {
+      compactAbort?.abort('user-cancel') // 压缩进行中：ESC 也能中断（否则卡在 compactNow 的 ac，只能等超时）
+    },
 
     reset(): void {
       // A1：/resume 切到别的历史线、/rewind 改写历史线，旧 precompute 快照与新历史不同源必须弃用；
