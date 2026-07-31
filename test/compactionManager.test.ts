@@ -220,8 +220,10 @@ describe('compactionManager', () => {
     // 只碰这两样。用 reset() 会额外抹掉 token 基线（而 maybeCompact 的 Math.min clamp 本就是为兜
     // rewind 后 baselineLen > messages.length 而写的）和 3a 失败计数（provider 侧健康信号，与历史线无关）。
     //
-    // 3a 与 3b 无法在同一条驱动线上同时非零——3b 要靠成功压缩累积，而每次成功压缩都会把 3a 归零。
-    // 故分两段各用一个 manager 实例验证。
+    // 分两段各用一个 manager 实例，只是为了让每段的构造单一好读——**不是**因为 3a 与 3b 不能同时非零。
+    // （曾在此写过「两者无法同时非零，因为每次成功压缩都会把 3a 归零」，实读证伪：压缩失败走的是
+    // catch 分支里的 consecutiveCompactFailures++，而 recordCompact 在 compactNow 抛错时根本走不到，
+    // compactState 纹丝不动。所以「先成功压 3 次把 3b 顶起来、再连续失败」就能让两者同时非零。）
 
     // ===== 第一段：3b 被清 + token 基线被保留 + precompute 快照被作废 =====
     const a = mkDeps()
