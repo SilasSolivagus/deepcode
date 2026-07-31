@@ -1197,6 +1197,12 @@ export function createChatCore(opts: {
           }
         },
         ...(tokenBudget ? { tokenBudget } : {}), // 2.1 sticky 预算（有值才传）
+        // 主动压缩：每轮请求发出前判定。一次 send 里同样可能跑几十轮工具循环，
+        // 增长全在轮间；挂回合末的话整个 send 期间都不压。
+        beforeSend: async m => {
+          await compaction.maybeCompact(m)
+          compaction.armPrecompute(m)   // 紧跟其后：读 maybeCompact 末尾记下的同一个 estimated
+        },
       }
       drive = async () => {
       // overflow 重试会二次调用 drive()：若上次调用残留未封闭的 assistant 块，先 final flush + 清空，防止跨重试串块。
@@ -1357,6 +1363,10 @@ export function createChatCore(opts: {
 
     // 自动 compact（落盘之后；busy 保持 true 直到 compact 结束）。
     // 判据与状态全在 compactionManager 里（mc 互斥 / C1 前缀守卫 / 3a·3b 熔断 / precompute 消费）。
+    // 与 deps.beforeSend 里那次的分工：那次管一次 send【内部】的轮间增长，这次管回合收尾。
+    // 交互式一定还有下一次 send，故这次压的结果下次就会用上；且发生在 busy 期间，
+    // 比推迟到下次 send 开始时压更好，不占用用户下一次交互的等待。两者幂等——
+    // beforeSend 刚压过的话 lastPromptTokens 已被归零，这里算出的 estimated 很小，直接 no-op。
     await compaction.maybeCompact(messages)
     // arm 必须【在 maybeCompact 之后】调：它读的是 maybeCompact 末尾记下的同一个 estimated
     // （含压缩后的 C3 重估、3b reminder 注入），顺序颠倒或单独调会读到 0/陈旧值。
