@@ -66,7 +66,12 @@ export interface CompactionManager {
    *  只有 precompute 快照因会话文件换了而必须弃用。与 reset() 的区别正在于此——
    *  用 reset() 会把一个正在 thrash 的会话 fork 之后的快速回填保护清零重来。 */
   clearPrecompute(): void
-  /** /resume、/rewind 后作废预热快照与计数（TUI 现有语义）。 */
+  /** 作废 precompute 快照并重置 3b 快速回填计数，但保留 token 基线与 3a 失败计数。
+   *  /rewind 用：它改写历史线故 precompute 快照与 3b 计数必须弃用，
+   *  但 token 基线由 maybeCompact 里的 Math.min clamp 负责兜（rewind 后 baselineLen 可能大于 messages.length），
+   *  归零反而抹掉这个设计意图；3a 失败计数是 provider 侧的健康信号，与历史线无关，跨 rewind 应保留。 */
+  clearForRewind(): void
+  /** /resume、/clear 后全清（TUI 现有语义：token 对 + 两个熔断计数 + precompute 快照）。 */
   reset(): void
 }
 
@@ -251,6 +256,11 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
 
     clearPrecompute(): void {
       precomputeReg.clear()
+    },
+
+    clearForRewind(): void {
+      precomputeReg.clear()
+      Object.assign(compactState, newCompactState())
     },
 
     reset(): void {

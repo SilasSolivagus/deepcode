@@ -2440,7 +2440,7 @@ export function createChatCore(opts: {
           }
           transcript = transcript.slice(0, cut)
           session.appendRewind(toTurnId)
-          compaction.reset() // A1：rewind 改写历史线，precompute 快照与新历史不同源必须弃用（连带 token 计数与两个熔断计数）
+          compaction.clearForRewind() // A1：rewind 改写历史线，precompute 快照与 3b 计数必须弃用；token 基线靠 maybeCompact 的 Math.min clamp 兜、3a 是 provider 健康信号，两者都不归零，故不是 reset()
           setState()
           notice('info', `[rewind] 对话已回退到第 ${toTurnId} 轮之前`)
         } else {

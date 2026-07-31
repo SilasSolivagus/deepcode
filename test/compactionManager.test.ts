@@ -214,4 +214,90 @@ describe('compactionManager', () => {
     await m.maybeCompact(messages)
     expect(summarize).toHaveBeenCalledTimes(5)
   })
+
+  it('clearForRewind 清 precompute + 3b，但保留 token 基线与 3a 失败计数（第三档，介于 clearPrecompute 与 reset 之间）', async () => {
+    // /rewind 的窄口。原 useChat 实现是 `precomputeReg.clear() + Object.assign(compactState, newCompactState())`——
+    // 只碰这两样。用 reset() 会额外抹掉 token 基线（而 maybeCompact 的 Math.min clamp 本就是为兜
+    // rewind 后 baselineLen > messages.length 而写的）和 3a 失败计数（provider 侧健康信号，与历史线无关）。
+    //
+    // 3a 与 3b 无法在同一条驱动线上同时非零——3b 要靠成功压缩累积，而每次成功压缩都会把 3a 归零。
+    // 故分两段各用一个 manager 实例验证。
+
+    // ===== 第一段：3b 被清 + token 基线被保留 + precompute 快照被作废 =====
+    const a = mkDeps()
+    const m3b = createCompactionManager(a.deps as any)
+    const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]
+    ;(summarize as any).mockResolvedValue({
+      summary: '摘要', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false,
+    })
+    // 连 3 轮成功压缩把 3b 顶到「下一轮必跳闸」：consecutiveRapidRefills 累到 2、turnCounter 归 0
+    for (let i = 0; i < 3; i++) {
+      m3b.observeTurnEnd(25000, messages.length)
+      await m3b.maybeCompact(messages)
+    }
+    expect(summarize).toHaveBeenCalledTimes(3)
+
+    // 开 precompute，arm 一个永不 settle 的在途预算并捕获 signal
+    a.deps.settings.precomputeCompactionEnabled = true
+    let armSignal: AbortSignal | undefined
+    ;(summarize as any).mockImplementation((_c: any, _m: any, signal: AbortSignal) => {
+      if (!armSignal) { armSignal = signal; return new Promise(() => {}) }
+      return Promise.resolve({
+        summary: '摘要', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false,
+      })
+    })
+    messages.push({ role: 'tool', tool_call_id: 't', content: 'ok' }, { role: 'tool', tool_call_id: 't', content: 'ok' })
+    m3b.observeTurnEnd(18000, messages.length) // 落 arm 带，未到压缩阈值
+    await m3b.maybeCompact(messages)
+    m3b.armPrecompute(messages)
+    expect(summarize).toHaveBeenCalledTimes(4)
+    expect(armSignal?.aborted).toBe(false)
+    expect(m3b.contextTokens).toBe(18000)
+
+    // ——— 被测调用 ———
+    m3b.clearForRewind()
+
+    expect(armSignal?.aborted).toBe(true)   // ① precompute 快照被作废
+    expect(m3b.contextTokens).toBe(18000)   // ② token 基线原封不动（reset() 会归零）
+
+    // ③ 3b 被清：这一轮若不清就会跳闸（rapidRefills 满 3）→ 给「反复填满」告警且不压缩；
+    //    清了则正常压缩。两条断言同时钉住「清了」而非「什么都没做」。
+    const noticesBefore = a.notices.length
+    m3b.observeTurnEnd(25000, messages.length)
+    await m3b.maybeCompact(messages)
+    expect(summarize).toHaveBeenCalledTimes(5)
+    expect(a.notices.slice(noticesBefore).some(([, msg]) => msg.includes('反复填满'))).toBe(false)
+
+    // ===== 第二段：3a 失败计数被保留 =====
+    // 判据：先失败 2 次（计数=2，尚未跳闸），clearForRewind 后再失败 1 次——
+    // 计数若被保留则达 3 → 报「已暂停」；若被归零则只到 1 → 报「将在下轮重试」。
+    ;(summarize as any).mockRejectedValue(new Error('boom'))
+    const b = mkDeps()
+    const m3a = createCompactionManager(b.deps as any)
+    const msgs2: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]
+    for (let i = 0; i < 2; i++) {
+      m3a.observeTurnEnd(25000, msgs2.length)
+      await m3a.maybeCompact(msgs2)
+    }
+    expect(b.notices.some(([, msg]) => msg.includes('已暂停'))).toBe(false) // 计数=2，还没跳闸
+
+    m3a.clearForRewind()
+    m3a.observeTurnEnd(25000, msgs2.length)
+    await m3a.maybeCompact(msgs2)
+    expect(b.notices.some(([, msg]) => msg.includes('已暂停'))).toBe(true)  // 2+1=3 → 保留住了
+
+    // 对照组：同样构造但换成 reset()，3a 被归零 → 第 3 次失败只到 1，不该跳闸。
+    // 没有这一组，上面那条断言在「clearForRewind 其实是 reset」时也可能碰巧绿。
+    const c = mkDeps()
+    const mReset = createCompactionManager(c.deps as any)
+    const msgs3: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]
+    for (let i = 0; i < 2; i++) {
+      mReset.observeTurnEnd(25000, msgs3.length)
+      await mReset.maybeCompact(msgs3)
+    }
+    mReset.reset()
+    mReset.observeTurnEnd(25000, msgs3.length)
+    await mReset.maybeCompact(msgs3)
+    expect(c.notices.some(([, msg]) => msg.includes('已暂停'))).toBe(false)
+  })
 })
