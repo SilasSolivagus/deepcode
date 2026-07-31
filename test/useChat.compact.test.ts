@@ -313,3 +313,75 @@ describe('特征：前缀不可压守卫（C1）', () => {
     core.dispose()
   })
 })
+
+// Task 2（阶段一 · 抽共享层前的特征测试）：钉住阈值判据与重估机制里另外三处隐式行为——
+// 压缩后同轮重估的新基线、precompute arm 带的触发/不触发边界、mc/全量互斥判据的严格小于边界。
+describe('特征：压缩后的重估（C3）', () => {
+  it('全量压缩后同轮 estimated 用新基线，不沿用压缩前的旧值', async () => {
+    // 注意：brief 原始构造用 precomputeCompactionEnabled:false，但 C3 重估（src/tui/useChat.ts:1459）
+    // 唯一的读者是紧随其后的 precompute arm 门（1474 行）——关掉 precompute 后这行重估的结果没人读，
+    // 对断言零影响，测不出真假（已用「注释掉 1459 行重估」的变异实验验证：关 precompute 时原版两轮断言
+    // 依然全绿，说明原始构造是张永远不会红的白纸）。这里改为保持 precompute 默认开启，
+    // 并 push 3 条 tool（< microcompact keepRecent=5，mc 不介入、必走全量）使压缩后消息数
+    // ≥ PRECOMPUTE_MIN_ARM_LEN(4)，让 arm 门在语法上可达，重估是否生效才有地方体现。
+    writeSettings({ compactTokens: 20000 })
+    const core = mkCore()
+    // estimated=25000 ≥ thr → 全量压缩。压缩把 lastPromptTokens/baselineLen 归零，
+    // 同轮末重估 estimated = estimateMessagesTokens(压缩后的全部消息)，远低于 arm 带下沿
+    // thr-0.2×thr=16000 → 紧随其后的 arm 门不应触发。
+    // 若重估失效（沿用压缩前的旧值 25000），arm 门会误判「仍超 arm 带」，对刚压完的小历史又
+    // 后台 arm 一次 → summarize 在同一轮内被调 2 次，用例即红。
+    script.push({ push: [small(), small(), small()], prompt_tokens: 25000 })
+    await core.send('轮1')
+    await new Promise(r => setTimeout(r, 40))
+    expect(summarize).toHaveBeenCalledTimes(1)
+    core.dispose()
+  })
+})
+
+describe('特征：precompute arm 的触发带', () => {
+  it('estimated 进入 arm 带（≥ thr - 0.2×thr）即后台预热；低于该带不预热', async () => {
+    writeSettings({ compactTokens: 20000 }) // precompute 默认启用；arm 带下沿 = 20000 - 4000 = 16000
+    const core = mkCore()
+
+    // 轮 1：estimated=10000，远低于 arm 带下沿 → 不 arm（summarize 不被调）。
+    // push 2 条 tool 把 armLen 垫到 4（=PRECOMPUTE_MIN_ARM_LEN）：若不 push，armLen 只有 2
+    // （[system,user1]），会被 arm() 内部「太短不算失败」的兜底guard 挡住——那样即使带下沿判据本身
+    // 坏掉，round1 的「不 arm」断言也会碰巧绿（已用「删掉 1475 行的带下沿比较」变异实验验证：
+    // 不 push 时该变异对 round1 断言零影响）。push 后 armLen 达标，断言才真正钉住带下沿判据本身。
+    script.push({ push: [small(), small()], prompt_tokens: 10000 })
+    await core.send('轮1')
+    await new Promise(r => setTimeout(r, 40))
+    expect(summarize).not.toHaveBeenCalled()
+
+    // 轮 2：estimated=17000，落在 [16000, 20000) → 未到压缩阈值但进 arm 带 → 后台预热一次。
+    // 同理 push 1 条 tool 把 armLen 垫过 4（PRECOMPUTE_MIN_ARM_LEN）：轮 1 后 messages 已有
+    // [system,user1,tool,tool]=4，轮 2 仅 send 追加 user2 → armLen=5，本已达标，这里的 push
+    // 是为了保持与轮 1 一致的构造节奏，不是必需——但保留它不影响 estimated=17000（push 发生
+    // 在 runLoop mock 内、baselineLen 在 push 之后才采样，这条消息进了 baseline、不计入新增）。
+    script.push({ push: [small()], prompt_tokens: 17000 })
+    await core.send('轮2')
+    await new Promise(r => setTimeout(r, 40))
+    expect(summarize).toHaveBeenCalledTimes(1)
+    core.dispose()
+  })
+})
+
+describe('特征：microcompact 与全量的互斥边界', () => {
+  it('estimated - saved 恰好等于阈值 → 判据是严格小于，故走全量而非 microcompact', async () => {
+    writeSettings({ compactTokens: 20000, precomputeCompactionEnabled: false })
+    // HUGE≈21000 tok（ceil(70000*0.3)）。布局同用例 (a)：HUGE 落在 last-8 之外，会被 microcompact 甩掉。
+    // 实测（用 src/compact.ts 的 microcompact + estimateTextTokens 直接跑同样布局验证，而非仅按注释里的
+    // 约数推算）：old=前 4 个 tool（HUGE + 3 条 small），tokensSaved = 21000(HUGE) + 1×3(small) = 21003，
+    // 并非 brief 里近似的 21000。要让 estimated - saved 恰好等于 thr=20000，需 estimated = 20000 + 21003 = 41003。
+    // 41000（brief 原始建议值）会使 estimated-saved=19997 < thr，反而落进 microcompact 分支——
+    // 与本用例要钉的「等于阈值时应走全量」相悖，故按实测把 prompt_tokens 由 41000 调整为 41003。
+    script.push({ push: [tool(HUGE), ...Array.from({ length: 8 }, small)], prompt_tokens: 41003 })
+    const core = mkCore()
+    await core.send('问题')
+    await new Promise(r => setTimeout(r, 40))
+    expect(summarize).toHaveBeenCalled()
+    expect(hasNotice(core, 'microcompact')).toBe(false)
+    core.dispose()
+  })
+})
