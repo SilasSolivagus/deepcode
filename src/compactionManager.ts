@@ -224,9 +224,19 @@ export function createCompactionManager(deps: CompactionDeps): CompactionManager
                   estimated = lastPromptTokens + estimateMessagesTokens(messages.slice(Math.min(baselineLen, messages.length))) // C3 重估
                 }
               } catch (e: any) {
-                consecutiveCompactFailures++
-                if (consecutiveCompactFailures >= MAX_AUTO_COMPACT_FAILURES) deps.notice('warn', '自动压缩连续失败 3 次，已暂停（用 /compact 手动重试）')
-                else deps.notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`)
+                // 用户中断（ESC / steering 软中断）不是 provider 故障，不推进 3a 熔断——
+                // 逐轮压缩后触发频次高一个数量级，计入的话连按三次 ESC 就把本会话自动压缩停掉。
+                //
+                // 判 deps.abortSignal 而非 compactNow 内部那个 ac：ac 是 compactNow 的局部变量、
+                // finally 已把 compactAbort 置 null，此处访问不到。两者可分靠的是中止源差异——
+                // interrupt()（useChat.ts:2308-2317）里 abortInFlight() 与 abort.abort() 紧挨两行，
+                // ESC 必然让外层 signal 也 aborted；而压缩超时（:124）只中止内部 ac、不碰外层。
+                // 不判 reason：steering 软中断用的是 'interrupt'，同样是用户动作，同样不算故障。
+                if (!deps.abortSignal.aborted) {
+                  consecutiveCompactFailures++
+                  if (consecutiveCompactFailures >= MAX_AUTO_COMPACT_FAILURES) deps.notice('warn', '自动压缩连续失败 3 次，已暂停（用 /compact 手动重试）')
+                  else deps.notice('error', `[自动 compact 失败，将在下轮重试] ${e?.message ?? e}`)
+                }
               }
             }
           }
