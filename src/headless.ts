@@ -313,10 +313,12 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     }
     // 主动压缩：drive() 结束（含超窗重试后）就对当前 messages 判定一次，防长跑上下文无界累积——
     // 反应式超窗恢复（上面的 catch 分支）是单发熔断，压过一次后本 run 内后续超窗直接收摊，
-    // 这里补上本 run 内持续生效的主动闸门。armPrecompute 必须在 maybeCompact 之后调用：
-    // 它读的是 maybeCompact 末尾记下的估算值，顺序颠倒或单独调会读到 0/陈旧值。
+    // 这里补上本 run 内持续生效的主动闸门。
+    // 不调 armPrecompute：headless 单发，runHeadless 返回后 manager 与 precompute 注册表整体丢弃，
+    // 不存在「下一轮」消费预热摘要，而 arm 会后台发一次真实 summarize 请求——
+    // 无人消费却拖住事件循环，而 -p 分支只设 exitCode 不调 process.exit()，
+    // 会让 CLI 在结果已产出后继续挂起等一次白烧的调用。故不预热。
     await compaction.maybeCompact(messages)
-    compaction.armPrecompute(messages)
   } finally {
     await mcpCleanup()   // 只跑一次，不随重试重复执行
   }
