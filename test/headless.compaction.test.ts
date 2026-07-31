@@ -1,28 +1,27 @@
-// test/headless.compaction.test.ts
-// headless（跑评测与一切程序化调用的路径）在 drive() 结束后**不做**主动压缩，尽管它接好了
-// 与 TUI 共用的 compactionManager。本文件锁住这个「接线在、但末尾不触发」的行为。
+// headless 的主动压缩挂在 runLoop 的 beforeSend 接缝上——每轮请求发出前判定一次，
+// 而不是 drive() 跑完之后。deepcode -p 只有一条用户消息，上下文增长全部发生在
+// 那一个 runLoop 的 80-120 轮工具循环里；挂在末尾的话压缩发生时 messages 已经
+// 再也不发给 API，只剩抽 final 文本一个消费者（且会把落在 last-8 之外的产出砍掉）。
 //
-// 为什么不触发（详见 headless.ts 对应注释）：drive() 结束后 messages 再也不发给 API，只剩
-// 「抽 final 文本」一个消费者，压缩在本 run 内零收益；而代价是一次真实 summarize 调用被计进
-// 对外的 usage/costCNY，更严重的是 rebuildMessages 把历史砍成 [system, 总结, 最近 8 条]，
-// 会把落在 last-8 之外的最后一条 assistant 文本连同产出一起砍掉——正是 headless.ts 开头承诺
-// 要保住的「崩溃前的部分产出」。第二条用例就是这个回归的网。
-// 真正的主动闸门要落在 runLoop 轮间，另有一份 spec；届时这两条用例需要随之改写。
-//
-// 隔离同 test/headless.overflow.test.ts（先读过，本仓踩过的坑）：不 mock config.js/settingsLayers.js/
-// mcp.js 就会读本机真实 ~/.deepcode/settings.json，测试结果会绑死在开发者个人配置上。
+// 隔离同 test/headless.overflow.test.ts（先读过，本仓踩过的坑）：不 mock config.js/
+// settingsLayers.js/mcp.js 就会读本机真实 ~/.deepcode/settings.json。
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-// 与 test/headless.overflow.test.ts 同形的脚本桩：每项是一次 chatStream 返回，或是要抛的错
+// 时序判别式用的全局轨迹：记录「发请求」与「压缩」两类动作的相对顺序。
+// 「压没压」这个判别式不够用——第 3/5 条用例的需求在这个维度上互斥（见下方第 5 条注释），
+// 只有落在时序上才能同时满足。
+const trace: string[] = []
+
 const script: Array<{ result?: any; throw?: Error }> = []
 vi.mock('../src/api.js', async orig => {
   const actual = await orig<typeof import('../src/api.js')>()
   return {
     ...actual,
     chatStream: vi.fn(() => {
+      trace.push('send')
       const scene = script.shift()
       if (!scene) throw new Error('script exhausted')
       if (scene.throw) throw scene.throw
@@ -32,41 +31,30 @@ vi.mock('../src/api.js', async orig => {
 })
 vi.mock('../src/compact.js', async orig => ({
   ...(await orig() as any),
-  summarize: vi.fn(async () => ({
-    summary: '历史总结', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false,
-  })),
+  summarize: vi.fn(async () => {
+    trace.push('compact')
+    return {
+      summary: '历史总结', usage: { prompt_tokens: 5, completion_tokens: 5, prompt_cache_hit_tokens: 0 }, truncated: false,
+    }
+  }),
 }))
-
 vi.mock('../src/mcp.js', async orig => {
   const actual = await orig<typeof import('../src/mcp.js')>()
   return { ...actual, initMcpTools: vi.fn(async () => ({ tools: [], cleanup: async () => {} })) }
 })
 
-// 隔离真实设置：照抄 test/headless.overflow.test.ts 的三件套（config.js + settingsLayers.js + mcp.js）。
-// compactTokens 设为 20000，让阈值靠脚本里的 usage.prompt_tokens 够得着，不用堆真实大文件。
-// 不设 hooks 字段：headless.ts 里 SessionStart/UserPromptSubmit/PreCompact/PostCompact 各处
-// 都以 `if (settings.hooks)` 为门，留空即可跳过真实 runHooks，不必再多 mock 一个 hooks.js。
-const mockSettings = {
-  permissions: { allow: [] },
-  compactTokens: 20000,
-  costWarnCNY: 15,
-}
-
+const mockSettings = { permissions: { allow: [] }, compactTokens: 20000, costWarnCNY: 15 }
 vi.mock('../src/config.js', async orig => {
   const actual = await orig<typeof import('../src/config.js')>()
   return { ...actual, loadSettings: vi.fn(() => mockSettings) }
 })
-
 vi.mock('../src/settingsLayers.js', async orig => {
   const actual = await orig<typeof import('../src/settingsLayers.js')>()
   return {
     ...actual,
     loadLayeredSettings: vi.fn(() => ({
-      settings: mockSettings,
-      provenance: {},
-      permissionSources: { allow: {}, deny: {} },
-      scopes: [],
-      strippedDangerousRules: [],
+      settings: mockSettings, provenance: {},
+      permissionSources: { allow: {}, deny: {} }, scopes: [], strippedDangerousRules: [],
     })),
   }
 })
@@ -81,7 +69,6 @@ const stop = (content: string, pt: number) => ({
 const home = () => mkdtempSync(path.join(tmpdir(), 'dc-hc-'))
 const overflow = () => new Error('This model maximum context length is 128000 tokens')
 
-/** 小文件：只为垫出真实 tool 消息，不需要像 overflow 测试那样撑到 microcompact 的甩弃门槛。 */
 function smallFile(): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'dc-hc-fixture-'))
   const p = path.join(dir, 'small.txt')
@@ -89,7 +76,6 @@ function smallFile(): string {
   return p
 }
 
-/** 一轮「调用 Read 读文件」的工具调用脚本项；content 非空时该轮 assistant 会带上这段文本。 */
 const readTurn = (file: string, i: number, pt: number, content = '') => ({
   result: {
     content, toolCalls: [{ id: `r${i}`, name: 'Read', args: JSON.stringify({ file_path: file }) }],
@@ -97,32 +83,104 @@ const readTurn = (file: string, i: number, pt: number, content = '') => ({
   },
 })
 
-describe('headless 末尾不做主动压缩', () => {
-  beforeEach(() => { script.length = 0; vi.clearAllMocks() })
+describe('headless 逐轮压缩', () => {
+  beforeEach(() => { script.length = 0; trace.length = 0; vi.clearAllMocks() })
 
-  // 防退回网：这行曾经存在（见 git history 的 2284c72），撤掉的理由在文件头。
-  // 谁把 `await compaction.maybeCompact(messages)` 加回 drive() 之后，这条会红。
-  it('prompt_tokens 远超阈值 → 仍不触发压缩', async () => {
-    script.push(stop('完成', 25000))   // ≥ mock settings 里的 compactTokens=20000
+  // 立项理由的直接验收：一次 -p 内多轮，压缩发生在【轮间】。
+  // 第 1 轮 turn_end 报 25000 ≥ 阈值 20000 → 第 2 轮 beforeSend 就该压。
+  it('一次 -p 内多轮 → 轮间触发压缩', async () => {
+    const f = smallFile()
+    script.push(readTurn(f, 0, 25000))
+    script.push(readTurn(f, 1, 25000))
+    script.push(stop('完成', 25000))
+    const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, home: home() })
+    expect(r.status).toBe('done')
+    expect(summarize).toHaveBeenCalled()
+  })
+
+  // 单轮就结束时不该压：第 1 轮 beforeSend 时还没有任何 turn_end 观测（基线为 0），
+  // 而它结束后就没有下一轮 beforeSend 了。
+  it('单轮即结束 → 不压缩', async () => {
+    script.push(stop('完成', 25000))
     const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, home: home() })
     expect(r.status).toBe('done')
     expect(summarize).not.toHaveBeenCalled()
   })
 
-  // Critical 回归网：末尾压缩会用 rebuildMessages 把历史砍成 [system, 总结, 最近 8 条]，
-  // 让第 3 条消息位上那句「部分产出」落到窗口之外，text 被抽成空串——
-  // 而 headless.ts 开头明写超窗要「保住崩溃前的部分产出」。
-  // 构造：首轮 assistant 同时带文本与工具调用，其后再垫 4 轮纯工具调用把它推出 last-8，
-  // 然后抛超窗。tool 结果都很薄，microcompact 甩不到门槛 → 判 report → 返回 context_overflow 不重试。
+  // 回归网（7e7126c）：drive() 之后不得再压，否则 rebuildMessages 砍掉 last-8 之外的
+  // assistant 文本，把「崩溃前的部分产出」抽成空串。
   it('超窗路径 → 保住崩溃前的部分产出', async () => {
     const f = smallFile()
-    script.push(readTurn(f, 0, 25000, '部分产出'))
-    for (let i = 1; i <= 4; i++) script.push(readTurn(f, i, 25000))
+    script.push(readTurn(f, 0, 100, '部分产出'))       // pt 低，不触发轮间压缩
+    for (let i = 1; i <= 4; i++) script.push(readTurn(f, i, 100))
     script.push({ throw: overflow() })
     const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, home: home() })
     expect(r.status).toBe('context_overflow')
     expect(r.text).toBe('部分产出')
-    // 反向锚点：产出保住不是因为「压了但没砍到」，而是压根没压。
     expect(summarize).not.toHaveBeenCalled()
+  })
+
+  // M-2 恢复（上一批的必查项）：压缩重新可达后，它的告警必须只落 stderr。
+  // 一行中文告警混进 stdout 会让 --output-format json 的下游解析器直接崩。
+  it('压缩告警只落 stderr，不污染 stdout 的 json 输出', async () => {
+    const out: string[] = []
+    const err: string[] = []
+    const so = vi.spyOn(process.stdout, 'write').mockImplementation((s: any) => { out.push(String(s)); return true })
+    const se = vi.spyOn(process.stderr, 'write').mockImplementation((s: any) => { err.push(String(s)); return true })
+    try {
+      const f = smallFile()
+      script.push(readTurn(f, 0, 25000))
+      script.push(stop('完成', 25000))
+      await runHeadless({ client: {} as any, prompt: '干活', yolo: true, outputFormat: 'json', home: home() })
+      expect(out.join('')).not.toMatch(/compact|压缩/i)
+      // 反向锚点：确认告警确实产生了，不是因为没压缩才没污染
+      expect(err.join('')).toMatch(/compact|压缩/i)
+    } finally { so.mockRestore(); se.mockRestore() }
+  })
+
+  // 回归网（drive() 之后不得压缩），与第 3 条分工不同：第 3 条钉的是「抽 final 逻辑正确」
+  // （超窗时不砍产出），这条专门钉「drive() 之后确实没有压缩发生」。
+  //
+  // 为什么用时序判别式而不是「压没压」：如果直接把 pt 调高逼出压缩，那么最后一轮的
+  // beforeSend 必然会先压一次——「summarize 未被调用」这个断言会被合法的轮间压缩带红，
+  // 和「drive() 之后不该压」这个诉求在「压没压」这一个维度上互斥，没法同时满足。
+  // 换成时序就不冲突：drive() 之后如果被人加回 maybeCompact，它必然发生在最后一次
+  // chatStream 发送【之后】，表现为 trace 序列末尾多一个 'compact'；而轮间压缩产生的
+  // 'compact' 落在两次 'send' 之间。只看「最后一个动作是不是 send」就能把两者分开。
+  it('drive() 之后不得压缩（时序判别，不依赖「压没压」）', async () => {
+    const f = smallFile()
+    script.push(readTurn(f, 0, 25000)) // 第 1 轮 turn_end 报 25000 ≥ 阈值 → 第 2 轮 beforeSend 会压
+    script.push(stop('完成', 25000))
+    const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, home: home() })
+    expect(r.status).toBe('done')
+    // 反向锚点：轮间确实压了一次，不是因为压根没触发压缩才让下面的断言侥幸通过。
+    expect(trace).toContain('compact')
+    // 核心断言：序列最后一个动作是发请求，不是压缩。drive() 之后若被加回 maybeCompact，
+    // 末尾会多出一个 'compact'，这条就会红。
+    expect(trace[trace.length - 1]).toBe('send')
+  })
+
+  // 回归网：run 结束时若还有一个在途的 precompute arm（后台预热 summarize），必须被
+  // clearPrecompute() abort 掉，不能悬空拖住事件循环——armPrecompute 是 fire-and-forget，
+  // 没有 COMPACT_TIMEOUT_MS 那样的超时，无人消费也不会自己收尾，其底层 summarize 请求
+  // （生产里是一条到 provider 的 HTTPS 连接）会一直挂着；而 -p 分支只设 exitCode 不调
+  // process.exit()，Node 要等事件循环排空，CLI 便会在结果已产出后继续挂起。
+  //
+  // 构造：第 1 轮 turn_end 报 17000（落进 arm 触发带 [thr×0.8, thr) = [16000,20000)，
+  // thr=20000，precomputeCompactionEnabled 默认开——mockSettings 未设该字段，
+  // compactionManager.ts 的门控是 `!== false`，undefined 落在开的一侧）。
+  // 第 2 轮 beforeSend 因而 arm 一次预热摘要，随即以 'stop' 结束整个 run，
+  // 这次 arm 从未被下一轮 maybeCompact 消费——只能靠 finally 里的 clearPrecompute() 收摊。
+  it('run 结束时在途的 arm 必须被 clearPrecompute abort', async () => {
+    const f = smallFile()
+    script.push(readTurn(f, 0, 17000))
+    script.push(stop('完成', 5000))
+    const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, home: home() })
+    expect(r.status).toBe('done')
+    const calls = vi.mocked(summarize).mock.calls
+    // 反向锚点：arm 确实发生了一次 summarize 调用，不是压根没触发才让下面的断言侥幸通过。
+    expect(calls.length).toBeGreaterThan(0)
+    const [, , signal] = calls[calls.length - 1] // summarize(client, messages, signal)
+    expect(signal.aborted).toBe(true)
   })
 })

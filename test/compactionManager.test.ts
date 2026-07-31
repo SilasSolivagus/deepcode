@@ -302,4 +302,40 @@ describe('compactionManager', () => {
     await mReset.maybeCompact(msgs3)
     expect(c.notices.some(([, msg]) => msg.includes('已暂停'))).toBe(false)
   })
+
+  // 逐轮压缩把这条既有缺陷放大了：压缩触发频次高一个数量级后，
+  // 用户连按三次 ESC 就会撞上 3a 熔断，本会话自动压缩全停。
+  // 3a 的语义是 provider 健康信号，用户按 ESC 不是 provider 坏了。
+  it('用户中断导致的压缩失败 → 不推进 3a 熔断计数', async () => {
+    const ac = new AbortController()
+    ac.abort('user-cancel')
+    const { deps, notices } = mkDeps({ abortSignal: ac.signal })
+    const m = createCompactionManager(deps as any)
+    const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]
+    ;(summarize as any).mockRejectedValue(new Error('aborted'))
+
+    // 连失败 4 次：若计入熔断，第 3 次就该出「已暂停」告警、第 4 次直接跳过不再调 summarize
+    for (let i = 0; i < 4; i++) {
+      m.observeTurnEnd(25000, messages.length)
+      await m.maybeCompact(messages)
+    }
+    expect(notices.some(([, t]) => t.includes('已暂停'))).toBe(false)
+    expect(summarize).toHaveBeenCalledTimes(4)   // 4 次都真的尝试了，没被熔断跳过
+  })
+
+  // 反向对照：非用户中断（如 provider 故障 / 压缩超时——后者只中止 compactNow 内部的 ac，
+  // 不碰外层 abortSignal）必须照常累加，否则等于把 3a 熔断整个废掉。
+  it('非中断的压缩失败 → 照常推进 3a 熔断', async () => {
+    const { deps, notices } = mkDeps()          // abortSignal 未 abort
+    const m = createCompactionManager(deps as any)
+    const messages: any[] = [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }]
+    ;(summarize as any).mockRejectedValue(new Error('provider 502'))
+
+    for (let i = 0; i < 4; i++) {
+      m.observeTurnEnd(25000, messages.length)
+      await m.maybeCompact(messages)
+    }
+    expect(notices.some(([, t]) => t.includes('已暂停'))).toBe(true)
+    expect(summarize).toHaveBeenCalledTimes(3)   // 第 4 次被熔断跳过
+  })
 })
