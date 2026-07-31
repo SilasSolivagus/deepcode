@@ -233,6 +233,12 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       // 撞 headlessMaxTurns 会被直接 seal 退出（无收尾降级），长任务评测可调高；不传＝沿用 loop.ts 的 80。
       maxTurns: maxTurnsOverride ?? settings.headlessMaxTurns,
       maxToolResultChars: settings.maxToolResultChars,
+      // 主动压缩挂在这里而不是 drive() 之后：-p 只有一条用户消息，增长全在这一个
+      // runLoop 的 80-120 轮里；挂末尾的话压缩发生时 messages 已不再发给 API。
+      beforeSend: async m => {
+        await compaction.maybeCompact(m)
+        compaction.armPrecompute(m)   // 紧跟其后：读 maybeCompact 末尾记下的同一个 estimated
+      },
       ctx,
       permission: {
         mode: opts.yolo ? 'yolo' : 'default',
@@ -311,18 +317,11 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
         }
       }
     }
-    // 这里**不**调 maybeCompact/armPrecompute，尽管上面接好了 manager。两条理由：
-    // 1) 本 run 内零收益：drive() 已结束，messages 再也不发给 API，只剩下方抽 final 文本一个消费者；
-    //    persistCompact 在 headless 是 no-op。而代价是真金白银——一次 summarize 调用（最长等
-    //    COMPACT_TIMEOUT_MS 才 abort）、PreCompact/PostCompact 各触发一次、onUsage 把它计进
-    //    对外的 usage 与 costCNY。armPrecompute 更糟：无人消费还拖住事件循环，而 -p 分支只设
-    //    exitCode 不调 process.exit()，会让 CLI 在结果已产出后继续挂起。
-    // 2) 会吃掉产出：压缩用 rebuildMessages 把历史砍成 [system, 总结, 最近 8 条]，
-    //    最后一条带文本的 assistant 一旦落在 last-8 之外，下方抽 final 就抽空了——
-    //    正是本文件开头承诺要保住的「崩溃前的部分产出」（超窗路径实测能压成空串）。
-    // 真正的主动闸门必须落在 runLoop 的轮间（-p 只有一条用户消息，增长全在那一个 runLoop 的
-    // 80-120 轮里），需要给 runLoop 加逐轮接缝，另有一份 spec。manager 接线与 observeTurnEnd
-    // 的 token 基线观测在此保留，供那份 spec 直接接上。
+    // 这里不调 maybeCompact/armPrecompute：主动压缩已挂在 runLoop 的 beforeSend 接缝上
+    // （见上方 deps），每轮请求发出前判定，这才是长跑累积真正发生的地方。
+    // 而在此处（drive() 之后）调用有害无益：messages 只剩下方抽 final 文本一个消费者，
+    // rebuildMessages 会把落在最近 8 条之外的 assistant 文本连同产出一起砍掉——
+    // 正是本文件开头承诺要保住的「崩溃前的部分产出」（超窗路径实测能压成空串）。
   } finally {
     await mcpCleanup()   // 只跑一次，不随重试重复执行
   }
