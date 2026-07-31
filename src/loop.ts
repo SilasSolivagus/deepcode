@@ -61,6 +61,14 @@ export interface LoopDeps {
    *  {continue:false} → 放行停止。无 activeGoal / judge 故障 / 达成 / 不可达 / 迭代上限均返回 continue:false（fail-safe 放行）。
    *  仅主会话传入；子代理子循环不传。 */
   goalGate?: (messages: any[]) => Promise<{ continue: true; inject: string } | { continue: false }>
+  /** 每轮请求发出前调用一次，允许调用方原地改写 messages（压缩/回收）。
+   *  语义是「发送前」而非「轮末」——只有确定马上要发请求时才触发，故最后一轮之后
+   *  不会调用，不会去压缩一个再也不发给 API 的数组（turn_end 事件做不到这点：它在
+   *  无工具调用路径上 yield 完往往直接 return 'done'）。
+   *  必须原地改写（messages.length=0 + push），重新赋值只换局部指向。
+   *  不得抛异常：抛出会穿过 runLoop 打断整个 send。
+   *  仅主会话传入（TUI / headless）；子代理、后台、hook、webfetch 子循环不传。 */
+  beforeSend?: (messages: any[]) => Promise<void>
 }
 
 const CONCURRENCY = 5
@@ -197,6 +205,9 @@ export async function* runLoop(
   let budgetContinuations = 0
   const budgetDeltas: number[] = []
   for (let turn = 0; turn < (deps.maxTurns ?? 80); turn++) {
+    await deps.beforeSend?.(messages)
+    // 顺序是硬约束：beforeSend 可能改变 messages 长度，而 sentLen 要作为 baselineLen
+    // 喂给 observeTurnEnd，必须是【真正发出去的】那个前缀长度。
     const sentLen = messages.length
     let result: ChatResult
     let streamedText = ''
