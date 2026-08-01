@@ -166,9 +166,9 @@ deepcode -p "任务" --trace ./trace --yolo
 diff ./trace/req-00007.json ./trace/req-00008.json
 ```
 
-每条记录带 `label` 区分场景：`turn`（正常轮次）/ `compact`（历史压缩）/ `recap`（会话摘要）/ `goal`（目标提取）/ `hook`。⚠️ **落盘内容包含发给模型的完整上下文，其中会有 agent 读过的全部文件原文，可能含密钥与私有代码。** 目录以 `0700` 创建。这是本地诊断工具，不是日志——不要在共享环境常开，用完请自行删除。
+每条记录带 `label` 区分场景：`turn`（正常轮次）/ `compact`（历史压缩）/ `recap`（会话摘要）/ `goal`（目标提取）/ `hook`（hook 内的模型调用）/ `classify`（auto 模式权限分类器）/ `memorySignal`（记忆信号门控）/ `memoryIndex`（记忆索引整合）。⚠️ **落盘内容包含发给模型的完整上下文，其中会有 agent 读过的全部文件原文，可能含密钥与私有代码。** 目录以 `0700` 创建。这是本地诊断工具，不是日志——不要在共享环境常开，用完请自行删除。
 
-覆盖范围：auto 模式权限分类器、记忆信号门控、记忆索引整合、图片描述、key 校验这 5 处直连模型不经过 `chatStream`，不会被记录——它们目前只在交互式 TUI 路径可达，而 headless 恰好是本功能唯一接线的入口，故 headless 下的覆盖目前是完整的，但这是接线错开的结果，不是构造上的保证。
+覆盖范围：记的是**所有有诊断价值的出站请求**，不是进程发出的全部请求。有两处刻意不记——图片描述（发的是图片，不是「deepcode 自己说的话」）与 key 校验探活（内容零诊断价值，且落盘反而多一份敏感面）。
 
 - `@文件` 引用文件、`!命令` 直跑 shell、`/` 浮出命令菜单
 - 常用命令：`/model`（切模型/provider）、`/think`、`/accept`、`/plan`、`/cost`、`/compact`、`/resume`、`/rewind`、`/memory`、`/permissions`、`/update`、`/init`、`/help`、`/exit`（auto 模式用 Shift+Tab 切）

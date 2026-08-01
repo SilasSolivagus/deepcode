@@ -2,6 +2,7 @@ import type { Settings } from './config.js'
 import { resolveActiveProvider, activeProvider } from './providers.js'
 import { createClient, withRetry, normalizeUsage, type Usage } from './api.js'
 import type OpenAI from 'openai'
+import { recordRequest } from './requestTrace.js'
 
 let _classifierClient: OpenAI | undefined
 export function getClassifierClient(): OpenAI {
@@ -96,10 +97,18 @@ async function defaultCall(
   model: string, messages: any[], thinking: boolean, onUsage?: (u: Usage, model: string) => void,
 ): Promise<string> {
   const client = getClassifierClient()
-  const resp = await withRetry(() => client.chat.completions.create({
+  // 请求体先拼出来，再同时用于「落轨迹」与「发请求」——必须是同一个对象，
+  // 否则轨迹记的是「我们以为发了什么」而非真正发了什么（B-1 立下的不变式）。
+  const body = {
     model, messages, temperature: 0.2,
     thinking: thinking ? { type: 'enabled' } : { type: 'disabled' },
-  } as any), 1)
+  }
+  // 落盘在 withRetry 之外：重试发的是同一 payload，逐次记录只产生重复文件。
+  {
+    const { model: m, messages: msgs, tools, ...params } = body as any
+    recordRequest({ label: 'classify', model: m, wireMessages: msgs, tools: tools ?? [], params })
+  }
+  const resp = await withRetry(() => client.chat.completions.create(body as any), 1)
   const u = (resp as any).usage
   if (u && onUsage) onUsage(normalizeUsage(u, activeProvider().dialect), model)
   return (resp as any).choices?.[0]?.message?.content ?? ''

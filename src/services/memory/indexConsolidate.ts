@@ -5,6 +5,7 @@ import { scanMemoryFiles, formatMemoryManifest, type MemoryScope } from '../../m
 import { parseFrontmatter } from '../../agentsLoader.js'
 import { buildThinkingParams, normalizeUsage, type Usage } from '../../api.js'
 import { activeModelMeta, activeProvider } from '../../providers.js'
+import { recordRequest } from '../../requestTrace.js'
 
 export interface IndexConsolidateDeps {
   client: OpenAI
@@ -31,13 +32,19 @@ export function buildIndexPrompt(manifest: string, bodies: string): string {
 }
 
 async function defaultGenerate(deps: IndexConsolidateDeps, prompt: string): Promise<string> {
-  const res = await deps.client.chat.completions.create({
+  // 请求体先拼出来，再同时用于「落轨迹」与「发请求」——必须是同一个对象（B-1 立下的不变式）。
+  const body = {
     model: deps.model, max_tokens: 2048,
     // thinking 模型（glm/kimi）绕过 buildThinkingParams 会击穿 content（第一层血的教训）；
     // thinkingOnly 模型（kimi-k2.7-code/k3）关思考不发 disabled，否则端点 400。
     ...buildThinkingParams(activeModelMeta(deps.model).supportsThinking, false, undefined, activeModelMeta(deps.model).thinkingOnly ?? false),
     messages: [{ role: 'system', content: SYS }, { role: 'user', content: prompt }],
-  } as any, { signal: deps.signal })
+  }
+  {
+    const { model, messages, tools, ...params } = body as any
+    recordRequest({ label: 'memoryIndex', model, wireMessages: messages, tools: tools ?? [], params })
+  }
+  const res = await deps.client.chat.completions.create(body as any, { signal: deps.signal })
   const u = (res as any).usage
   if (u && deps.onUsage) deps.onUsage(normalizeUsage(u, activeProvider().dialect), deps.model)
   return (res as any).choices?.[0]?.message?.content ?? ''

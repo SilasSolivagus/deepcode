@@ -2,6 +2,7 @@ import type OpenAI from 'openai'
 import { renderRecentMessages } from './extractPrompt.js'
 import { buildThinkingParams, normalizeUsage } from '../../api.js'
 import { activeModelMeta, activeProvider } from '../../providers.js'
+import { recordRequest } from '../../requestTrace.js'
 
 const GATE_SYS = '你判断一段对话是否包含值得长期记住的持久信息。只输出一个小写英文单词：yes 或 no，不要任何别的字。'
 const GATE_INSTRUCT = `只有这些算 yes：用户本人的事实或长期偏好、用户对工作方式的纠正或明确指导、项目的关键决策或约束。
@@ -16,7 +17,9 @@ export async function hasDurableSignal(
   onUsage?: (u: any, m: string) => void,
 ): Promise<boolean> {
   try {
-    const res = await client.chat.completions.create({
+    // 请求体先拼出来，再同时用于「落轨迹」与「发请求」——必须是同一个对象，
+    // 否则轨迹记的就是「我们以为发了什么」而非真正发了什么（B-1 立下的不变式）。
+    const body = {
       model, max_tokens: 4,
       // thinking 模型（如 glm/kimi）默认会先吐 reasoning，4 token 全被吃掉导致 content 恒为空；禁 thinking 让 content 直出 yes/no。
       // 注：fast 档须为支持非思考模式的模型（deepseek/glm/kimi-k2.5 均可）；thinkingOnly 模型此处会退化为不发 disabled。
@@ -25,7 +28,12 @@ export async function hasDurableSignal(
         { role: 'system', content: GATE_SYS },
         { role: 'user', content: `${GATE_INSTRUCT}\n\n对话：\n${renderRecentMessages(recent)}` },
       ],
-    } as any, { signal })
+    }
+    {
+      const { model: m, messages, tools, ...params } = body as any
+      recordRequest({ label: 'memorySignal', model: m, wireMessages: messages, tools: tools ?? [], params })
+    }
+    const res = await client.chat.completions.create(body as any, { signal })
     const u = (res as any).usage
     // 原始 usage 各家缓存字段位置不同且可能缺省（glm/kimi 无顶层 prompt_cache_hit_tokens）；
     // 归一后再上报，否则 undefined 字段流入 costCNY 会污染 sessionCost 成 ¥NaN。
