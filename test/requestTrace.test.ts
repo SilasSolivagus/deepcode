@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { buildTraceRecord, nextSeq, writeTraceRecord } from '../src/requestTrace.js'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { buildTraceRecord, nextSeq, writeTraceRecord, parseTraceDir, resolveTraceDir, enableTrace, disableTrace, traceEnabled, recordRequest } from '../src/requestTrace.js'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -116,5 +116,71 @@ describe('writeTraceRecord', () => {
     spy.mockRestore()
     expect(statSync(d).mode & 0o777).toBe(0o700)
     expect(warned).toContain('权限过宽')
+  })
+})
+
+afterEach(() => disableTrace())
+
+describe('parseTraceDir', () => {
+  it('未传 → undefined', () => {
+    expect(parseTraceDir(['-p', '任务'])).toBeUndefined()
+  })
+  it('正常取值', () => {
+    expect(parseTraceDir(['--trace', '/tmp/t'])).toBe('/tmp/t')
+  })
+  it('缺值报错', () => {
+    expect(() => parseTraceDir(['-p', 'x', '--trace'])).toThrow(/--trace/)
+  })
+  it('取值是另一个 flag 时报错，不吞掉它', () => {
+    expect(() => parseTraceDir(['--trace', '--yolo'])).toThrow(/--trace/)
+  })
+})
+
+describe('resolveTraceDir', () => {
+  it('flag 优先于 env', () => {
+    expect(resolveTraceDir(['--trace', '/tmp/flag'], { DEEPCODE_TRACE_DIR: '/tmp/env' } as any)).toBe('/tmp/flag')
+  })
+  it('只有 env 时用 env', () => {
+    expect(resolveTraceDir([], { DEEPCODE_TRACE_DIR: '/tmp/env' } as any)).toBe('/tmp/env')
+  })
+  it('都没有 → undefined', () => {
+    expect(resolveTraceDir([], {} as any)).toBeUndefined()
+  })
+})
+
+describe('sink', () => {
+  it('未开启时 recordRequest 不落盘也不抛出', () => {
+    expect(traceEnabled()).toBe(false)
+    expect(() => recordRequest({ model: 'm', wireMessages: [], tools: [], params: {} })).not.toThrow()
+  })
+
+  it('开启后逐次落盘，seq 递增', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-'))
+    enableTrace(d)
+    recordRequest({ label: 'turn', model: 'm', wireMessages: [{ role: 'user', content: 'a' }], tools: [], params: {} })
+    recordRequest({ label: 'compact', model: 'm', wireMessages: [{ role: 'user', content: 'b' }], tools: [], params: {} })
+    const files = readdirSync(d).filter(n => n.startsWith('req-')).sort()
+    expect(files).toEqual(['req-00001.json', 'req-00002.json'])
+    expect(JSON.parse(readFileSync(path.join(d, 'req-00001.json'), 'utf8')).label).toBe('turn')
+    expect(JSON.parse(readFileSync(path.join(d, 'req-00002.json'), 'utf8')).label).toBe('compact')
+  })
+
+  it('对已有轨迹的目录续号而非覆盖', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-'))
+    writeFileSync(path.join(d, 'req-00005.json'), '{}')
+    enableTrace(d)
+    recordRequest({ model: 'm', wireMessages: [], tools: [], params: {} })
+    expect(existsSync(path.join(d, 'req-00006.json'))).toBe(true)
+    expect(readFileSync(path.join(d, 'req-00005.json'), 'utf8')).toBe('{}') // 原文件未被动过
+  })
+
+  it('开启时向 stderr 打含目录路径的警告', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-'))
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    enableTrace(d)
+    const all = spy.mock.calls.map(c => String(c[0])).join('')
+    spy.mockRestore()
+    expect(all).toContain(d)
+    expect(all).toMatch(/密钥|勿外传/)
   })
 })
