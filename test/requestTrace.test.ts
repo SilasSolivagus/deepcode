@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { buildTraceRecord, nextSeq, writeTraceRecord } from '../src/requestTrace.js'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -71,13 +71,19 @@ describe('nextSeq', () => {
     writeFileSync(path.join(d, 'req-abc.json'), '{}')
     expect(nextSeq(d)).toBe(4)
   })
+
+  it('seq 超过 9999 时续号不回退（不覆盖已有轨迹）', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-'))
+    writeFileSync(path.join(d, 'req-10000.json'), '{}')
+    expect(nextSeq(d)).toBe(10001)
+  })
 })
 
 describe('writeTraceRecord', () => {
-  it('写出 req-NNNN.json，四位零填充，内容可解析且完整', () => {
+  it('写出 req-NNNNN.json，五位零填充，内容可解析且完整', () => {
     const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-'))
     expect(writeTraceRecord(d, rec(8))).toBe(true)
-    const f = path.join(d, 'req-0008.json')
+    const f = path.join(d, 'req-00008.json')
     expect(existsSync(f)).toBe(true)
     expect(JSON.parse(readFileSync(f, 'utf8'))).toEqual(rec(8))
   })
@@ -99,5 +105,16 @@ describe('writeTraceRecord', () => {
     chmodSync(d, 0o700) // 还原，好让临时目录能被清理
     expect(threw).toBe(false)
     expect(ok).toBe(false)
+  })
+
+  it('已存在的宽松目录（0755）会被收紧到 0700 并警告', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-'))
+    chmodSync(d, 0o755)
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    expect(writeTraceRecord(d, rec(1))).toBe(true)
+    const warned = spy.mock.calls.map(c => String(c[0])).join('')
+    spy.mockRestore()
+    expect(statSync(d).mode & 0o777).toBe(0o700)
+    expect(warned).toContain('权限过宽')
   })
 })

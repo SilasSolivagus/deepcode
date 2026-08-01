@@ -39,7 +39,7 @@ export function buildTraceRecord(input: {
   }
 }
 
-const FILE_RE = /^req-(\d{4})\.json$/
+const FILE_RE = /^req-(\d{4,})\.json$/
 
 /** 扫已有轨迹取下一个编号。目录已存在且非空时续号，避免覆盖上一次跑的轨迹。 */
 export function nextSeq(dir: string): number {
@@ -60,12 +60,13 @@ export function nextSeq(dir: string): number {
 /** 落盘一条记录。任何失败都只警告不抛出——诊断功能绝不能让主流程失败。 */
 export function writeTraceRecord(dir: string, rec: TraceRecord): boolean {
   try {
-    const existed = fs.existsSync(dir)
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-    if (!existed) {
+    const mode = fs.statSync(dir).mode & 0o777
+    if (mode & 0o077) {
       fs.chmodSync(dir, 0o700)
+      process.stderr.write(`⚠ 轨迹目录权限过宽（${mode.toString(8)}），已收紧为 0700：${dir}\n`)
     }
-    const file = path.join(dir, `req-${String(rec.seq).padStart(4, '0')}.json`)
+    const file = path.join(dir, `req-${String(rec.seq).padStart(5, '0')}.json`)
     fs.writeFileSync(file, JSON.stringify(rec, null, 2), { mode: 0o600 })
     return true
   } catch (e) {
