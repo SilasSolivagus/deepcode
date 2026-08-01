@@ -740,17 +740,21 @@ describe('flushMemory：退出前有界 drain 记忆提取（真机冒烟丢记�
       client: {} as any, yolo: true, cwd: '/tmp', sessionDir, home, onState: () => {}, runSubagent: runSub,
     })
 
-    await core.send('hi')
-    // 轮询必须用未被 spy 的真实计时器，否则会被上面的 setTimeout mock 拦截
-    await waitFor(() => runSub.mock.calls.length > 0, 'onTurnEnd 触发的提取跑到卡住的 runSubagent 处',
-      { sleep: ms => new Promise(r => realSetTimeout(r, ms)) })
-    expect(runSub).toHaveBeenCalled()
+    try {
+      await core.send('hi')
+      // 轮询必须用未被 spy 的真实计时器，否则会被上面的 setTimeout mock 拦截
+      await waitFor(() => runSub.mock.calls.length > 0, 'onTurnEnd 触发的提取跑到卡住的 runSubagent 处',
+        { sleep: ms => new Promise(r => realSetTimeout(r, ms)) })
+      expect(runSub).toHaveBeenCalled()
 
-    const start = Date.now()
-    await core.flushMemory()
-    expect(Date.now() - start).toBeLessThan(2000) // 缩短后的 5ms 超时应远快于此，留足调度抖动余量
-
-    spy.mockRestore()
+      const start = Date.now()
+      await core.flushMemory()
+      expect(Date.now() - start).toBeLessThan(2000) // 缩短后的 5ms 超时应远快于此，留足调度抖动余量
+    } finally {
+      // 必须 finally：任一断言失败时若漏掉恢复，全局 setTimeout 会一直保持被 mock 的状态，
+      // 污染同文件后续用例。排查 inputbox flake 时顺带发现的真实隐患。
+      spy.mockRestore()
+    }
     core.dispose()
   })
 
