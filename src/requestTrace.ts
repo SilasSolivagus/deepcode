@@ -83,7 +83,7 @@ export function parseTraceDir(argv: string[]): string | undefined {
   const i = argv.indexOf('--trace')
   if (i < 0) return undefined
   const v = argv[i + 1]
-  if (v === undefined || v.startsWith('-')) throw new Error('--trace 需要一个目录路径')
+  if (v === undefined || v.length === 0 || v.startsWith('-')) throw new Error('--trace 需要一个目录路径')
   return v
 }
 

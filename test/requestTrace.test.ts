@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { buildTraceRecord, nextSeq, writeTraceRecord, parseTraceDir, resolveTraceDir, enableTrace, disableTrace, traceEnabled, recordRequest } from '../src/requestTrace.js'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync, chmodSync } from 'node:fs'
+import fs, { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, existsSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -134,6 +134,9 @@ describe('parseTraceDir', () => {
   it('取值是另一个 flag 时报错，不吞掉它', () => {
     expect(() => parseTraceDir(['--trace', '--yolo'])).toThrow(/--trace/)
   })
+  it('空串取值报错（否则会「看起来开了但一个字都录不下来」）', () => {
+    expect(() => parseTraceDir(['--trace', ''])).toThrow(/--trace/)
+  })
 })
 
 describe('resolveTraceDir', () => {
@@ -149,9 +152,18 @@ describe('resolveTraceDir', () => {
 })
 
 describe('sink', () => {
-  it('未开启时 recordRequest 不落盘也不抛出', () => {
+  it('未开启时 recordRequest 不落盘、不碰磁盘、也不抛出', () => {
     expect(traceEnabled()).toBe(false)
-    expect(() => recordRequest({ model: 'm', wireMessages: [], tools: [], params: {} })).not.toThrow()
+    const mkdir = vi.spyOn(fs, 'mkdirSync')
+    const write = vi.spyOn(fs, 'writeFileSync')
+    try {
+      expect(() => recordRequest({ model: 'm', wireMessages: [], tools: [], params: {} })).not.toThrow()
+      expect(mkdir).not.toHaveBeenCalled()
+      expect(write).not.toHaveBeenCalled()
+    } finally {
+      mkdir.mockRestore()
+      write.mockRestore()
+    }
   })
 
   it('开启后逐次落盘，seq 递增', () => {
