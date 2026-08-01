@@ -48,6 +48,11 @@ export function buildTraceRecord(input: {
 
 const FILE_RE = /^req-(\d{4,})\.json$/
 
+/** 诊断功能绝不能让主流程失败：stderr 本身可能不可用（已关闭/EPIPE），写失败就静默吞掉。 */
+function safeWarn(msg: string): void {
+  try { process.stderr.write(msg) } catch { /* stderr 不可用时静默 */ }
+}
+
 /** 扫已有轨迹取下一个编号。目录已存在且非空时续号，避免覆盖上一次跑的轨迹。 */
 export function nextSeq(dir: string): number {
   let names: string[]
@@ -64,20 +69,39 @@ export function nextSeq(dir: string): number {
   return max + 1
 }
 
+/** 目录是否「只属于轨迹」：不存在、为空，或只含 req-*.json。只有这种目录才能安全收紧权限——
+ *  用户拿一个已有目录（如仓库根）当 --trace 参数时，绝不能把它当成我们建的目录去 chmod。 */
+function isTraceOwnedDir(dir: string): boolean {
+  let names: string[]
+  try {
+    names = fs.readdirSync(dir)
+  } catch {
+    return true // 不存在＝即将由本次调用创建，视为我们的目录
+  }
+  return names.every(n => FILE_RE.test(n))
+}
+
 /** 落盘一条记录。任何失败都只警告不抛出——诊断功能绝不能让主流程失败。 */
 export function writeTraceRecord(dir: string, rec: TraceRecord): boolean {
   try {
+    const owned = isTraceOwnedDir(dir) // 须在 mkdirSync 之前判断：那之后目录必然「存在」
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
     const mode = fs.statSync(dir).mode & 0o777
     if (mode & 0o077) {
-      fs.chmodSync(dir, 0o700)
-      process.stderr.write(`⚠ 轨迹目录权限过宽（${mode.toString(8)}），已收紧为 0700：${dir}\n`)
+      if (owned) {
+        fs.chmodSync(dir, 0o700)
+        safeWarn(`⚠ 轨迹目录权限过宽（${mode.toString(8)}），已收紧为 0700：${dir}\n`)
+      } else {
+        // 用户随手指的既有目录（如 --trace .）：只警告，不动它的权限。
+        safeWarn(`⚠ 轨迹目录含其它文件，未改动其权限（当前 ${mode.toString(8)}）：${dir}\n` +
+          '  轨迹含敏感内容，请自行确认该目录不可被他人读取。\n')
+      }
     }
     const file = path.join(dir, `req-${String(rec.seq).padStart(5, '0')}.json`)
     fs.writeFileSync(file, JSON.stringify(rec, null, 2), { mode: 0o600 })
     return true
   } catch (e) {
-    process.stderr.write(`⚠ 请求轨迹落盘失败（已跳过该条）：${(e as Error).message}\n`)
+    safeWarn(`⚠ 请求轨迹落盘失败（已跳过该条）：${(e as Error).message}\n`)
     return false
   }
 }
@@ -102,7 +126,7 @@ export function resolveTraceDir(argv: string[], env: NodeJS.ProcessEnv): string 
 export function enableTrace(dir: string): void {
   traceDir = dir
   seq = nextSeq(dir)
-  process.stderr.write(
+  safeWarn(
     `⚠ 请求轨迹已开启：${dir}\n` +
     '  落盘内容含发给模型的完整上下文（可能包含密钥与私有代码），仅供本地诊断，勿外传。\n',
   )

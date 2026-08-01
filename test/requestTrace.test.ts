@@ -117,6 +117,20 @@ describe('writeTraceRecord', () => {
     expect(statSync(d).mode & 0o777).toBe(0o700)
     expect(warned).toContain('权限过宽')
   })
+
+  it('用户随手指的既有目录（含其它文件）不被 chmod，只警告并照常写入（--trace . 场景）', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-'))
+    writeFileSync(path.join(d, 'README.md'), '# 别人的仓库\n') // 非 req-*.json → 判定「不是我们的目录」
+    chmodSync(d, 0o755)
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    expect(writeTraceRecord(d, rec(1))).toBe(true)
+    const warned = spy.mock.calls.map(c => String(c[0])).join('')
+    spy.mockRestore()
+    expect(statSync(d).mode & 0o777).toBe(0o755) // 权限未被动过
+    expect(warned).toContain('含其它文件')
+    expect(warned).not.toContain('已收紧为 0700')
+    expect(existsSync(path.join(d, 'req-00001.json'))).toBe(true) // 仍照常写入
+  })
 })
 
 afterEach(() => disableTrace())
@@ -194,5 +208,18 @@ describe('sink', () => {
     spy.mockRestore()
     expect(all).toContain(d)
     expect(all).toMatch(/密钥|勿外传/)
+  })
+
+  it('stderr 不可写（如 EPIPE）时 enableTrace 与 recordRequest 都不抛出——诊断功能绝不能拖垮主流程', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-'))
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation(() => { throw new Error('EPIPE') })
+    try {
+      expect(() => enableTrace(d)).not.toThrow()
+      expect(() => recordRequest({ model: 'm', wireMessages: [], tools: [], params: {} })).not.toThrow()
+    } finally {
+      spy.mockRestore()
+    }
+    // 落盘本身不受影响：警告写不出去，但记录照常成功
+    expect(existsSync(path.join(d, 'req-00001.json'))).toBe(true)
   })
 })
