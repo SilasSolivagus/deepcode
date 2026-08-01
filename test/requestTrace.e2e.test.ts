@@ -5,7 +5,7 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chatStream } from '../src/api.js'
-import { enableTrace, disableTrace } from '../src/requestTrace.js'
+import { enableTrace, disableTrace, resolveTraceDir } from '../src/requestTrace.js'
 
 afterEach(() => disableTrace())
 
@@ -60,5 +60,14 @@ describe('chatStream 接入请求侧轨迹', () => {
     }))
     const f = readdirSync(d).filter(n => n.startsWith('req-'))[0]
     expect(JSON.parse(readFileSync(path.join(d, f), 'utf8')).label).toBe('unknown')
+  })
+})
+
+describe('headless 开关接线', () => {
+  it('--trace 优先于 DEEPCODE_TRACE_DIR', () => {
+    expect(resolveTraceDir(['-p', 'x', '--trace', '/tmp/a'], { DEEPCODE_TRACE_DIR: '/tmp/b' } as any)).toBe('/tmp/a')
+  })
+  it('只设环境变量也生效', () => {
+    expect(resolveTraceDir(['-p', 'x'], { DEEPCODE_TRACE_DIR: '/tmp/b' } as any)).toBe('/tmp/b')
   })
 })

@@ -18,6 +18,7 @@ import { makeWebSearchTool, resolveWebSearchConfig } from './tools/webSearchTool
 import { bgTaskListTool, taskOutputTool } from './tools/taskTools.js'
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from './tools/taskListTools.js'
 import { installTaskCleanup } from './tasks.js'
+import { enableTrace } from './requestTrace.js'
 import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
 import { loadOutputStyles, resolveOutputStyle } from './outputStyles.js'
 import { loadLayeredSettings, strippedRulesNotice } from './settingsLayers.js'
@@ -69,8 +70,10 @@ export function buildHeadlessToolset(d: {
 }
 
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
-export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string; home?: string; outputFormat?: 'text' | 'json' | 'stream-json'; write?: (s: string) => void }): Promise<HeadlessResult> {
+export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string; home?: string; outputFormat?: 'text' | 'json' | 'stream-json'; write?: (s: string) => void; traceDir?: string }): Promise<HeadlessResult> {
   installTaskCleanup() // 退出时 kill 仍 running 的后台任务
+  // 轨迹要在任何 chatStream 之前开启，否则前几个请求会漏记。
+  if (opts.traceDir) enableTrace(opts.traceDir)
   const home = opts.home ?? os.homedir() // 测试注入：隔离全局记忆抽屉落盘根目录，避免污染 ~/.deepcode
   const layered = loadLayeredSettings(process.cwd(), opts.flagSettingsPath)
   const settings = layered.settings
