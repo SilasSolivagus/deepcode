@@ -16,6 +16,7 @@ export async function generateRecap(
     tools: [],
     thinking: false,
     signal,
+    traceLabel: 'recap',
   })
   let step
   while (!(step = await gen.next()).done) { /* 丢弃流式增量 */ }

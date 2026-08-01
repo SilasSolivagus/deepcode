@@ -5,6 +5,7 @@ import OpenAI from 'openai'
 import { fetch as undiciFetch, ProxyAgent } from 'undici'
 import { loadSettings } from './config.js'
 import { resolveActiveProvider, activeProvider, activeModelMeta, legacyGlobalKeyApplies, type Dialect } from './providers.js'
+import { recordRequest } from './requestTrace.js'
 
 export interface Usage {
   prompt_tokens: number
@@ -149,6 +150,10 @@ export interface ChatOptions {
   dialect?: Dialect
   supportsThinking?: boolean
   supportsVision?: boolean
+  /** 请求侧轨迹的场景标签（turn/compact/recap/goal/hook）。不传记为 unknown。
+   *  五个调用方发出去的内容差异极大（压缩请求 tools 为空且系统提示词完全不同），
+   *  不打标签这批轨迹基本读不了。 */
+  traceLabel?: string
 }
 
 /** 拼线：带 images 旁挂的 user 消息，视觉模型下就地拼成 OpenAI 内容块（文本块在前、image_url 随后）；
@@ -189,19 +194,25 @@ export async function* chatStream(client: OpenAI, opts: ChatOptions): AsyncGener
   const supportsThinking = opts.supportsThinking ?? activeModelMeta(opts.model).supportsThinking
   const supportsVision = opts.supportsVision ?? (activeModelMeta(opts.model).supportsVision ?? false)
   const wireMessages = toWireMessages(opts.messages, supportsVision)
+  // 真正上线的请求体先拼出来，再同时用于「落轨迹」与「发请求」——
+  // 两者必须是同一个对象，否则轨迹记的就是「我们以为发了什么」而非真正发了什么。
+  const body = {
+    model: opts.model,
+    messages: wireMessages,
+    ...(opts.tools.length ? { tools: opts.tools } : {}),
+    stream: true,
+    stream_options: { include_usage: true },
+    ...buildThinkingParams(supportsThinking, opts.thinking, opts.effortLevel, activeModelMeta(opts.model).thinkingOnly ?? false),
+  }
+  // 落盘在 withRetry 之外：重试发的是同一 payload，逐次记录只产生重复文件；
+  // 且此处记录保证「请求发出前就已落盘」，即便该请求最终失败也留得下证据。
+  {
+    const { model, messages, tools, ...params } = body as any
+    recordRequest({ label: opts.traceLabel, model, wireMessages: messages, tools: tools ?? [], params })
+  }
   // 重试只覆盖"建立流"；分片开始到达后中断则直接抛出
   const stream = await withRetry(() =>
-    client.chat.completions.create(
-      {
-        model: opts.model,
-        messages: wireMessages,
-        ...(opts.tools.length ? { tools: opts.tools } : {}),
-        stream: true,
-        stream_options: { include_usage: true },
-        ...buildThinkingParams(supportsThinking, opts.thinking, opts.effortLevel, activeModelMeta(opts.model).thinkingOnly ?? false),
-      } as any,
-      { signal: opts.signal },
-    ),
+    client.chat.completions.create(body as any, { signal: opts.signal }),
   )
   const asm = new Assembler(dialect)
   for await (const chunk of stream as any) {

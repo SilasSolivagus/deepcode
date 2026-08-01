@@ -44,6 +44,7 @@ export function makeHookRuntime(opts: {
       model: resolveModel(model, opts.getModel),
       messages: [{ role: 'user', content: prompt }],
       tools: [], thinking: false, signal,
+      traceLabel: 'hook',
     })
     let step = await gen.next()
     while (!step.done) step = await gen.next()

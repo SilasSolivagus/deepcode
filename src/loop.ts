@@ -219,6 +219,7 @@ export async function* runLoop(
         thinking: deps.thinking,
         effortLevel: deps.effortLevel,
         signal: deps.ctx.signal,
+        traceLabel: 'turn',
       })
       while (true) {
         const step = await stream.next()

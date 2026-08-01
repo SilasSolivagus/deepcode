@@ -30,6 +30,7 @@ export async function summarize(client: OpenAI, messages: any[], signal: AbortSi
     tools: [],
     thinking: false,
     signal,
+    traceLabel: 'compact',
   })
   let step
   while (!(step = await gen.next()).done) { /* 丢弃流式增量，只要最终结果 */ }

@@ -56,6 +56,7 @@ export async function runGoalJudge(
       tools: [],
       thinking: false,
       signal: ac.signal,
+      traceLabel: 'goal',
     })
     let step
     while (!(step = await gen.next()).done) { /* drain */ }
