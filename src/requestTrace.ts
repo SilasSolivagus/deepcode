@@ -1,16 +1,21 @@
 // 请求侧轨迹：把真正发给模型的东西原样落盘。
 // 设计见 docs/superpowers/specs/2026-08-01-deepcode-request-trace-design.md
 //
-// 捕获点在 chatStream 内：chatStream 是「经它出站的请求」的唯一收口，wire payload 就在
-// 其内部组装，挂钩于此能捕获真正上线的字节。
+// 主捕获点在 chatStream 内：它是五个正常调用方（turn/compact/recap/goal/hook）的共用通道，
+// wire payload 就在其内部组装，挂钩于此能捕获真正上线的字节。
 //
-// 但 chatStream 不是所有出站请求的唯一通道。以下 5 处直接调
-// client.chat.completions.create，绕过本文件、不会被记录：
-// autoMode.ts:99（auto 模式权限分类器，发的正是本功能定义的目标内容——deepcode 自撰系统
-// 提示词 + 兄弟工具输出）、services/memory/signalGate.ts:19、
-// services/memory/indexConsolidate.ts:34、imageDescribe.ts:28、keyValidate.ts:26,63。
-// 这 5 处目前只在 TUI 路径可达，而本功能的开关只接在 headless 系入口——所以当前 headless
-// 下的覆盖是完整的，但这是两处接线恰好错开的巧合，不是构造保证。补齐这 5 处旁路留作后续任务。
+// chatStream 之外另有直连 client.chat.completions.create 的调用点。B-1 交付时它们全部未接，
+// 后续补齐了其中有诊断价值的三处，各自在调用点内联调用 recordRequest：
+//   - autoMode.ts               label: classify      auto 模式权限分类器（deepcode 自撰系统提示词 + 兄弟工具输出，最典型的目标内容）
+//   - services/memory/signalGate.ts       label: memorySignal  记忆信号门控
+//   - services/memory/indexConsolidate.ts label: memoryIndex   记忆索引整合
+//
+// 刻意不记的两处（判断而非遗漏）：
+//   - imageDescribe.ts：发出去的是图片，不是「deepcode 自己说的话」，不属本功能的目标内容
+//   - keyValidate.ts：探活 ping，内容零诊断价值，且带 key 校验语义，落盘反而多一份敏感面
+//
+// 所以准确的说法是：**本功能覆盖「所有有诊断价值的出站请求」，而不是「进程发出的全部请求」。**
+// 每个接入点都须守同一条不变式：请求体只拼一次，同一个对象既落盘又发送。
 
 import fs from 'node:fs'
 import path from 'node:path'
