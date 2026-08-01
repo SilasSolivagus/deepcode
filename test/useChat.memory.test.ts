@@ -6,6 +6,28 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSyn
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
+/** 轮询等待条件成立，而不是猜一个固定时长。
+ *
+ *  为什么需要它：本文件里多处"等 fire-and-forget 的异步链跑到某一步"原本写的是
+ *  `setTimeout(r, 50)`。实测该链在空载时约 9ms、全量并行下可达 40ms、CPU 竞争下
+ *  实测 93ms——抖动近 10 倍，而预算只有 50ms。于是它在全量并行跑下偶发变红、
+ *  隔离跑却必过，长期被当成"已知 flake"。固定时长在等一件时长本就不确定的事，
+ *  机器越忙越容易击穿。
+ *
+ *  `sleep` 参数：调用方在 spy 掉全局 setTimeout 的用例里要传入未被 spy 的真实
+ *  计时器，否则轮询自身会被 mock 拦截。 */
+async function waitFor(
+  cond: () => boolean,
+  description: string,
+  { timeoutMs = 5000, sleep = (ms: number) => new Promise(r => setTimeout(r, ms)) } = {},
+): Promise<void> {
+  const start = Date.now()
+  while (!cond()) {
+    if (Date.now() - start > timeoutMs) throw new Error(`等待超时（${timeoutMs}ms）：${description}`)
+    await sleep(10)
+  }
+}
+
 const script: Array<{ deltas?: any[]; result: any }> = []
 vi.mock('../src/api.js', async orig => ({
   ...(await orig() as any),
@@ -74,7 +96,7 @@ describe('useChat 记忆提取接线', () => {
     await core.send('hi')
 
     // onTurnEnd 是 fire-and-forget，flush 微任务让 Promise 链跑完
-    await new Promise(r => setTimeout(r, 50))
+    await waitFor(() => runSub.mock.calls.length > 0, 'runSubagent 被提取器调用')
 
     expect(runSub).toHaveBeenCalled()
     core.dispose()
@@ -225,7 +247,12 @@ describe('useChat 全局记忆抽屉接线', () => {
 
     const core = createChatCore({ client: {} as any, yolo: true, cwd: '/tmp', sessionDir, home, onState: () => {} })
     await core.send('hi')
-    await new Promise(r => setTimeout(r, 50))
+    // 等的是"session 文件落盘且已写到第二行（meta 之后那条）"，而不是猜一个时长
+    await waitFor(() => {
+      const fs = readdirSync(sessionDir).filter((f: string) => f.endsWith('.jsonl'))
+      if (!fs.length) return false
+      return readFileSync(path.join(sessionDir, fs[0]), 'utf8').split('\n').filter(Boolean).length >= 2
+    }, 'session 文件写到第二条消息')
 
     // 系统提示落到 session 文件第一条消息（meta 之后），从中读回验证
     const sessionFiles = readdirSync(sessionDir).filter((f: string) => f.endsWith('.jsonl'))
@@ -714,7 +741,9 @@ describe('flushMemory：退出前有界 drain 记忆提取（真机冒烟丢记�
     })
 
     await core.send('hi')
-    await new Promise(r => realSetTimeout(r, 50)) // 让 onTurnEnd 触发的 fire-and-forget 提取跑到卡住的 runSubagent 处
+    // 轮询必须用未被 spy 的真实计时器，否则会被上面的 setTimeout mock 拦截
+    await waitFor(() => runSub.mock.calls.length > 0, 'onTurnEnd 触发的提取跑到卡住的 runSubagent 处',
+      { sleep: ms => new Promise(r => realSetTimeout(r, ms)) })
     expect(runSub).toHaveBeenCalled()
 
     const start = Date.now()
@@ -737,7 +766,7 @@ describe('flushMemory：退出前有界 drain 记忆提取（真机冒烟丢记�
     })
 
     await core.send('hi')
-    await new Promise(r => setTimeout(r, 50)) // 让提取跑到卡住的 runSubagent 处
+    await waitFor(() => runSub.mock.calls.length > 0, '提取跑到卡住的 runSubagent 处')
     expect(runSub).toHaveBeenCalled()
 
     let flushed = false
