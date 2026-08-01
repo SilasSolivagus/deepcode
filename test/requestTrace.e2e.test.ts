@@ -5,7 +5,7 @@ import { mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chatStream } from '../src/api.js'
-import { enableTrace, disableTrace, resolveTraceDir } from '../src/requestTrace.js'
+import { enableTrace, disableTrace } from '../src/requestTrace.js'
 
 afterEach(() => disableTrace())
 
@@ -63,11 +63,5 @@ describe('chatStream 接入请求侧轨迹', () => {
   })
 })
 
-describe('headless 开关接线', () => {
-  it('--trace 优先于 DEEPCODE_TRACE_DIR', () => {
-    expect(resolveTraceDir(['-p', 'x', '--trace', '/tmp/a'], { DEEPCODE_TRACE_DIR: '/tmp/b' } as any)).toBe('/tmp/a')
-  })
-  it('只设环境变量也生效', () => {
-    expect(resolveTraceDir(['-p', 'x'], { DEEPCODE_TRACE_DIR: '/tmp/b' } as any)).toBe('/tmp/b')
-  })
-})
+// resolveTraceDir 优先级已在 test/requestTrace.test.ts 覆盖；argv → runHeadless → enableTrace
+// 这段真正的接线在 test/headless.test.ts（它已 mock chatStream，可直接调 runHeadless）。
