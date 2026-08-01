@@ -159,7 +159,7 @@ echo "<任务>" | deepcode                   # 管道喂入走 headless
 
 `--output-format` 三档：`text`（默认）/ `json`（`--json` 是它的别名）/ `stream-json`。stream-json 逐事件打到 stdout，每行可直接 `jq` 解析，适合脚本与 CI 消费；该模式下 stderr 的人读轨迹静默。
 
-`--trace <dir>` 或环境变量 `DEEPCODE_TRACE_DIR=<dir>`，把**发给模型的每一个请求**原样落盘为 `<dir>/req-NNNNN.json`（5 位零填充）。stream-json 给的是模型说了什么；请求侧轨迹给的是我们说了什么——包括系统提示词、被注入的提醒、压缩后的历史、hook 输出这些在输出流里看不见的内容。典型用法是比对相邻两轮，看这一轮多塞了什么：
+`--trace <dir>` 或环境变量 `DEEPCODE_TRACE_DIR=<dir>`，**仅在 `-p` 与管道喂入这两个 headless 入口生效**，把发给模型的每一个请求原样落盘为 `<dir>/req-NNNNN.json`（5 位零填充）。交互式 TUI 与 `--background-run` 后台任务目前不支持（TUI 下给了会在 stderr 提示不生效，不静默吞掉）。stream-json 给的是模型说了什么；请求侧轨迹给的是我们说了什么——包括系统提示词、被注入的提醒、压缩后的历史、hook 输出这些在输出流里看不见的内容。典型用法是比对相邻两轮，看这一轮多塞了什么：
 
 ```bash
 deepcode -p "任务" --trace ./trace --yolo

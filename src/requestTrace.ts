@@ -1,9 +1,16 @@
 // 请求侧轨迹：把真正发给模型的东西原样落盘。
 // 设计见 docs/superpowers/specs/2026-08-01-deepcode-request-trace-design.md
 //
-// 为什么捕获点在 chatStream 内而不是各调用方：chatStream 是所有出站请求的唯一收口，
-// 且 wire payload 就在其内部组装。在此处挂钩 = 捕获真正上线的字节，构造上不可能漏。
-// 「只记已知注入项」的替代方案依赖一张人工清单，而清单漏一类就是新盲区——那正是本项目要治的病。
+// 捕获点在 chatStream 内：chatStream 是「经它出站的请求」的唯一收口，wire payload 就在
+// 其内部组装，挂钩于此能捕获真正上线的字节。
+//
+// 但 chatStream 不是所有出站请求的唯一通道。以下 5 处直接调
+// client.chat.completions.create，绕过本文件、不会被记录：
+// autoMode.ts:99（auto 模式权限分类器，发的正是本功能定义的目标内容——deepcode 自撰系统
+// 提示词 + 兄弟工具输出）、services/memory/signalGate.ts:19、
+// services/memory/indexConsolidate.ts:34、imageDescribe.ts:28、keyValidate.ts:26,63。
+// 这 5 处目前只在 TUI 路径可达，而本功能的开关只接在 headless 系入口——所以当前 headless
+// 下的覆盖是完整的，但这是两处接线恰好错开的巧合，不是构造保证。补齐这 5 处旁路留作后续任务。
 
 import fs from 'node:fs'
 import path from 'node:path'
