@@ -159,6 +159,17 @@ echo "<任务>" | deepcode                   # 管道喂入走 headless
 
 `--output-format` 三档：`text`（默认）/ `json`（`--json` 是它的别名）/ `stream-json`。stream-json 逐事件打到 stdout，每行可直接 `jq` 解析，适合脚本与 CI 消费；该模式下 stderr 的人读轨迹静默。
 
+`--trace <dir>` 或环境变量 `DEEPCODE_TRACE_DIR=<dir>`，**仅在 `-p` 与管道喂入这两个 headless 入口生效**，把经 `chatStream` 发给模型的每一个请求原样落盘为 `<dir>/req-NNNNN.json`（5 位零填充）。交互式 TUI 与 `--background-run` 后台任务目前不支持（TUI 下给了会在 stderr 提示不生效，不静默吞掉）。stream-json 给的是模型说了什么；请求侧轨迹给的是我们说了什么——包括系统提示词、被注入的提醒、压缩后的历史、hook 输出这些在输出流里看不见的内容。典型用法是比对相邻两轮，看这一轮多塞了什么：
+
+```bash
+deepcode -p "任务" --trace ./trace --yolo
+diff ./trace/req-00007.json ./trace/req-00008.json
+```
+
+每条记录带 `label` 区分场景：`turn`（正常轮次）/ `compact`（历史压缩）/ `recap`（会话摘要）/ `goal`（目标提取）/ `hook`。⚠️ **落盘内容包含发给模型的完整上下文，其中会有 agent 读过的全部文件原文，可能含密钥与私有代码。** 目录以 `0700` 创建。这是本地诊断工具，不是日志——不要在共享环境常开，用完请自行删除。
+
+覆盖范围：auto 模式权限分类器、记忆信号门控、记忆索引整合、图片描述、key 校验这 5 处直连模型不经过 `chatStream`，不会被记录——它们目前只在交互式 TUI 路径可达，而 headless 恰好是本功能唯一接线的入口，故 headless 下的覆盖目前是完整的，但这是接线错开的结果，不是构造上的保证。
+
 - `@文件` 引用文件、`!命令` 直跑 shell、`/` 浮出命令菜单
 - 常用命令：`/model`（切模型/provider）、`/think`、`/accept`、`/plan`、`/cost`、`/compact`、`/resume`、`/rewind`、`/memory`、`/permissions`、`/update`、`/init`、`/help`、`/exit`（auto 模式用 Shift+Tab 切）
 - Esc 中断当前轮（可中途转向），Ctrl+C×2 退出

@@ -7,6 +7,7 @@ import { createClient } from './api.js'
 import { hasApiKey } from './config.js'
 import { setFlagSettingsPath } from './settingsLayers.js'
 import { parseOutputFormat } from './streamJson.js'
+import { resolveTraceDir } from './requestTrace.js'
 
 const argv = process.argv
 const yolo = argv.includes('--yolo')
@@ -31,22 +32,27 @@ const modelFlag = modelIdx >= 0 ? argv[modelIdx + 1] : undefined
 const NO_KEY_MSG = '未配置任何模型 API key。请直接运行 `deepcode`（交互式）完成首次配置，或设置环境变量 DEEPSEEK_API_KEY / ZHIPUAI_API_KEY / MOONSHOT_API_KEY。'
 
 try {
+  // 提到分支之外：非法取值（如 --trace 缺值）在任何入口都当场抛错，而不是只在 -p 分支才校验。
+  const traceDir = resolveTraceDir(argv, process.env)
   if (bgRun) {
     if (!resumeFile || !jobShort) throw new Error('--background-run 需 --resume <file> 与 --job <short>')
     const client = createClient(flagSettingsPath)
     const { runBackgroundSession } = await import('./backgroundRunner.js')
     // seed = -p 之后的值（父进程用 -p 传 seed）；无 -p 则续跑未完回合
     const seed = pIdx !== -1 ? argv[pIdx + 1] : undefined
+    // 注：--background-run 子进程当前不支持请求侧轨迹——它由 TUI 的 /background 经
+    // buildBackgroundArgv 拼出 argv 拉起，TUI 本身不接 traceDir（见下方 else 分支），
+    // 故这里从未真正拿到过有效的 traceDir 可透传。见 README「用法 & 命令」的说明。
     await runBackgroundSession({ client, resumeFile, jobShort, seed, yolo, permMode, model: modelFlag, flagSettingsPath })
     process.exit(0)
   } else if (pIdx !== -1) {
     const prompt = argv[pIdx + 1]
-    if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--output-format text|json|stream-json] [--yolo]')
+    if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--output-format text|json|stream-json] [--trace <dir>] [--yolo]')
     if (!hasApiKey()) throw new Error(NO_KEY_MSG)
     const client = createClient(flagSettingsPath)
     const outputFormat = parseOutputFormat(argv)
     const { runHeadless } = await import('./headless.js')
-    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, outputFormat })
+    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, outputFormat, traceDir })
     if (outputFormat === 'json') {
       console.log(JSON.stringify({ text: r.text, status: r.status, turns: r.turns, usage: r.usage, costCNY: r.costCNY }))
     } else if (outputFormat === 'text') {
@@ -63,11 +69,13 @@ try {
     if (!hasApiKey()) throw new Error(NO_KEY_MSG)
     const client = createClient(flagSettingsPath)
     const { runHeadless } = await import('./headless.js')
-    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath })
+    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, traceDir })
     console.log(r.text)
     process.exitCode = r.status === 'done' ? 0 : 1
   } else {
-    // TTY 交互：无 key 先走首跑向导，再创建 client
+    // TTY 交互：TUI 不接请求侧轨迹，给了也不能静默吞掉。
+    if (traceDir) process.stderr.write(`⚠ --trace/DEEPCODE_TRACE_DIR 在交互式 TUI 下不生效（仅 -p 与管道 headless 入口支持）：${traceDir}\n`)
+    // 无 key 先走首跑向导，再创建 client
     if (!hasApiKey()) {
       const { runSetup } = await import('./tui/setup.js')
       await runSetup()

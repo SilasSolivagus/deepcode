@@ -1,6 +1,7 @@
 // test/headless.test.ts
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { readFileSync, existsSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, existsSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 
 const script: Array<{ deltas?: any[]; result: any }> = []
@@ -64,9 +65,11 @@ import { runHeadless } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
 import { runHooks } from '../src/hooks.js'
 import { loadLayeredSettings } from '../src/settingsLayers.js'
+import { traceEnabled, disableTrace } from '../src/requestTrace.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 10 }
 beforeEach(() => { script.length = 0; hookCalls.length = 0; vi.mocked(chatStream).mockClear() })
+afterEach(() => disableTrace())
 
 describe('runHeadless', () => {
   it('跑完单 prompt 返回最终文本与累计 usage/cost/轮数', async () => {
@@ -86,6 +89,14 @@ describe('runHeadless', () => {
     expect(r.costCNY).toBeGreaterThan(0)
     expect(r.turns).toBe(2)
     expect(r.status).toBe('done')
+  })
+
+  it('给了 traceDir 时接线到请求侧轨迹（覆盖 argv → runHeadless → enableTrace 这段接缝，C1 的 bug 长在这里）', async () => {
+    script.push({ result: { content: '好', toolCalls: [], usage, finishReason: 'stop' } })
+    const d = mkdtempSync(path.join(tmpdir(), 'dc-trace-headless-'))
+    expect(traceEnabled()).toBe(false)
+    await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true, traceDir: d })
+    expect(traceEnabled()).toBe(true)
   })
 
   it('非 yolo 时权限询问自动拒绝（headless 无人值守）', async () => {
