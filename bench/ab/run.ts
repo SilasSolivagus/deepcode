@@ -15,9 +15,15 @@ const AB_DIR = path.dirname(fileURLToPath(import.meta.url))
 const DEEPCODE_ENTRY = path.join(AB_DIR, '..', '..', 'src', 'index.ts')
 const TSX = path.join(AB_DIR, '..', '..', 'node_modules', '.bin', 'tsx')
 
+/** 取 `--name <值>`。传了参数名却没给值就抛错——「漏打取值」与「压根没传」必须分开：
+ *  前者静默回落到默认值会让人以为自己设了 `--concurrency 1`、实际按 3 并发烧钱。
+ *  取值以 `-` 开头同样报错，免得把后一个参数名当成取值吞掉（`--out --concurrency 3`）。 */
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name)
-  return i >= 0 ? process.argv[i + 1] : undefined
+  if (i < 0) return undefined
+  const v = process.argv[i + 1]
+  if (v === undefined || v.length === 0 || v.startsWith('-')) throw new Error(`${name} 需要一个取值`)
+  return v
 }
 
 /** 正整数命令行参数。写错（非数字、0、负数、小数）就直接抛错退出，不静默降级——
