@@ -35,30 +35,30 @@ describe('fisherOneTailed', () => {
   })
 
   it('负数入参应抛错', () => {
-    expect(() => fisherOneTailed(-1, 2, 3, 4)).toThrow(/parameter 'a' must be a non-negative integer/)
-    expect(() => fisherOneTailed(1, -1, 3, 4)).toThrow(/parameter 'b' must be a non-negative integer/)
-    expect(() => fisherOneTailed(1, 2, -1, 4)).toThrow(/parameter 'c' must be a non-negative integer/)
-    expect(() => fisherOneTailed(1, 2, 3, -1)).toThrow(/parameter 'd' must be a non-negative integer/)
+    expect(() => fisherOneTailed(-1, 2, 3, 4)).toThrow(/参数 a 必须是非负整数/)
+    expect(() => fisherOneTailed(1, -1, 3, 4)).toThrow(/参数 b 必须是非负整数/)
+    expect(() => fisherOneTailed(1, 2, -1, 4)).toThrow(/参数 c 必须是非负整数/)
+    expect(() => fisherOneTailed(1, 2, 3, -1)).toThrow(/参数 d 必须是非负整数/)
   })
 
   it('小数入参应抛错', () => {
-    expect(() => fisherOneTailed(2.5, 2, 3, 4)).toThrow(/parameter 'a' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, 2.5, 3, 4)).toThrow(/parameter 'b' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, 2, 3.5, 4)).toThrow(/parameter 'c' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, 2, 3, 4.5)).toThrow(/parameter 'd' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2.5, 2, 3, 4)).toThrow(/参数 a 必须是非负整数/)
+    expect(() => fisherOneTailed(2, 2.5, 3, 4)).toThrow(/参数 b 必须是非负整数/)
+    expect(() => fisherOneTailed(2, 2, 3.5, 4)).toThrow(/参数 c 必须是非负整数/)
+    expect(() => fisherOneTailed(2, 2, 3, 4.5)).toThrow(/参数 d 必须是非负整数/)
   })
 
   it('NaN 入参应抛错', () => {
-    expect(() => fisherOneTailed(NaN, 2, 3, 4)).toThrow(/parameter 'a' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, NaN, 3, 4)).toThrow(/parameter 'b' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, 3, NaN, 4)).toThrow(/parameter 'c' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, 3, 4, NaN)).toThrow(/parameter 'd' must be a non-negative integer/)
+    expect(() => fisherOneTailed(NaN, 2, 3, 4)).toThrow(/参数 a 必须是非负整数/)
+    expect(() => fisherOneTailed(2, NaN, 3, 4)).toThrow(/参数 b 必须是非负整数/)
+    expect(() => fisherOneTailed(2, 3, NaN, 4)).toThrow(/参数 c 必须是非负整数/)
+    expect(() => fisherOneTailed(2, 3, 4, NaN)).toThrow(/参数 d 必须是非负整数/)
   })
 
   it('Infinity 入参应抛错', () => {
-    expect(() => fisherOneTailed(Infinity, 2, 3, 4)).toThrow(/parameter 'a' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, Infinity, 3, 4)).toThrow(/parameter 'b' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, 3, Infinity, 4)).toThrow(/parameter 'c' must be a non-negative integer/)
-    expect(() => fisherOneTailed(2, 3, 4, Infinity)).toThrow(/parameter 'd' must be a non-negative integer/)
+    expect(() => fisherOneTailed(Infinity, 2, 3, 4)).toThrow(/参数 a 必须是非负整数/)
+    expect(() => fisherOneTailed(2, Infinity, 3, 4)).toThrow(/参数 b 必须是非负整数/)
+    expect(() => fisherOneTailed(2, 3, Infinity, 4)).toThrow(/参数 c 必须是非负整数/)
+    expect(() => fisherOneTailed(2, 3, 4, Infinity)).toThrow(/参数 d 必须是非负整数/)
   })
 })

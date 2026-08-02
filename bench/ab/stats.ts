@@ -27,7 +27,7 @@ export function fisherOneTailed(a: number, b: number, c: number, d: number): num
   // 入参校验：四个参数都必须是非负整数
   for (const [name, val] of [['a', a], ['b', b], ['c', c], ['d', d]] as const) {
     if (!Number.isInteger(val) || val < 0) {
-      throw new Error(`fisherOneTailed: parameter '${name}' must be a non-negative integer, got ${val}`)
+      throw new Error(`fisherOneTailed: 参数 ${name} 必须是非负整数，收到：${JSON.stringify(val)}`)
     }
   }
 
