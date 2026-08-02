@@ -52,10 +52,24 @@ export function parseDeclaration(yamlText: string): Declaration {
     seen.add(o.id)
     if (!o.predicate) throw new Error(`observation ${o.id} 缺 predicate`)
     if (typeof o.expect !== 'boolean') throw new Error(`observation ${o.id} 的 expect 必须是布尔`)
+    // args 必须是普通对象——不能是字符串、null、数组、或缺失。
+    // 若 args 是字符串，下游判定器访问 args.pattern 会得到 undefined，
+    // 导致 String(undefined) 生成 "undefined" 正则，悄悄错掉整条观察。
+    if (o.args === undefined || o.args === null || typeof o.args !== 'object' || Array.isArray(o.args)) {
+      throw new Error(`observation ${o.id} 的 args 必须是对象，收到：${JSON.stringify(o.args)}`)
+    }
   }
 
-  if (!raw.task?.taskbook || !raw.task?.frozen || !raw.task?.harness) {
-    throw new Error('task 必须含 taskbook / frozen / harness 三个路径')
+  // task 三个字段各自必须是非空字符串。falsy 检查会放行布尔/数字，导致错误
+  // 直到下游 fs 调用才被发现。
+  if (typeof raw.task?.taskbook !== 'string' || raw.task.taskbook === '') {
+    throw new Error(`task.taskbook 必须是非空字符串，收到：${JSON.stringify(raw.task?.taskbook)}`)
+  }
+  if (typeof raw.task?.frozen !== 'string' || raw.task.frozen === '') {
+    throw new Error(`task.frozen 必须是非空字符串，收到：${JSON.stringify(raw.task?.frozen)}`)
+  }
+  if (typeof raw.task?.harness !== 'string' || raw.task.harness === '') {
+    throw new Error(`task.harness 必须是非空字符串，收到：${JSON.stringify(raw.task?.harness)}`)
   }
 
   return raw as Declaration

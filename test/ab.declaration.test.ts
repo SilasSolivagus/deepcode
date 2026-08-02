@@ -64,6 +64,36 @@ describe('parseDeclaration', () => {
   it('YAML 语法错 → 报错', () => {
     expect(() => parseDeclaration('id: [unclosed')).toThrow()
   })
+
+  it('观察项 args 是字符串 → 报错（args 必须是对象，点记号才能存取字段）', () => {
+    expect(() => parseDeclaration(VALID.replace('args: { pattern: \'x\' }', 'args: \'x\'')))
+      .toThrow(/o1.*args/)
+  })
+
+  it('观察项 args 是 null → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('args: { pattern: \'x\' }', 'args: null')))
+      .toThrow(/o1.*args/)
+  })
+
+  it('观察项 args 缺失 → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('    args: { pattern: \'x\' }\n', '')))
+      .toThrow(/o1.*args/)
+  })
+
+  it('观察项 args 是数组 → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('args: { pattern: \'x\' }', 'args: [\'x\']')))
+      .toThrow(/o1.*args/)
+  })
+
+  it('task.taskbook 是数字 → 报错（必须是非空字符串）', () => {
+    expect(() => parseDeclaration(VALID.replace('taskbook: ./TASKBOOK.md', 'taskbook: 123')))
+      .toThrow(/taskbook/)
+  })
+
+  it('task.frozen 是空字符串 → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('frozen: ./FROZEN.txt', 'frozen: ""')))
+      .toThrow(/frozen/)
+  })
 })
 
 describe('declarationHash', () => {
