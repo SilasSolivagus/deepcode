@@ -5,6 +5,7 @@
 // 那等于允许「跑完再想一个新判定」，而那正是本项目要防的事。
 import { createHash } from 'node:crypto'
 import { parse as parseYaml } from 'yaml'
+import { PREDICATES } from './predicates.js'
 
 export interface Observation {
   id: string
@@ -19,6 +20,10 @@ export interface Declaration {
   desc: string
   /** 臂名 → DEEPCODE_FLAGS 的取值。两臂跑同一份代码，唯一差异就是这个。 */
   arms: Record<string, Record<string, boolean>>
+  /** 哪个臂是「实验臂」——p 值检验的方向。必须写死在声明里、跑前定死，不能等看完
+   *  数据再选：看完数据再挑检验方向会让假阳性率翻倍，而防止这种自我欺骗正是本项目
+   *  存在的理由。 */
+  treatmentArm: string
   k: number
   task: { taskbook: string; frozen: string; harness: string }
   observations: Observation[]
@@ -48,6 +53,15 @@ export function parseDeclaration(yamlText: string): Declaration {
     }
   }
 
+  // treatmentArm 决定 p 值检验的方向，必须跑前写死在声明里——不许按数据自动定方向
+  // （那是统计学上错误的：看完数据再选方向会让假阳性率翻倍）。
+  if (typeof raw.treatmentArm !== 'string' || raw.treatmentArm === '') {
+    throw new Error(`treatmentArm 必须是非空字符串，收到：${JSON.stringify(raw.treatmentArm)}`)
+  }
+  if (!Object.prototype.hasOwnProperty.call(arms, raw.treatmentArm)) {
+    throw new Error(`treatmentArm「${raw.treatmentArm}」不是 arms 里的臂——可选：${Object.keys(arms).join(', ')}`)
+  }
+
   if (!Number.isInteger(raw.k) || raw.k <= 0) throw new Error(`k 必须是正整数，收到：${JSON.stringify(raw.k)}`)
 
   const obs = raw.observations
@@ -58,6 +72,14 @@ export function parseDeclaration(yamlText: string): Declaration {
     if (seen.has(o.id)) throw new Error(`observation id 重复：${o.id}`)
     seen.add(o.id)
     if (!o.predicate) throw new Error(`observation ${o.id} 缺 predicate`)
+    // 判定器名必须在注册表里——名字拼错（如 bashCommandsNoneMatchs）不该等真跑完
+    // 10 次才在报告里现出一行不指名的「有 N 条观察求值为 null」。
+    if (!(o.predicate in PREDICATES)) {
+      throw new Error(
+        `observation ${o.id} 的 predicate「${o.predicate}」不在判定器注册表里——` +
+        `可选：${Object.keys(PREDICATES).join(', ')}`,
+      )
+    }
     if (typeof o.expect !== 'boolean') throw new Error(`observation ${o.id} 的 expect 必须是布尔`)
     // args 必须是普通对象——不能是字符串、null、数组、或缺失。
     // 若 args 是字符串，下游判定器访问 args.pattern 会得到 undefined，

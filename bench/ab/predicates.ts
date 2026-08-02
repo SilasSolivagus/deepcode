@@ -32,7 +32,7 @@ export const PREDICATES: Record<string, Predicate> = {
 
   numericFromBashAtLeast: (a, args) => {
     const min = Number(args.min)
-    if (!Number.isFinite(min)) throw new Error(`numericFromBashAtLeast: min must be a finite number, got ${args.min}`)
+    if (!Number.isFinite(min)) throw new Error(`numericFromBashAtLeast: min 必须是有限数字，收到：${JSON.stringify(args.min)}`)
 
     const pattern = String(args.pattern)
     let max = -Infinity
@@ -56,7 +56,7 @@ export const PREDICATES: Record<string, Predicate> = {
     const relPath = String(args.relPath)
     // 绝对路径或路径逃逸会被检查和拒绝
     if (path.isAbsolute(relPath)) {
-      throw new Error(`fileExists: absolute path not allowed, relPath "${relPath}" is absolute`)
+      throw new Error(`fileExists: 不允许绝对路径，relPath "${relPath}" 是绝对路径`)
     }
     const joinedPath = path.join(a.outputDir, relPath)
     const resolved = path.resolve(joinedPath)
@@ -64,7 +64,7 @@ export const PREDICATES: Record<string, Predicate> = {
 
     // 确保解析后的路径确实落在 outputDir 之内（使用尾部分隔符边界检查）。
     if (!resolved.startsWith(outputDirResolved + path.sep) && resolved !== outputDirResolved) {
-      throw new Error(`fileExists: path traversal detected, relPath "${relPath}" escapes outputDir`)
+      throw new Error(`fileExists: 检测到路径逃逸，relPath "${relPath}" 逃出了 outputDir`)
     }
 
     return fs.existsSync(resolved)

@@ -7,6 +7,7 @@ desc: 测试用
 arms:
   baseline: {}
   treatment: { verifyMethod: true }
+treatmentArm: treatment
 k: 5
 task:
   taskbook: ./TASKBOOK.md
@@ -101,6 +102,31 @@ describe('parseDeclaration', () => {
   it('task.frozen 是空字符串 → 报错', () => {
     expect(() => parseDeclaration(VALID.replace('frozen: ./FROZEN.txt', 'frozen: ""')))
       .toThrow(/frozen/)
+  })
+
+  it('缺 treatmentArm → 报错（方向不能等看完数据再选，必须跑前写死）', () => {
+    expect(() => parseDeclaration(VALID.replace('treatmentArm: treatment\n', '')))
+      .toThrow(/treatmentArm/)
+  })
+
+  it('treatmentArm 指向不存在的臂名 → 报错，且信息列出可选臂名', () => {
+    expect(() => parseDeclaration(VALID.replace('treatmentArm: treatment', 'treatmentArm: nope')))
+      .toThrow(/treatmentArm.*nope.*baseline.*treatment/s)
+  })
+
+  it('treatmentArm 指向合法臂名 → 通过', () => {
+    const d = parseDeclaration(VALID)
+    expect(d.treatmentArm).toBe('treatment')
+  })
+
+  it('predicate 名不在注册表里 → 报错，信息带 observation id、错误名字、可选判定器名单', () => {
+    expect(() => parseDeclaration(VALID.replace('bashCommandsNoneMatch', 'bashCommandsNoneMatchs')))
+      .toThrow(/o1.*bashCommandsNoneMatchs.*bashCommandsAnyMatch/s)
+  })
+
+  it('predicate 名在注册表里 → 通过', () => {
+    const d = parseDeclaration(VALID)
+    expect(d.observations[0].predicate).toBe('bashCommandsNoneMatch')
   })
 })
 

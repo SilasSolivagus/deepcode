@@ -6,6 +6,8 @@ arms:
   baseline:  {}
   treatment: { verifyMethod: true }
 
+treatmentArm: treatment
+
 k: 5
 
 task:
