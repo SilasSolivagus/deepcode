@@ -61,7 +61,7 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
   }
 })
 
-import { runHeadless } from '../src/headless.js'
+import { runHeadless, WRAP_UP_PROMPT } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
 import { runHooks } from '../src/hooks.js'
 import { loadLayeredSettings } from '../src/settingsLayers.js'
@@ -293,7 +293,12 @@ import { checkPermission } from '../src/permissions.js'
 import { buildDenySourceMap, resolveDenyList } from '../src/deny.js'
 
 describe('headless thinking / headlessMaxTurns 开关真的接线（不只测 settings 解析，断言 runLoop 实际收到的值）', () => {
-  afterEach(() => { delete (mockSettings as any).headlessThinking; delete (mockSettings as any).headlessMaxTurns })
+  afterEach(() => {
+    delete (mockSettings as any).headlessThinking
+    delete (mockSettings as any).headlessMaxTurns
+    // 用例中途失败时用例自己末尾的 delete 不会执行，这里兜底防止泄漏到同文件其它用例。
+    delete process.env.DEEPCODE_FLAGS
+  })
 
   it('headlessThinking:true → chatStream 收到的 opts.thinking === true', async () => {
     ;(mockSettings as any).headlessThinking = true
@@ -312,6 +317,66 @@ describe('headless thinking / headlessMaxTurns 开关真的接线（不只测 se
     const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
     expect(r.status).toBe('max_turns')
     expect(vi.mocked(chatStream).mock.calls.length).toBe(2)
+  })
+
+  it('--max-turns 覆盖 settings.headlessMaxTurns（flag 优先）', async () => {
+    ;(mockSettings as any).headlessMaxTurns = 2
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'a', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'b', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'c', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true, maxTurns: 3 })
+    expect(r.status).toBe('max_turns')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(3) // 收尾轮默认关，故无第 4 次
+  })
+
+  it('wrapUpOnMaxTurns 默认关：撞上限后不补收尾轮', async () => {
+    delete process.env.DEEPCODE_FLAGS
+    ;(mockSettings as any).headlessMaxTurns = 1
+    script.push({ result: { content: '', toolCalls: [{ id: 'x', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } })
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
+    expect(r.status).toBe('max_turns')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(1)
+  })
+
+  it('wrapUpOnMaxTurns 开启：撞上限后补恰好一轮，注入 WRAP_UP_PROMPT', async () => {
+    process.env.DEEPCODE_FLAGS = '{"wrapUpOnMaxTurns":true}'
+    ;(mockSettings as any).headlessMaxTurns = 1
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'x', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '已落地', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
+    expect(r.status).toBe('max_turns') // 确实撞了上限，退出码口径不因补一轮而变
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(2)
+    const [, second] = vi.mocked(chatStream).mock.calls
+    const msgs = (second[1] as any).messages as { role: string; content: unknown }[]
+    expect(String(msgs.filter(m => m.role === 'user').pop()?.content)).toBe(WRAP_UP_PROMPT)
+    delete process.env.DEEPCODE_FLAGS
+  })
+
+  it('wrapUpOnMaxTurns 开启时收尾轮也只补一次：它自己再撞上限不会二次触发', async () => {
+    process.env.DEEPCODE_FLAGS = '{"wrapUpOnMaxTurns":true}'
+    ;(mockSettings as any).headlessMaxTurns = 1
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'x', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'y', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
+    expect(r.status).toBe('max_turns')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(2)
+    delete process.env.DEEPCODE_FLAGS
+  })
+
+  it('未撞上限（自然收敛）时不触发收尾轮，即便 flag 开着', async () => {
+    process.env.DEEPCODE_FLAGS = '{"wrapUpOnMaxTurns":true}'
+    ;(mockSettings as any).headlessMaxTurns = 5
+    script.push({ result: { content: '做完了', toolCalls: [], usage, finishReason: 'stop' } })
+    const r = await runHeadless({ client: {} as any, prompt: '一句话任务', yolo: true })
+    expect(r.status).toBe('done')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(1)
+    delete process.env.DEEPCODE_FLAGS
   })
 })
 

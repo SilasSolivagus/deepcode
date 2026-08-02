@@ -6,7 +6,7 @@
 import { createClient } from './api.js'
 import { hasApiKey } from './config.js'
 import { setFlagSettingsPath } from './settingsLayers.js'
-import { parseOutputFormat } from './streamJson.js'
+import { parseOutputFormat, parseMaxTurns } from './streamJson.js'
 import { resolveTraceDir } from './requestTrace.js'
 
 const argv = process.argv
@@ -47,12 +47,13 @@ try {
     process.exit(0)
   } else if (pIdx !== -1) {
     const prompt = argv[pIdx + 1]
-    if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--output-format text|json|stream-json] [--trace <dir>] [--yolo]')
+    if (!prompt || prompt.startsWith('-')) throw new Error('用法：deepcode -p "<任务>" [--output-format text|json|stream-json] [--trace <dir>] [--max-turns <n>] [--yolo]')
     if (!hasApiKey()) throw new Error(NO_KEY_MSG)
     const client = createClient(flagSettingsPath)
     const outputFormat = parseOutputFormat(argv)
+    const maxTurns = parseMaxTurns(argv)
     const { runHeadless } = await import('./headless.js')
-    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, outputFormat, traceDir })
+    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, outputFormat, traceDir, maxTurns })
     if (outputFormat === 'json') {
       console.log(JSON.stringify({ text: r.text, status: r.status, turns: r.turns, usage: r.usage, costCNY: r.costCNY }))
     } else if (outputFormat === 'text') {
