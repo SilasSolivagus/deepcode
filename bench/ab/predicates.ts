@@ -31,12 +31,19 @@ export const PREDICATES: Record<string, Predicate> = {
   },
 
   numericFromBashAtLeast: (a, args) => {
-    const re = new RegExp(String(args.pattern))
     const min = Number(args.min)
+    if (!Number.isFinite(min)) throw new Error(`numericFromBashAtLeast: min must be a finite number, got ${args.min}`)
+
+    const pattern = String(args.pattern)
     let max = -Infinity
     for (const c of a.bashCommands) {
-      const m = re.exec(c)
-      if (m && m[1] !== undefined) max = Math.max(max, Number(m[1]))
+      // 创建新的 RegExp 且带 g 标志，以便在同一条命令内遍历全部匹配。
+      // 每条命令重新创建正则（而非复用带 lastIndex 的实例），避免状态污染。
+      const re = new RegExp(pattern, 'g')
+      let m
+      while ((m = re.exec(c)) !== null) {
+        if (m[1] !== undefined) max = Math.max(max, Number(m[1]))
+      }
     }
     // 一处都没抽到时 max 仍是 -Infinity → false。刻意不返回 true：
     // 「没做这件事」不该被算成「达标」。
@@ -45,7 +52,23 @@ export const PREDICATES: Record<string, Predicate> = {
 
   statusIs: (a, args) => a.status === String(args.status),
 
-  fileExists: (a, args) => fs.existsSync(path.join(a.outputDir, String(args.relPath))),
+  fileExists: (a, args) => {
+    const relPath = String(args.relPath)
+    // 绝对路径或路径逃逸会被检查和拒绝
+    if (path.isAbsolute(relPath)) {
+      throw new Error(`fileExists: absolute path not allowed, relPath "${relPath}" is absolute`)
+    }
+    const joinedPath = path.join(a.outputDir, relPath)
+    const resolved = path.resolve(joinedPath)
+    const outputDirResolved = path.resolve(a.outputDir)
+
+    // 确保解析后的路径确实落在 outputDir 之内（使用尾部分隔符边界检查）。
+    if (!resolved.startsWith(outputDirResolved + path.sep) && resolved !== outputDirResolved) {
+      throw new Error(`fileExists: path traversal detected, relPath "${relPath}" escapes outputDir`)
+    }
+
+    return fs.existsSync(resolved)
+  },
 }
 
 /** 求值一条观察。判定器不存在或抛异常时返回 null——报告里单列，不计入统计分母。

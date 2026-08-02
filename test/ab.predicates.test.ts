@@ -43,6 +43,18 @@ describe('numericFromBashAtLeast', () => {
   it('一处都没抽到 → false（不是 true）', () => {
     expect(PREDICATES.numericFromBashAtLeast(base(), { pattern: '(\\d+)MB', min: 1 })).toBe(false)
   })
+  it('同一条命令内有多处匹配时取最大者', () => {
+    const a = base({ bashCommands: ['node gen.js --old-size 100 * 1024 * 1024 --new-size 2048 * 1024 * 1024'] })
+    expect(PREDICATES.numericFromBashAtLeast(a, { pattern: '(\\d+)\\s*\\*\\s*1024\\s*\\*\\s*1024', min: 1024 })).toBe(true)
+  })
+  it('min 缺失时返回 null（通过 evalObservation 降级）', () => {
+    const a = base({ bashCommands: ['gen 2048 * 1024 * 1024'] })
+    expect(evalObservation(a, 'numericFromBashAtLeast', { pattern: '(\\d+)\\s*\\*\\s*1024\\s*\\*\\s*1024' })).toBeNull()
+  })
+  it('min 是非数字字符串时返回 null（通过 evalObservation 降级）', () => {
+    const a = base({ bashCommands: ['gen 2048 * 1024 * 1024'] })
+    expect(evalObservation(a, 'numericFromBashAtLeast', { pattern: '(\\d+)\\s*\\*\\s*1024\\s*\\*\\s*1024', min: 'not-a-number' })).toBeNull()
+  })
 })
 
 describe('statusIs / fileExists', () => {
@@ -55,6 +67,22 @@ describe('statusIs / fileExists', () => {
     writeFileSync(path.join(d, 'a.txt'), 'x')
     expect(PREDICATES.fileExists(base({ outputDir: d }), { relPath: 'a.txt' })).toBe(true)
     expect(PREDICATES.fileExists(base({ outputDir: d }), { relPath: 'nope.txt' })).toBe(false)
+  })
+  it('fileExists 含 ../ 的路径逃逸被阻止，返回 null（通过 evalObservation）', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'ab-pred-'))
+    expect(evalObservation(base({ outputDir: d }), 'fileExists', { relPath: '../../etc/passwd' })).toBeNull()
+  })
+  it('fileExists 绝对路径逃逸被阻止，返回 null（通过 evalObservation）', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'ab-pred-'))
+    expect(evalObservation(base({ outputDir: d }), 'fileExists', { relPath: '/etc/passwd' })).toBeNull()
+  })
+  it('fileExists 子目录中的正常相对路径仍然工作', () => {
+    const d = mkdtempSync(path.join(tmpdir(), 'ab-pred-'))
+    const subdir = path.join(d, 'subdir')
+    const fs = require('node:fs')
+    fs.mkdirSync(subdir, { recursive: true })
+    writeFileSync(path.join(subdir, 'file.txt'), 'x')
+    expect(PREDICATES.fileExists(base({ outputDir: d }), { relPath: 'subdir/file.txt' })).toBe(true)
   })
 })
 
