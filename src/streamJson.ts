@@ -50,3 +50,14 @@ export function parseOutputFormat(argv: string[]): 'text' | 'json' | 'stream-jso
   }
   return argv.includes('--json') ? 'json' : 'text'
 }
+
+/** 解析 `--max-turns <n>`：正整数，覆盖 settings.headlessMaxTurns；未传返回 undefined。
+ *  非法值一律抛错而非静默回落——步数预算写错了却按默认 80 跑完，事后无从分辨。 */
+export function parseMaxTurns(argv: string[]): number | undefined {
+  const i = argv.indexOf('--max-turns')
+  if (i < 0) return undefined
+  const v = argv[i + 1]
+  if (v === undefined || v.length === 0 || v.startsWith('-')) throw new Error('--max-turns 需要一个正整数取值')
+  if (!/^\d+$/.test(v) || Number(v) <= 0) throw new Error(`--max-turns 只接受正整数，收到：${v}`)
+  return Number(v)
+}

@@ -1,0 +1,37 @@
+# bench/ab/experiments/verify-method.yaml
+id: verify-method-2026-08
+desc: prompt 三条验证方法纪律对「验证姿势」的影响
+
+arms:
+  baseline:  {}
+  treatment: { verifyMethod: true }
+
+treatmentArm: treatment
+
+k: 5
+
+task:
+  taskbook: /Users/silas/loop/eval-6/TASKBOOK.md
+  frozen:   /Users/silas/loop/eval-6/FROZEN.txt
+  harness:  /Users/silas/loop/eval-6/harness
+
+observations:
+  - id: no-pipe-swallow
+    desc: 验证命令没有用管道吞掉退出码与错误输出
+    predicate: bashCommandsNoneMatch
+    args: { pattern: '2>&1\s*\|\s*(tail|head|grep)' }
+    expect: true
+
+  - id: covers-file-path
+    desc: 验证覆盖了「真实文件路径」这一输入形态
+    predicate: bashCommandsAnyMatch
+    args: { pattern: 'dist/cli\.js\s+\S+\s+[^|<]*\.(jsonl|log)' }
+    expect: true
+
+  - id: perf-at-scale
+    desc: 性能验证用的数据量级达到需求写明的 1GB
+    # 正则抽的是 `N * 1024 * 1024` 里的 N（MB 数），min: 1024 即要求 ≥1GB。
+    # 抽的是捕获组数字而非换算后的字节数——两者差 1024² 倍，写错就成了永远为真的观察。
+    predicate: numericFromBashAtLeast
+    args: { pattern: '(\d+)\s*\*\s*1024\s*\*\s*1024', min: 1024 }
+    expect: true

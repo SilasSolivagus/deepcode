@@ -4,12 +4,14 @@ import { readFileSync, existsSync, writeFileSync, rmSync, mkdtempSync } from 'no
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-const script: Array<{ deltas?: any[]; result: any }> = []
+// throw：模拟一次上下文超窗错误（供超长重试路径的回归用例复用，写法同 test/headless.overflow.test.ts）。
+const script: Array<{ deltas?: any[]; result?: any; throw?: Error }> = []
 vi.mock('../src/api.js', () => ({
   chatStream: vi.fn(() =>
     (async function* () {
       const scene = script.shift()
       if (!scene) throw new Error('script exhausted')
+      if (scene.throw) throw scene.throw
       for (const d of scene.deltas ?? []) yield typeof d === 'string' ? { type: 'text', delta: d } : d
       return scene.result
     })(),
@@ -61,7 +63,7 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
   }
 })
 
-import { runHeadless } from '../src/headless.js'
+import { runHeadless, WRAP_UP_PROMPT } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
 import { runHooks } from '../src/hooks.js'
 import { loadLayeredSettings } from '../src/settingsLayers.js'
@@ -293,7 +295,12 @@ import { checkPermission } from '../src/permissions.js'
 import { buildDenySourceMap, resolveDenyList } from '../src/deny.js'
 
 describe('headless thinking / headlessMaxTurns 开关真的接线（不只测 settings 解析，断言 runLoop 实际收到的值）', () => {
-  afterEach(() => { delete (mockSettings as any).headlessThinking; delete (mockSettings as any).headlessMaxTurns })
+  afterEach(() => {
+    delete (mockSettings as any).headlessThinking
+    delete (mockSettings as any).headlessMaxTurns
+    // 用例中途失败时用例自己末尾的 delete 不会执行，这里兜底防止泄漏到同文件其它用例。
+    delete process.env.DEEPCODE_FLAGS
+  })
 
   it('headlessThinking:true → chatStream 收到的 opts.thinking === true', async () => {
     ;(mockSettings as any).headlessThinking = true
@@ -312,6 +319,92 @@ describe('headless thinking / headlessMaxTurns 开关真的接线（不只测 se
     const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
     expect(r.status).toBe('max_turns')
     expect(vi.mocked(chatStream).mock.calls.length).toBe(2)
+  })
+
+  it('--max-turns 覆盖 settings.headlessMaxTurns（flag 优先）', async () => {
+    ;(mockSettings as any).headlessMaxTurns = 2
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'a', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'b', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'c', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true, maxTurns: 3 })
+    expect(r.status).toBe('max_turns')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(3) // 收尾轮默认关，故无第 4 次
+  })
+
+  it('wrapUpOnMaxTurns 默认关：撞上限后不补收尾轮', async () => {
+    delete process.env.DEEPCODE_FLAGS
+    ;(mockSettings as any).headlessMaxTurns = 1
+    script.push({ result: { content: '', toolCalls: [{ id: 'x', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } })
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
+    expect(r.status).toBe('max_turns')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(1)
+  })
+
+  it('wrapUpOnMaxTurns 开启：撞上限后补恰好一轮，注入 WRAP_UP_PROMPT', async () => {
+    process.env.DEEPCODE_FLAGS = '{"wrapUpOnMaxTurns":true}'
+    ;(mockSettings as any).headlessMaxTurns = 1
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'x', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '已落地', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
+    expect(r.status).toBe('max_turns') // 确实撞了上限，退出码口径不因补一轮而变
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(2)
+    const [, second] = vi.mocked(chatStream).mock.calls
+    const msgs = (second[1] as any).messages as { role: string; content: unknown }[]
+    expect(String(msgs.filter(m => m.role === 'user').pop()?.content)).toBe(WRAP_UP_PROMPT)
+    delete process.env.DEEPCODE_FLAGS
+  })
+
+  it('wrapUpOnMaxTurns 开启时收尾轮也只补一次：它自己再撞上限不会二次触发', async () => {
+    process.env.DEEPCODE_FLAGS = '{"wrapUpOnMaxTurns":true}'
+    ;(mockSettings as any).headlessMaxTurns = 1
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'x', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'y', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '一直调用工具', yolo: true })
+    expect(r.status).toBe('max_turns')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(2)
+    delete process.env.DEEPCODE_FLAGS
+  })
+
+  it('未撞上限（自然收敛）时不触发收尾轮，即便 flag 开着', async () => {
+    process.env.DEEPCODE_FLAGS = '{"wrapUpOnMaxTurns":true}'
+    ;(mockSettings as any).headlessMaxTurns = 5
+    script.push({ result: { content: '做完了', toolCalls: [], usage, finishReason: 'stop' } })
+    const r = await runHeadless({ client: {} as any, prompt: '一句话任务', yolo: true })
+    expect(r.status).toBe('done')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(1)
+    delete process.env.DEEPCODE_FLAGS
+  })
+
+  // 回归（复审变异测试实证）：超长重试路径重算剩余预算时必须用 opts.maxTurns（--max-turns）覆盖值，
+  // 不能悄悄退回 settings.headlessMaxTurns——否则 --max-turns 在这条路径上静默失效。
+  // 用真实大文件垫出 microcompact 能甩的旧 tool 消息（同 test/headless.overflow.test.ts 的 bulkReadTurns 手法），
+  // 触发一次真实超窗重试，再用「重试后还能跑几轮」把 remaining 的实际取值暴露出来：
+  // 正确取 opts.maxTurns=20 时 remaining=max(1,20-6)=14，足够跑完重试脚本里的 3 轮到 done；
+  // 若误取 settings.headlessMaxTurns=7 时 remaining=max(1,7-6)=1，drive(1) 只跑 1 轮就提前撞 max_turns。
+  it('超长重试的剩余预算用 opts.maxTurns（--max-turns override）而非 settings.headlessMaxTurns', async () => {
+    ;(mockSettings as any).headlessMaxTurns = 7 // 故意设小且不等于 1，与 opts.maxTurns=20 拉开区分度
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-mt-fixture-'))
+    const file = path.join(dir, 'big.txt')
+    writeFileSync(file, Array.from({ length: 300 }, () => 'x'.repeat(700)).join('\n'))
+    for (let i = 0; i < 6; i++) {
+      script.push({ result: { content: '', toolCalls: [{ id: `r${i}`, name: 'Read', args: JSON.stringify({ file_path: file }) }], usage, finishReason: 'tool_calls' } })
+    }
+    script.push({ throw: new Error('This model maximum context length is 128000 tokens') })
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'p1', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'p2', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '重试后完成', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, maxTurns: 20 })
+    expect(r.status).toBe('done')
+    expect(r.text).toBe('重试后完成')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(10) // 6 铺垫 + 1 抛超窗 + 3 重试后跑完
   })
 })
 

@@ -1,6 +1,6 @@
 // test/promptSections.test.ts
-import { describe, it, expect } from 'vitest'
-import { SYSTEM_SECTION, DOING_TASKS_SECTION, TOOLS_SECTION, CARE_SECTION, TONE_SECTION, buildSystemPrompt, languageSection } from '../src/prompt.js'
+import { describe, it, expect, afterEach } from 'vitest'
+import { SYSTEM_SECTION, DOING_TASKS_SECTION, TOOLS_SECTION, CARE_SECTION, TONE_SECTION, buildSystemPrompt, languageSection, VERIFY_METHOD_RULE } from '../src/prompt.js'
 
 describe('SYSTEM_SECTION', () => {
   it('以 # 系统 标题开头', () => {
@@ -142,5 +142,40 @@ describe('响应语言锁定（language）', () => {
   it('空白 language → 不注入（视同未设）', () => {
     const sp = buildSystemPrompt('/tmp', undefined, undefined, undefined, undefined, undefined, undefined, undefined, '   ')
     expect(sp).not.toContain('# 语言')
+  })
+})
+
+describe('verifyMethod flag 门控验证方法纪律', () => {
+  const ORIG = process.env.DEEPCODE_FLAGS
+  afterEach(() => {
+    if (ORIG === undefined) delete process.env.DEEPCODE_FLAGS
+    else process.env.DEEPCODE_FLAGS = ORIG
+  })
+
+  it('默认关：系统提示词里不含这条纪律', () => {
+    delete process.env.DEEPCODE_FLAGS
+    const sp = buildSystemPrompt('/tmp', '/tmp/nonexistent-home')
+    expect(sp).not.toContain('把退出码和错误输出吞掉')
+  })
+
+  it('flag 开启：系统提示词里含这条纪律的三句', () => {
+    process.env.DEEPCODE_FLAGS = '{"verifyMethod":true}'
+    const sp = buildSystemPrompt('/tmp', '/tmp/nonexistent-home')
+    expect(sp).toContain('把退出码和错误输出吞掉')
+    expect(sp).toContain('每种都验一遍')
+    expect(sp).toContain('按那个量级验')
+  })
+
+  it('VERIFY_METHOD_RULE 导出的正文与注入的一致', () => {
+    process.env.DEEPCODE_FLAGS = '{"verifyMethod":true}'
+    const sp = buildSystemPrompt('/tmp', '/tmp/nonexistent-home')
+    expect(sp).toContain(VERIFY_METHOD_RULE)
+  })
+
+  it('output-style 关掉 coding 段时，即便 flag 开着也不注入（随 # 干活 段门控）', () => {
+    process.env.DEEPCODE_FLAGS = '{"verifyMethod":true}'
+    const sp = buildSystemPrompt('/tmp', '/tmp/nonexistent-home', undefined, undefined, undefined,
+      { name: 'x', description: '', prompt: 'P', keepCodingInstructions: false } as any)
+    expect(sp).not.toContain('把退出码和错误输出吞掉')
   })
 })

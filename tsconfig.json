@@ -9,5 +9,5 @@
     "types": ["node"],
     "jsx": "react-jsx"
   },
-  "include": ["src", "test", "scripts"]
+  "include": ["src", "test", "scripts", "bench/ab"]
 }

@@ -1,0 +1,143 @@
+import { describe, it, expect } from 'vitest'
+import { parseDeclaration, declarationHash } from '../bench/ab/declaration.js'
+
+const VALID = `
+id: exp-1
+desc: 测试用
+arms:
+  baseline: {}
+  treatment: { verifyMethod: true }
+treatmentArm: treatment
+k: 5
+task:
+  taskbook: ./TASKBOOK.md
+  frozen: ./FROZEN.txt
+  harness: ./harness
+observations:
+  - id: o1
+    desc: 观察一
+    predicate: bashCommandsNoneMatch
+    args: { pattern: 'x' }
+    expect: true
+`
+
+describe('parseDeclaration', () => {
+  it('合法声明正常解析', () => {
+    const d = parseDeclaration(VALID)
+    expect(d.id).toBe('exp-1')
+    expect(d.k).toBe(5)
+    expect(Object.keys(d.arms)).toEqual(['baseline', 'treatment'])
+    expect(d.arms.treatment).toEqual({ verifyMethod: true })
+    expect(d.observations).toHaveLength(1)
+    expect(d.observations[0].predicate).toBe('bashCommandsNoneMatch')
+  })
+
+  it('少于两个臂 → 报错（A/B 至少要两臂）', () => {
+    expect(() => parseDeclaration(VALID.replace('  treatment: { verifyMethod: true }\n', '')))
+      .toThrow(/至少两个臂/)
+  })
+
+  it('多于两个臂 → 报错（统计层是 2×2 Fisher，三臂没法比）', () => {
+    const threeArms = VALID.replace(
+      '  treatment: { verifyMethod: true }\n',
+      '  treatment: { verifyMethod: true }\n  treatment2: { wrapUpOnMaxTurns: true }\n',
+    )
+    expect(() => parseDeclaration(threeArms)).toThrow(/最多两个臂/)
+  })
+
+  it('k 非正整数 → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('k: 5', 'k: 0'))).toThrow(/k/)
+    expect(() => parseDeclaration(VALID.replace('k: 5', 'k: 2.5'))).toThrow(/k/)
+  })
+
+  it('observations 为空 → 报错（主判据不能没有）', () => {
+    const noObs = VALID.slice(0, VALID.indexOf('observations:')) + 'observations: []\n'
+    expect(() => parseDeclaration(noObs)).toThrow(/observations/)
+  })
+
+  it('观察项 id 重复 → 报错（报告里会串）', () => {
+    const dup = VALID + `  - id: o1
+    desc: 重复的
+    predicate: bashCommandsAnyMatch
+    args: { pattern: 'y' }
+    expect: true
+`
+    expect(() => parseDeclaration(dup)).toThrow(/重复/)
+  })
+
+  it('臂的取值含非布尔 → 报错（flag 只认真布尔，字符串会被静默忽略导致分组错位）', () => {
+    expect(() => parseDeclaration(VALID.replace('{ verifyMethod: true }', '{ verifyMethod: "true" }')))
+      .toThrow(/布尔/)
+  })
+
+  it('YAML 语法错 → 报错', () => {
+    expect(() => parseDeclaration('id: [unclosed')).toThrow()
+  })
+
+  it('观察项 args 是字符串 → 报错（args 必须是对象，点记号才能存取字段）', () => {
+    expect(() => parseDeclaration(VALID.replace('args: { pattern: \'x\' }', 'args: \'x\'')))
+      .toThrow(/o1.*args/)
+  })
+
+  it('观察项 args 是 null → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('args: { pattern: \'x\' }', 'args: null')))
+      .toThrow(/o1.*args/)
+  })
+
+  it('观察项 args 缺失 → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('    args: { pattern: \'x\' }\n', '')))
+      .toThrow(/o1.*args/)
+  })
+
+  it('观察项 args 是数组 → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('args: { pattern: \'x\' }', 'args: [\'x\']')))
+      .toThrow(/o1.*args/)
+  })
+
+  it('task.taskbook 是数字 → 报错（必须是非空字符串）', () => {
+    expect(() => parseDeclaration(VALID.replace('taskbook: ./TASKBOOK.md', 'taskbook: 123')))
+      .toThrow(/taskbook/)
+  })
+
+  it('task.frozen 是空字符串 → 报错', () => {
+    expect(() => parseDeclaration(VALID.replace('frozen: ./FROZEN.txt', 'frozen: ""')))
+      .toThrow(/frozen/)
+  })
+
+  it('缺 treatmentArm → 报错（方向不能等看完数据再选，必须跑前写死）', () => {
+    expect(() => parseDeclaration(VALID.replace('treatmentArm: treatment\n', '')))
+      .toThrow(/treatmentArm/)
+  })
+
+  it('treatmentArm 指向不存在的臂名 → 报错，且信息列出可选臂名', () => {
+    expect(() => parseDeclaration(VALID.replace('treatmentArm: treatment', 'treatmentArm: nope')))
+      .toThrow(/treatmentArm.*nope.*baseline.*treatment/s)
+  })
+
+  it('treatmentArm 指向合法臂名 → 通过', () => {
+    const d = parseDeclaration(VALID)
+    expect(d.treatmentArm).toBe('treatment')
+  })
+
+  it('predicate 名不在注册表里 → 报错，信息带 observation id、错误名字、可选判定器名单', () => {
+    expect(() => parseDeclaration(VALID.replace('bashCommandsNoneMatch', 'bashCommandsNoneMatchs')))
+      .toThrow(/o1.*bashCommandsNoneMatchs.*bashCommandsAnyMatch/s)
+  })
+
+  it('predicate 名在注册表里 → 通过', () => {
+    const d = parseDeclaration(VALID)
+    expect(d.observations[0].predicate).toBe('bashCommandsNoneMatch')
+  })
+})
+
+describe('declarationHash', () => {
+  it('同样内容给同样哈希', () => {
+    expect(declarationHash(VALID)).toBe(declarationHash(VALID))
+  })
+  it('差一个字符就换哈希', () => {
+    expect(declarationHash(VALID)).not.toBe(declarationHash(VALID + ' '))
+  })
+  it('是 64 位十六进制', () => {
+    expect(declarationHash(VALID)).toMatch(/^[0-9a-f]{64}$/)
+  })
+})
