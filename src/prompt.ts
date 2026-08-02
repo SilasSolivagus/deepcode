@@ -6,9 +6,22 @@ import type { SkillDefinition } from './skillsLoader.js'
 import { formatSkillListing } from './skillsLoader.js'
 import { loadMemoryPrompt, loadGlobalMemoryPrompt } from './memdir/memdir.js'
 import type { OutputStyle } from './outputStyles.js'
+import { flag } from './flags.js'
 
 /** plan 模式指引：进入 plan 模式时由 TUI 作为 <system-reminder> 注入，退出时停注。 */
 export const PLAN_MODE_GUIDANCE = `你当前处于 plan（计划）模式：只读。先用 Read/Glob/Grep 探索代码、理解现状与约束，写出一份可执行的实施计划；此模式下禁止任何落地修改（不写文件、不跑改动性命令）。计划写好后调用 ExitPlanMode 工具把计划交给用户审批；用户批准后才会退出 plan 模式开始执行。`
+
+/** 验证方法纪律（实验项，flag `verifyMethod` 门控，默认关）。
+ *
+ *  来源：#6 dogfooding 评测的轨迹实证——被测产出物反复起进程跑了自己造的 CLI，
+ *  但①唯一一次用真实文件路径的调用写成 `2>&1 | tail -5`，退出码变成 tail 的 0、
+ *  错误栈被截断，轨迹里那次记为成功；②其余调用几乎全走 stdin，而任务书的首要
+ *  形态是位置参数文件路径；③任务书写 1GB，它造了个 110MB 的文件量到 81MB 就判达标。
+ *
+ *  ⚠️ 效果未经验证：同任务重跑（R4）的 A/B 为阴性——三条针对的行为里两条纹丝不动、
+ *  一条更差，总分从 12/46 涨到 42/46 全部由「这批没生成那个 fd bug」解释。
+ *  n=1 对 n=1 证伪不了也支持不了，故默认关，等 B-2 跑正经实验。 */
+export const VERIFY_METHOD_RULE = '- 验证要能看见失败，否则等于没验：别用管道接 tail/head/grep、别 2>/dev/null，这类写法会把退出码和错误输出吞掉——管道会把退出码换成末端命令的，截断会把报错藏在你看不见的地方；判断成败就单独看退出码。需求列了几种输入形态（文件路径、stdin、不同格式），每种都验一遍，别只挑顺手的那一种反复验。需求给了量化阈值（数据量、内存、耗时），就按那个量级验，别缩小规模试一把就当达标。'
 
 /** 从 cwd 向上逐层找 DEEPCODE.md/CLAUDE.md/AGENTS.md（每层取一个，DEEPCODE.md 优先），最后加全局 ~/.deepcode/DEEPCODE.md */
 export function findMemoryFiles(cwd: string, home: string = os.homedir()): string[] {
@@ -108,7 +121,12 @@ export function buildSystemPrompt(cwd: string, home: string = os.homedir(), skil
   })()
 
   // 段装配：# 干活 段按 output-style 门控（仅 keepCodingInstructions!==false 才注入）
-  const doingTasks = (!outputStyle || outputStyle.keepCodingInstructions) ? DOING_TASKS_SECTION : null
+  // flag 开启时把实验条目追加到「# 干活」段末尾。段本身被 output-style 关掉时不注入——
+  // 实验条目不该绕过既有的段门控自成一路。
+  const doingTasksBase = (!outputStyle || outputStyle.keepCodingInstructions) ? DOING_TASKS_SECTION : null
+  const doingTasks = doingTasksBase && flag('verifyMethod', false)
+    ? `${doingTasksBase}\n${VERIFY_METHOD_RULE}`
+    : doingTasksBase
   const styleAppendix = outputStyle ? `\n\n${outputStyle.prompt}` : ''
   const body = [
     SYSTEM_SECTION,
