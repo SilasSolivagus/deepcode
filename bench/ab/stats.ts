@@ -24,6 +24,13 @@ function hypergeomProb(a: number, b: number, c: number, d: number): number {
 /** 2×2 表 [[a,b],[c,d]] 的单尾 p：检验「臂一命中率更高」。
  *  = 在边际固定下，左上角 ≥ a 的全部情形的概率之和。 */
 export function fisherOneTailed(a: number, b: number, c: number, d: number): number {
+  // 入参校验：四个参数都必须是非负整数
+  for (const [name, val] of [['a', a], ['b', b], ['c', c], ['d', d]] as const) {
+    if (!Number.isInteger(val) || val < 0) {
+      throw new Error(`fisherOneTailed: parameter '${name}' must be a non-negative integer, got ${val}`)
+    }
+  }
+
   const n = a + b + c + d
   if (n === 0) return 1 // 无样本 → 无证据，p=1
 

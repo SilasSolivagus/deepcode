@@ -23,7 +23,7 @@ describe('fisherOneTailed', () => {
   })
 
   it('全零分母不炸（两臂都没有有效样本）', () => {
-    expect(() => fisherOneTailed(0, 0, 0, 0)).not.toThrow()
+    expect(fisherOneTailed(0, 0, 0, 0)).toBe(1)
   })
 
   it('p 值恒在 [0,1] 内', () => {
@@ -32,5 +32,33 @@ describe('fisherOneTailed', () => {
       expect(p).toBeGreaterThanOrEqual(0)
       expect(p).toBeLessThanOrEqual(1)
     }
+  })
+
+  it('负数入参应抛错', () => {
+    expect(() => fisherOneTailed(-1, 2, 3, 4)).toThrow(/parameter 'a' must be a non-negative integer/)
+    expect(() => fisherOneTailed(1, -1, 3, 4)).toThrow(/parameter 'b' must be a non-negative integer/)
+    expect(() => fisherOneTailed(1, 2, -1, 4)).toThrow(/parameter 'c' must be a non-negative integer/)
+    expect(() => fisherOneTailed(1, 2, 3, -1)).toThrow(/parameter 'd' must be a non-negative integer/)
+  })
+
+  it('小数入参应抛错', () => {
+    expect(() => fisherOneTailed(2.5, 2, 3, 4)).toThrow(/parameter 'a' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, 2.5, 3, 4)).toThrow(/parameter 'b' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, 2, 3.5, 4)).toThrow(/parameter 'c' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, 2, 3, 4.5)).toThrow(/parameter 'd' must be a non-negative integer/)
+  })
+
+  it('NaN 入参应抛错', () => {
+    expect(() => fisherOneTailed(NaN, 2, 3, 4)).toThrow(/parameter 'a' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, NaN, 3, 4)).toThrow(/parameter 'b' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, 3, NaN, 4)).toThrow(/parameter 'c' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, 3, 4, NaN)).toThrow(/parameter 'd' must be a non-negative integer/)
+  })
+
+  it('Infinity 入参应抛错', () => {
+    expect(() => fisherOneTailed(Infinity, 2, 3, 4)).toThrow(/parameter 'a' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, Infinity, 3, 4)).toThrow(/parameter 'b' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, 3, Infinity, 4)).toThrow(/parameter 'c' must be a non-negative integer/)
+    expect(() => fisherOneTailed(2, 3, 4, Infinity)).toThrow(/parameter 'd' must be a non-negative integer/)
   })
 })
