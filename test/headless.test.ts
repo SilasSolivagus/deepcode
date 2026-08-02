@@ -4,12 +4,14 @@ import { readFileSync, existsSync, writeFileSync, rmSync, mkdtempSync } from 'no
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-const script: Array<{ deltas?: any[]; result: any }> = []
+// throw：模拟一次上下文超窗错误（供超长重试路径的回归用例复用，写法同 test/headless.overflow.test.ts）。
+const script: Array<{ deltas?: any[]; result?: any; throw?: Error }> = []
 vi.mock('../src/api.js', () => ({
   chatStream: vi.fn(() =>
     (async function* () {
       const scene = script.shift()
       if (!scene) throw new Error('script exhausted')
+      if (scene.throw) throw scene.throw
       for (const d of scene.deltas ?? []) yield typeof d === 'string' ? { type: 'text', delta: d } : d
       return scene.result
     })(),
@@ -377,6 +379,32 @@ describe('headless thinking / headlessMaxTurns 开关真的接线（不只测 se
     expect(r.status).toBe('done')
     expect(vi.mocked(chatStream).mock.calls.length).toBe(1)
     delete process.env.DEEPCODE_FLAGS
+  })
+
+  // 回归（复审变异测试实证）：超长重试路径重算剩余预算时必须用 opts.maxTurns（--max-turns）覆盖值，
+  // 不能悄悄退回 settings.headlessMaxTurns——否则 --max-turns 在这条路径上静默失效。
+  // 用真实大文件垫出 microcompact 能甩的旧 tool 消息（同 test/headless.overflow.test.ts 的 bulkReadTurns 手法），
+  // 触发一次真实超窗重试，再用「重试后还能跑几轮」把 remaining 的实际取值暴露出来：
+  // 正确取 opts.maxTurns=20 时 remaining=max(1,20-6)=14，足够跑完重试脚本里的 3 轮到 done；
+  // 若误取 settings.headlessMaxTurns=7 时 remaining=max(1,7-6)=1，drive(1) 只跑 1 轮就提前撞 max_turns。
+  it('超长重试的剩余预算用 opts.maxTurns（--max-turns override）而非 settings.headlessMaxTurns', async () => {
+    ;(mockSettings as any).headlessMaxTurns = 7 // 故意设小且不等于 1，与 opts.maxTurns=20 拉开区分度
+    const dir = mkdtempSync(path.join(tmpdir(), 'dc-mt-fixture-'))
+    const file = path.join(dir, 'big.txt')
+    writeFileSync(file, Array.from({ length: 300 }, () => 'x'.repeat(700)).join('\n'))
+    for (let i = 0; i < 6; i++) {
+      script.push({ result: { content: '', toolCalls: [{ id: `r${i}`, name: 'Read', args: JSON.stringify({ file_path: file }) }], usage, finishReason: 'tool_calls' } })
+    }
+    script.push({ throw: new Error('This model maximum context length is 128000 tokens') })
+    script.push(
+      { result: { content: '', toolCalls: [{ id: 'p1', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '', toolCalls: [{ id: 'p2', name: 'Glob', args: '{"pattern":"*"}' }], usage, finishReason: 'tool_calls' } },
+      { result: { content: '重试后完成', toolCalls: [], usage, finishReason: 'stop' } },
+    )
+    const r = await runHeadless({ client: {} as any, prompt: '干活', yolo: true, maxTurns: 20 })
+    expect(r.status).toBe('done')
+    expect(r.text).toBe('重试后完成')
+    expect(vi.mocked(chatStream).mock.calls.length).toBe(10) // 6 铺垫 + 1 抛超窗 + 3 重试后跑完
   })
 })
 
