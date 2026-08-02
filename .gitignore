@@ -3,7 +3,10 @@ dist/
 .env
 docs/
 loop/
-bench/
+# bench/ 整体是本地基准夹具与跑批产物，不入库；但 bench/ab/ 是 A/B 跑批器的源码，
+# test/ab.*.test.ts 会 import 它——不跟踪的话新克隆出来测试直接跑不起来。
+bench/*
+!bench/ab/
 .superpowers/
 .deepcode/
 docs-site/node_modules/
