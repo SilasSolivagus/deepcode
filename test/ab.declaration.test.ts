@@ -36,6 +36,14 @@ describe('parseDeclaration', () => {
       .toThrow(/至少两个臂/)
   })
 
+  it('多于两个臂 → 报错（统计层是 2×2 Fisher，三臂没法比）', () => {
+    const threeArms = VALID.replace(
+      '  treatment: { verifyMethod: true }\n',
+      '  treatment: { verifyMethod: true }\n  treatment2: { wrapUpOnMaxTurns: true }\n',
+    )
+    expect(() => parseDeclaration(threeArms)).toThrow(/最多两个臂/)
+  })
+
   it('k 非正整数 → 报错', () => {
     expect(() => parseDeclaration(VALID.replace('k: 5', 'k: 0'))).toThrow(/k/)
     expect(() => parseDeclaration(VALID.replace('k: 5', 'k: 2.5'))).toThrow(/k/)

@@ -32,6 +32,13 @@ export function parseDeclaration(yamlText: string): Declaration {
   if (!arms || typeof arms !== 'object' || Object.keys(arms).length < 2) {
     throw new Error('arms 至少两个臂——A/B 实验没有对照就不成立')
   }
+  if (Object.keys(arms).length > 2) {
+    // 统计层（fisherOneTailed）是 2×2 精确检验，三个及以上的臂在数学上没法塞进同一张
+    // 2×2 表里比。report.ts 的主判据表也只取 Object.keys(arms) 的前两个——多出来的臂
+    // 会从主判据表里静默消失，只在次要指标/每次跑两张表里还能看到。与其让报告悄悄漏掉
+    // 一个臂，不如在声明解析这一步就拒绝。
+    throw new Error(`arms 最多两个臂——统计层是 2×2 Fisher 精确检验，多于两臂无法比较，收到：${Object.keys(arms).join(', ')}`)
+  }
   for (const [armName, flags] of Object.entries(arms)) {
     if (!flags || typeof flags !== 'object') throw new Error(`臂 ${armName} 的取值必须是对象`)
     for (const [k, v] of Object.entries(flags as Record<string, unknown>)) {

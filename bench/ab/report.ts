@@ -48,12 +48,17 @@ export function buildReport(input: {
     `- 产出物：\`${outRoot}\``, '')
 
   L.push('## 主判据：行为观察', '',
-    '每条观察在两臂各自的命中率，单尾 Fisher 精确检验。', '',
-    `| 观察 | ${armA} | ${armB} | p（单尾） | 说明 |`,
+    `「命中」＝该次跑的判定结果与声明里该观察的 \`expect\` 一致（\`expect: false\` 的观察，判定` +
+    '结果为 `false` 才算命中，不是 `true`）。', '',
+    `p 值检验的方向是「臂 \`${armA}\`（声明里排在前面的臂）命中率高于臂 \`${armB}\`」这个单尾假设——` +
+    '臂的顺序取决于 YAML 书写顺序，看不清方向时以原始计数为准，不要只看 p 值。', '',
+    `| 观察 | ${armA} | ${armB} | p（单尾，检验 \`${armA}\` 命中率更高） | 说明 |`,
     '|---|---|---|---|---|')
 
   for (const o of decl.observations) {
-    const hit = (arm: string) => records.filter(r => r.arm === arm && r.observations[o.id] === true).length
+    // 命中＝符合声明的预期，不是「判定器返回 true」。o.expect === false 的观察，
+    // 判定结果为 false 才是命中——直接用 === true 会把「预期不发生」的观察算反。
+    const hit = (arm: string) => records.filter(r => r.arm === arm && r.observations[o.id] === o.expect).length
     const valid = (arm: string) => records.filter(r => r.arm === arm && r.observations[o.id] !== null).length
     const [ha, hb, na, nb] = [hit(armA), hit(armB), valid(armA), valid(armB)]
     const p = fisherOneTailed(ha, na - ha, hb, nb - hb)
