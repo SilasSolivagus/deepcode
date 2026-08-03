@@ -7,8 +7,15 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 export interface RunArtifacts {
-  /** 从 stream-json 轨迹里抽出的全部 Bash 命令原文 */
+  /** 从 stream-json 轨迹里抽出的全部 Bash 命令原文。
+   *  刻意保持 string[]：既有五个判定器与其单测依赖这个类型，改它会连坐一批已证明有区分度的用例。 */
   bashCommands: string[]
+  /** 每条 Bash 的结果原文与顺序。非零退出时 content 以「退出码 N」开头（src/tools/bash.ts:137）。 */
+  bashResults: { content: string; seq: number }[]
+  /** Edit/Write/NotebookEdit 的目标路径与顺序。 */
+  editedFiles: { path: string; seq: number }[]
+  /** 每次 Agent 调用。report 是工具结果原文，判断留给判定器，抽取层不预先算布尔。 */
+  agentSpawns: { subagentType: string; verdict: string | null; report: string; seq: number }[]
   exitCode: number
   /** done / max_turns / aborted / context_overflow */
   status: string
