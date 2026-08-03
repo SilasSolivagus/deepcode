@@ -6,6 +6,7 @@
 //
 // 坏行跳过而不整体失败——一次跑是花了钱和时间的，不该因为一行畸形 JSON 就全丢。
 import type { RunArtifacts } from './predicates.js'
+import { recoverSubagentRuns } from './subagentTrace.js'
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
 // 必须独占一行（正文里提到这个词，如「我准备写 VERDICT: PASS」，不该被当成判定）；
@@ -20,6 +21,8 @@ export function extractArtifacts(input: {
   traceJsonl: string
   exitCode: number
   outputDir: string
+  /** 请求侧轨迹目录；给了就顺带恢复子代理的执行记录（子代理不进 stream-json） */
+  traceDir?: string
 }): RunArtifacts {
   const bashCommands: string[] = []
   const bashResults: RunArtifacts['bashResults'] = []
@@ -68,5 +71,5 @@ export function extractArtifacts(input: {
     }
   }
 
-  return { bashCommands, bashResults, editedFiles, agentSpawns, exitCode: input.exitCode, status, turns, outputDir: input.outputDir }
+  return { bashCommands, bashResults, editedFiles, agentSpawns, subagentRuns: input.traceDir ? recoverSubagentRuns(input.traceDir, 'subagent:') : [], exitCode: input.exitCode, status, turns, outputDir: input.outputDir }
 }

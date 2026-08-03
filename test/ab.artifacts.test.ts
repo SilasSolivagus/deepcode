@@ -207,3 +207,47 @@ describe('I4：VERDICT 抽取对常见格式偏差容错', () => {
     expect(s.sawVerdictLine).toBe(false)
   })
 })
+
+import { mkdtempSync as mkdtemp2, writeFileSync as write2 } from 'node:fs'
+import { tmpdir as tmpdir2 } from 'node:os'
+import path2 from 'node:path'
+
+describe('extractArtifacts 接子代理轨迹', () => {
+  const mkTraceDir = () => {
+    const dir = mkdtemp2(path2.join(tmpdir2(), 'ab-art-sub-'))
+    write2(path2.join(dir, 'req-00001.json'), JSON.stringify({
+      seq: 1, ts: '', label: 'subagent:verification', model: 'm', tools: [], params: {},
+      messages: [
+        { role: 'assistant', content: null, tool_calls: [
+          { id: 't1', type: 'function', function: { name: 'Bash', arguments: JSON.stringify({ command: 'npm test' }) } },
+        ] },
+        { role: 'tool', tool_call_id: 't1', content: '退出码 1\nFAIL' },
+      ],
+    }))
+    return dir
+  }
+
+  it('不传 traceDir 时 subagentRuns 为空数组（既有调用方不受影响）', () => {
+    const a = extractArtifacts({ traceJsonl: '', exitCode: 0, outputDir: '/o' })
+    expect(a.subagentRuns).toEqual([])
+  })
+
+  it('传了 traceDir 就恢复出子代理跑过的命令', () => {
+    const a = extractArtifacts({ traceJsonl: '', exitCode: 0, outputDir: '/o', traceDir: mkTraceDir() })
+    expect(a.subagentRuns).toHaveLength(1)
+    expect(a.subagentRuns[0].label).toBe('subagent:verification')
+    expect(a.subagentRuns[0].bashCommands).toEqual(['npm test'])
+    expect(a.subagentRuns[0].bashResults).toEqual(['退出码 1\nFAIL'])
+  })
+
+  it('traceDir 指向不存在的目录时不抛出，subagentRuns 为空', () => {
+    const a = extractArtifacts({ traceJsonl: '', exitCode: 0, outputDir: '/o', traceDir: '/tmp/绝不存在-ab-art' })
+    expect(a.subagentRuns).toEqual([])
+  })
+
+  it('子代理的命令不混进 bashCommands（那是主代理的语义）', () => {
+    const a = extractArtifacts({ traceJsonl: '', exitCode: 0, outputDir: '/o', traceDir: mkTraceDir() })
+    expect(a.bashCommands).toEqual([])
+    expect(a.bashResults).toEqual([])
+  })
+})

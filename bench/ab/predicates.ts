@@ -5,6 +5,7 @@
 // 等价于允许跑完再想一个新判定。
 import fs from 'node:fs'
 import path from 'node:path'
+import type { SubagentRun } from './subagentTrace.js'
 
 export interface RunArtifacts {
   /** 从 stream-json 轨迹里抽出的全部 Bash 命令原文。
@@ -18,6 +19,10 @@ export interface RunArtifacts {
    *  sawVerdictLine：报告原文里出现过「VERDICT」这个词（不区分大小写），不管格式对不对——
    *  verdict 为 null 且此项为 true，说明验证者给了 verdict 但格式偏了（I4：不该跟「压根没给」混在一起）。 */
   agentSpawns: { subagentType: string; verdict: string | null; sawVerdictLine: boolean; report: string; seq: number }[]
+  /** 从请求侧轨迹恢复的子代理执行记录；未开启轨迹或无子代理时为空数组。
+   *  刻意不并进 bashCommands/bashResults——那两个字段的语义是「主代理直接执行的」，
+   *  既有五个判定器依赖它，混进来会静默改变它们的读数。 */
+  subagentRuns: SubagentRun[]
   exitCode: number
   /** done / max_turns / aborted / context_overflow */
   status: string

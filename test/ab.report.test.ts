@@ -4,7 +4,7 @@ import type { Declaration } from '../bench/ab/declaration.js'
 import type { RunArtifacts } from '../bench/ab/predicates.js'
 
 const artifacts = (over: Partial<RunArtifacts> = {}): RunArtifacts => ({
-  bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [],
+  bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], subagentRuns: [],
   exitCode: 0, status: 'done', turns: 10, outputDir: '/tmp', ...over,
 })
 
