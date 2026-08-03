@@ -174,6 +174,8 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       permission: buildSubagentPermission(parentPerm, fenceRoot, ctx.askUp, { agentId, agentType: type }),
       ctx: subCtx,
       maxTurns: 30,
+      // 轨迹里主循环与子代理的记录本来完全同形；带上类型才能事后把子代理的执行记录摘出来。
+      traceLabel: `subagent:${type}`,
     })
     let step
     while (!(step = await gen.next()).done) {

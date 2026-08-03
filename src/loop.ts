@@ -41,6 +41,9 @@ export interface LoopDeps {
    *  有则作为 user 消息注入并续跑（受 maxTurns 约束）。默认 false —— 子代理子循环
    *  不得 drain 全局通知队列（否则会吞掉主会话的通知并误触续跑）。Task 6 在主会话调用处置 true。 */
   injectTaskNotifications?: boolean
+  /** 请求侧轨迹的标签，默认 'turn'。子代理传 `subagent:<类型>`，
+   *  好让事后能把它的执行记录从轨迹里摘出来——否则主循环与子代理的记录完全同形、分不开。 */
+  traceLabel?: string
   /** hooks 生命周期配置（会话启动快照）。仅主会话传入；子代理/webfetch 内部 loop 不传（①a）。 */
   hooks?: HooksConfig
   /** prompt/agent/http hook 运行时（llm/runAgent/fetch）。仅主会话传入；与 hooks 配对。 */
@@ -219,7 +222,7 @@ export async function* runLoop(
         thinking: deps.thinking,
         effortLevel: deps.effortLevel,
         signal: deps.ctx.signal,
-        traceLabel: 'turn',
+        traceLabel: deps.traceLabel ?? 'turn',
       })
       while (true) {
         const step = await stream.next()
