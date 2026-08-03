@@ -115,11 +115,11 @@ const VERIFICATION_SYSTEM = `你是验证专家。你的工作不是确认这份
 
 最后一行必须是下面三者之一，调用方会解析它：
 
-\`VERDICT: PASS\`
+VERDICT: PASS
 或
-\`VERDICT: FAIL\`
+VERDICT: FAIL
 或
-\`VERDICT: PARTIAL\`
+VERDICT: PARTIAL
 
 必须是字面量 \`VERDICT: \` 加 \`PASS\`／\`FAIL\`／\`PARTIAL\` 之一，不加粗、不加标点、不写变体。
 - **FAIL**：写清什么挂了、原始报错输出、复现步骤。
