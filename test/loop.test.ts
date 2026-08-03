@@ -49,7 +49,7 @@ async function drain(gen: AsyncGenerator<any, any>) {
   return { events, ret: r.value }
 }
 
-beforeEach(() => { script.length = 0; clearAllTasks(); drainNotifications(); vi.mocked(chatStream).mockClear() })
+beforeEach(() => { script.length = 0; clearAllTasks(); drainNotifications() })
 
 // 造一条 completed 后台任务并 enqueue 一条通知
 function enqueueCompletedTask(id: string, result = '子代理结果'): void {
@@ -885,6 +885,7 @@ describe('runLoop 前缀稳定性（缓存守卫）', () => {
 
 describe('traceLabel：轨迹记录要能分辨是谁发的请求', () => {
   it('不传时默认 turn（既有行为逐字不变）', async () => {
+    ;(chatStream as any).mockClear()
     script.push({ result: { content: '好', toolCalls: [], usage, finishReason: 'stop' } })
     await drain(runLoop([{ role: 'user', content: 'hi' }], makeDeps([])))
     const [[, opts]] = vi.mocked(chatStream).mock.calls
@@ -892,6 +893,7 @@ describe('traceLabel：轨迹记录要能分辨是谁发的请求', () => {
   })
 
   it('传了就透传给 chatStream', async () => {
+    ;(chatStream as any).mockClear()
     script.push({ result: { content: '好', toolCalls: [], usage, finishReason: 'stop' } })
     await drain(runLoop([{ role: 'user', content: 'hi' }], { ...makeDeps([]), traceLabel: 'subagent:verification' }))
     const [[, opts]] = vi.mocked(chatStream).mock.calls
