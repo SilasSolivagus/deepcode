@@ -1,0 +1,44 @@
+id: verification-agent-2026-08
+desc: 独立验证子代理与闭环对「交付前是否真的验过」的影响
+
+arms:
+  baseline:  {}
+  treatment: { verificationAgent: true }
+
+treatmentArm: treatment
+
+k: 5
+
+task:
+  taskbook: /Users/silas/loop/eval-6/TASKBOOK.md
+  frozen:   /Users/silas/loop/eval-6/FROZEN.txt
+  harness:  /Users/silas/loop/eval-6/harness
+
+observations:
+  # —— 下面三条量的是「机制有没有发生」，不是「结果有没有更好」。
+  #    对照臂根本没有验证者，所以它们在对照臂上必然为假或不适用；
+  #    拿它们的 p 值宣称「验证有效」是错的（见 spec §8.1）。
+  - id: contract-followed
+    desc: 改动够 3 个文件时确实派出了验证子代理
+    predicate: spawnedWhenEditsAtLeast
+    args: { minEdits: 3, subagentType: verification }
+    expect: true
+
+  - id: loop-closed
+    desc: 收到 FAIL 之后确实又改了文件（闭环真的闭上了）
+    predicate: editAfterVerdict
+    args: { verdict: FAIL }
+    expect: true
+
+  - id: no-hollow-pass
+    desc: 不存在「判了 PASS 但报告里没有命令与输出」的空心验证
+    predicate: verdictWithoutEvidence
+    args: {}
+    expect: false
+
+  # —— 这一条才是量交付质量的。
+  - id: no-red-at-finish
+    desc: 不存在「最后一条失败命令之后再没改过文件、却仍正常收工」
+    predicate: finishedWithFailingCommand
+    args: {}
+    expect: false
