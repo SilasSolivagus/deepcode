@@ -14,7 +14,8 @@ export interface RunRecord {
   seed: number
   runDir: string
   artifacts: RunArtifacts
-  observations: Record<string, boolean | null>
+  /** I7：'na' = 本次跑不适用；'error' = 判定器不存在或抛异常。两者都不计入统计分母，但报告里分开印。 */
+  observations: Record<string, boolean | 'na' | 'error'>
 }
 
 const DISCLAIMER =
@@ -66,23 +67,39 @@ export function buildReport(input: {
     // 命中＝符合声明的预期，不是「判定器返回 true」。o.expect === false 的观察，
     // 判定结果为 false 才是命中——直接用 === true 会把「预期不发生」的观察算反。
     const hit = (arm: string) => records.filter(r => r.arm === arm && r.observations[o.id] === o.expect).length
-    const valid = (arm: string) => records.filter(r => r.arm === arm && r.observations[o.id] !== null).length
+    // I7：'na'/'error' 都不计入分母（都不是「求出了一个布尔值」）。
+    const valid = (arm: string) => records.filter(r => r.arm === arm && r.observations[o.id] !== 'na' && r.observations[o.id] !== 'error').length
     const [ha, hb, na, nb] = [hit(armA), hit(armB), valid(armA), valid(armB)]
-    const p = fisherOneTailed(ha, na - ha, hb, nb - hb)
-    L.push(`| \`${o.id}\` | **${ha}/${na}** | **${hb}/${nb}** | ${p.toFixed(4)} | ${o.desc} |`)
+    // I6：任一臂有效样本数为 0 时，Fisher 会退化印出 p=1.0000——这看起来像「差异不显著」，
+    // 但真实原因是分母恒为 0（如对照臂根本没有验证机制，某条观察在它身上必然为 null）。
+    // 印成一个显式的破折号，别让读报告的人把「没法算」误读成「算过了，没差异」。
+    const pCell = na === 0 || nb === 0 ? '—（对照臂无有效样本）' : fisherOneTailed(ha, na - ha, hb, nb - hb).toFixed(4)
+    L.push(`| \`${o.id}\` | **${ha}/${na}** | **${hb}/${nb}** | ${pCell} | ${o.desc} |`)
   }
 
-  // 按 observation id 分组列出 null 次数——一个笼统的总数会让「10 次全 0/0」的一条
+  // 按 observation id 分组列出 na/error 次数——一个笼统的总数会让「10 次全 0/0」的一条
   // 观察和「多条各出现几次」混在一起看不出来，得让人一眼看出是哪条观察在丢数据。
-  const nullByObs = new Map<string, number>()
+  // I7：两种原因分两行印，别再混成一句「本次跑不适用，或判定器不存在/抛异常」——
+  // 后者意味着声明文件里的 predicate 名拼错或判定器本身有 bug，是需要人工核查的红色信号，
+  // 前者只是「这条观察对这次跑没有信息量」，混在一起会让「尺子滑了」在报告里隐形。
+  const naByObs = new Map<string, number>()
+  const errorByObs = new Map<string, number>()
   for (const r of records) {
     for (const [obsId, v] of Object.entries(r.observations)) {
-      if (v === null) nullByObs.set(obsId, (nullByObs.get(obsId) ?? 0) + 1)
+      if (v === 'na') naByObs.set(obsId, (naByObs.get(obsId) ?? 0) + 1)
+      else if (v === 'error') errorByObs.set(obsId, (errorByObs.get(obsId) ?? 0) + 1)
     }
   }
-  if (nullByObs.size > 0) {
-    L.push('', '⚠️ 以下观察存在求值为 null 的记录（判定器不存在或抛异常），已排除在分母之外：')
-    for (const [obsId, count] of nullByObs) {
+  if (naByObs.size > 0) {
+    L.push('', '⚠️ 以下观察存在「本次跑不适用」（na）的记录，已排除在分母之外：')
+    for (const [obsId, count] of naByObs) {
+      L.push(`- \`${obsId}\`：${count} 次`)
+    }
+  }
+  if (errorByObs.size > 0) {
+    L.push('', '🔴 以下观察存在「判定器不存在或抛异常」（error）的记录，已排除在分母之外——' +
+      '这通常意味着声明文件里的 predicate 名拼错、或判定器本身有 bug，需要人工核查：')
+    for (const [obsId, count] of errorByObs) {
       L.push(`- \`${obsId}\`：${count} 次`)
     }
   }

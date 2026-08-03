@@ -7,6 +7,7 @@ import { parse as parseYaml } from 'yaml'
 import type { AgentDefinition } from './tools/agentTypes.js'
 import { BUILTIN_AGENTS } from './tools/agentTypes.js'
 import { activeProvider, belongsToProvider, type ProviderPreset } from './providers.js'
+import { flag } from './flags.js'
 
 /** 切 frontmatter（`---\n…\n---`）+ body。无 frontmatter 或坏 YAML → data 空、body 原文（容错兜底）。 */
 export function parseFrontmatter(raw: string): { data: Record<string, unknown>; body: string } {
@@ -93,7 +94,12 @@ export function mergeAgents(builtin: AgentDefinition[], custom: AgentDefinition[
   return [...m.values()]
 }
 
-/** 启动时解析最终 agent 注册表（内建 + 自定义合并）。 */
+/** 启动时解析最终 agent 注册表（内建 + 自定义合并）。三个界面（headless/backgroundRunner/TUI）
+ *  唯一收口：verification 是实验项，flag `verificationAgent` 门控（默认关）时不列出它——
+ *  它经 buildAgentDescription 下发进 Agent 工具描述，若关着 flag 仍出现在描述里，
+ *  模型会据此自发派它（默认关变成空话），且 A/B 实验的对照臂会被这条「必用」指令污染，
+ *  两臂的真实差异被压缩成「合同正文 vs 仅工具描述」。 */
 export function resolveAgents(cwd: string, home?: string): AgentDefinition[] {
-  return mergeAgents(BUILTIN_AGENTS, loadCustomAgents(cwd, home))
+  const merged = mergeAgents(BUILTIN_AGENTS, loadCustomAgents(cwd, home))
+  return flag('verificationAgent', false) ? merged : merged.filter(a => a.agentType !== 'verification')
 }

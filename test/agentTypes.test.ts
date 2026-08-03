@@ -91,13 +91,14 @@ describe('resolveAgentTools', () => {
 })
 
 describe('BUILTIN_AGENTS', () => {
-  it('共 3 个，agentType 唯一', () => {
-    expect(BUILTIN_AGENTS.length).toBe(3)
+  it('共 4 个，agentType 唯一', () => {
+    expect(BUILTIN_AGENTS.length).toBe(4)
     const types = BUILTIN_AGENTS.map(a => a.agentType)
-    expect(new Set(types).size).toBe(3)
+    expect(new Set(types).size).toBe(4)
     expect(types).toContain('general-purpose')
     expect(types).toContain('Explore')
     expect(types).toContain('Plan')
+    expect(types).toContain('verification')
   })
 
   it('每类 getSystemPrompt 返回非空', () => {
@@ -150,11 +151,12 @@ describe('formatAgentLine / buildAgentDescription', () => {
     expect(line).toBe('- X: w (Tools: All tools)')
   })
 
-  it('完整描述含三类型名 + 默认句', () => {
+  it('完整描述含四类型名 + 默认句', () => {
     const d = buildAgentDescription()
     expect(d).toContain('general-purpose')
     expect(d).toContain('Explore')
     expect(d).toContain('Plan')
+    expect(d).toContain('verification')
     expect(d).toContain('(Tools:')
     expect(d).toContain('省略 subagent_type 则用 general-purpose')
   })

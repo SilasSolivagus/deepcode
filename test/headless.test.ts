@@ -68,6 +68,7 @@ import { chatStream } from '../src/api.js'
 import { runHooks } from '../src/hooks.js'
 import { loadLayeredSettings } from '../src/settingsLayers.js'
 import { traceEnabled, disableTrace } from '../src/requestTrace.js'
+import { VERIFICATION_CONTRACT } from '../src/prompt.js'
 
 const usage = { prompt_tokens: 50, completion_tokens: 20, prompt_cache_hit_tokens: 10 }
 beforeEach(() => { script.length = 0; hookCalls.length = 0; vi.mocked(chatStream).mockClear() })
@@ -417,5 +418,42 @@ describe('headless deny 文本含来源', () => {
     })
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.reason).toContain('来自 内置规则')
+  })
+})
+
+describe('headless 验证合同真的接线（断言 chatStream 实际收到的 system 消息）', () => {
+  afterEach(() => { delete process.env.DEEPCODE_FLAGS })
+
+  const firstSystem = () => {
+    const [[, callOpts]] = vi.mocked(chatStream).mock.calls
+    return String((callOpts as any).messages[0].content)
+  }
+
+  it('默认关：system 消息里没有合同', async () => {
+    delete process.env.DEEPCODE_FLAGS
+    script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+    await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
+    expect(firstSystem()).not.toContain(VERIFICATION_CONTRACT)
+  })
+
+  it('flag 开：system 消息末尾带上合同正文', async () => {
+    process.env.DEEPCODE_FLAGS = '{"verificationAgent":true}'
+    script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+    await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
+    expect(firstSystem()).toContain(VERIFICATION_CONTRACT)
+  })
+
+  it('字符串 "true" 不算开——flags 只认真布尔', async () => {
+    process.env.DEEPCODE_FLAGS = '{"verificationAgent":"true"}'
+    script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+    await runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })
+    expect(firstSystem()).not.toContain(VERIFICATION_CONTRACT)
+  })
+
+  it('非法 JSON 不抛出，退回默认关', async () => {
+    process.env.DEEPCODE_FLAGS = '{坏的'
+    script.push({ result: { content: '好的', toolCalls: [], usage, finishReason: 'stop' } })
+    await expect(runHeadless({ client: {} as any, prompt: '随便问问', yolo: true })).resolves.toBeDefined()
+    expect(firstSystem()).not.toContain(VERIFICATION_CONTRACT)
   })
 })

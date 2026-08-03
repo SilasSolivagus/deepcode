@@ -29,6 +29,39 @@
 
 新增判定器的门槛：**必须有单测**，且要在设计文档 §4 的表里登记。
 
+## 判定器一览
+
+| 名字 | 判什么 | 何时返回 null（从分母排除） |
+|---|---|---|
+| `bashCommandsAnyMatch` / `bashCommandsNoneMatch` | Bash 命令原文是否匹配正则 | 不返回 |
+| `numericFromBashAtLeast` | 从命令里抽捕获组数字，最大值是否 ≥ min | 不返回 |
+| `statusIs` | 终止状态是否等于给定值 | 不返回 |
+| `fileExists` | 产出物目录下某相对路径是否存在 | 不返回 |
+| `editedFileCountAtLeast` | 去重后改动文件数 ≥ min | 不返回 |
+| `spawnedWhenEditsAtLeast` | 改动数够阈值时是否派过该类型子代理 | 改动数没够阈值 |
+| `verdictSeen` | 是否出现过某个 verdict | 不返回 |
+| `editAfterVerdict` | 某 verdict 之后是否还改过文件 | 全程没出现该 verdict |
+| `verdictWithoutEvidence` | 是否存在「PASS 但报告里没有命令与输出」 | 全程没有 PASS |
+| `finishedWithFailingCommand` | 最后一条失败命令之后没再改文件却正常收工 | `status !== 'done'` |
+
+⚠️ **`finishedWithFailingCommand` 只覆盖主代理直接执行的命令，子代理内部的执行不进轨迹**
+（子代理跑的是另一个 `runLoop`，其事件从不经 `streamFromLoopEvent` 落盘）。派子代理去干
+验证/测试工作的臂，在这条上会被系统性低估失败数——不是它更可靠，是轨迹看不见。用它做
+跨臂对比前先确认两臂的验证工作都发生在主代理轨迹内。
+
+`null` 表示**本次跑不适用于这条观察**，与求值失败同样从统计分母里排除。
+不用 `true` 代替是刻意的：空真会让命中率被一堆无信息的跑灌水，看着好看却什么都没证明。
+
+## ⚠️ 观察项要分清「机制」与「质量」
+
+`contract-followed` 与 `loop-closed` 这类观察在对照臂上必然为假或不适用（对照臂根本没有那套机制）。
+它们能证明机制按设计跑起来了，**不能证明交付物更可靠**。拿它们的 p 值宣称「改动有效」是错的。
+
+一份实验里至少要有一条量交付质量的观察，否则它回答不了「可靠性有没有提高」。
+`verification-agent` 这份实验目前**没有**这样一条观察（原有的 `no-red-at-finish` 因
+`finishedWithFailingCommand` 在子代理执行不进轨迹的前提下会被系统性偏置而删除，见该
+声明文件里的注释）——第一轮的定位是机制验收 + 验证者可信度体检，不是交付质量对比。
+
 ## 局限
 
 - 只测得到 headless 覆盖的东西。只在 TUI 可达的路径（如 auto 模式权限分类器）测不到。
