@@ -43,20 +43,31 @@
 | `editAfterVerdict` | 某 verdict 之后是否还改过文件 | 全程没出现该 verdict |
 | `verdictWithoutEvidence` | 是否存在「PASS 但报告里没有命令与输出」 | 全程没有 PASS |
 | `finishedWithFailingCommand` | 最后一条失败命令之后没再改文件却正常收工 | `status !== 'done'` |
-| `subagentFinishedWithFailingCommand` | 任一子代理在最后一条失败命令之后再没跑出成功的命令 | 无子代理记录，或所有子代理都没失败过 |
+| `subagentFinishedWithFailingCommand` | （可选按 `subagentType` 收窄后）任一子代理在最后一条失败命令之后再没跑出成功的命令 | 无（该类型）子代理记录 |
+| `subagentRanNoCommand` | （可选按 `subagentType` 收窄后）任一子代理的最后一次 spawn 一条 Bash 命令都没跑 | 无（该类型）子代理记录 |
 
 ⚠️ **`finishedWithFailingCommand` 只覆盖主代理直接执行的命令，子代理内部的执行不进轨迹**
 （子代理跑的是另一个 `runLoop`，其事件从不经 `streamFromLoopEvent` 落盘）。派子代理去干
 验证/测试工作的臂，在这条上会被系统性低估失败数——不是它更可靠，是轨迹看不见。用它做
 跨臂对比前先确认两臂的验证工作都发生在主代理轨迹内。
 
-⚠️ **`subagentFinishedWithFailingCommand` 读的是从请求侧轨迹恢复的子代理执行记录，属事后重建**：
-轨迹记的是「发出去之前」的对话，所以**子代理最后一轮工具调用的结果永远看不到**——那批结果
-只会出现在下一次请求里，若子代理跑完最后一条命令就直接收工，就没有下一次请求。**因此它会
-系统性漏掉子代理的最后一批命令。** 验证者的典型形态是「跑命令 → 看输出 → 写报告 → 结束」，
-写报告那一轮之前必然有一次请求带上了此前所有命令的结果，所以主体抓得到；真正会漏的是
-「跑完最后一条命令就直接结束」。同一类子代理若被多次 spawn（先红后修绿），每次 spawn 各出一条独立记录，
-判定器按 label 分组后只看该 label 的最后一次。
+⚠️ **`subagentFinishedWithFailingCommand` / `subagentRanNoCommand` 必须传 `subagentType` 收窄**：
+Explore/Plan/general-purpose 也带 Bash（`agentTypes.ts` 只禁 Edit/Write/Agent/NotebookEdit），
+系统提示词还鼓励并行派只读子代理去探索。不收窄时两个判定器对全部 label 取或，实验臂的
+label 集合天然是对照臂的超集（多一个 verification），子代理越多越容易被判定器命中——
+系统性偏置实验臂，两臂量的根本不是同一个东西（终审实证：对照臂只派了一个带红收工的
+`Explore`、压根没有任何验证行为，取或后仍判定为「带红收工」）。
+
+⚠️ **两者读的都是从请求侧轨迹恢复的子代理执行记录，属事后重建**：轨迹记的是「发出去
+之前」的对话。`src/loop.ts` 的主循环在工具结果 push 进 `messages` 之后一律进下一轮再发
+一次请求，只有模型本轮不再调工具时子代理才结束——所以**正常终止路径下最后一批结果
+一定会进下一次请求，不会漏**。真正会漏的只有子代理**非正常终止**：撞 `maxTurns`（子代理
+是 30）、被中断、抛异常，这些情况下最后一批命令没有再触发一次请求，读不到。**已知伪影
+单列**：验证者烧完 30 轮被截断时，轨迹里可见的最后一条很可能是绿的，会被读成「没带红
+收工」，白送一次命中——这恰恰是最危险的场景，量交付质量的观察最该抓住它却抓不住。
+同一类子代理若被多次 spawn（先红后修绿），每次 spawn 的完整标签各自唯一
+（`subagent:<type>#<agentId>`，见 `src/subagentRunner.ts`），判定器按 label 分组后
+只看该 label 数组顺序里的最后一条（即 seq 最大、最近发生的那次 spawn）。
 
 `null` 表示**本次跑不适用于这条观察**，与求值失败同样从统计分母里排除。
 不用 `true` 代替是刻意的：空真会让命中率被一堆无信息的跑灌水，看着好看却什么都没证明。
@@ -67,9 +78,17 @@
 它们能证明机制按设计跑起来了，**不能证明交付物更可靠**。拿它们的 p 值宣称「改动有效」是错的。
 
 一份实验里至少要有一条量交付质量的观察，否则它回答不了「可靠性有没有提高」。
-`verification-agent` 这份实验现在有了 `subagent-no-red-at-finish` 这样一条观察（原有的 `no-red-at-finish`
-因 `finishedWithFailingCommand` 在子代理执行不进轨迹的前提下会被系统性偏置而删除，见该
-声明文件里的注释；后来通过从请求侧轨迹恢复子代理执行记录的方式弥补了这个盲区）。
+`verification-agent` 这份实验现在有了 `subagent-no-red-at-finish` / `subagent-ran-commands`
+这样两条观察（原有的 `no-red-at-finish` 因 `finishedWithFailingCommand` 在子代理执行不进
+轨迹的前提下会被系统性偏置而删除，见该声明文件里的注释；后来通过从请求侧轨迹恢复子代理
+执行记录的方式弥补了这个盲区）。
+
+⚠️ **但这两条观察在跨臂对比的意义上不成立**：`src/agentsLoader.ts` 在 `verificationAgent`
+flag 关时把 `verification` 从注册表里滤掉，所以对照臂结构上永远派不出验证者——加了
+`subagentType` 收窄之后，**对照臂在这两条观察上的分母恒为 0**（报告会印出「—（对照臂无
+有效样本）」而不是静默产出一个看似正常的百分比）。它们是**实验臂的单臂体检**——回答
+「验证者是否真的把红修绿了 / 是否真的跑了命令」，**不是**能出 p 值的跨臂质量对比，不能
+拿它们的 p 值宣称「改动有效」。
 
 ## 局限
 

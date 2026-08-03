@@ -36,6 +36,23 @@ export interface RunArtifacts {
  *  让它返回 true（空真）会让命中率被一堆无信息的跑灌水——看起来很好看却什么都没证明。 */
 export type Predicate = (a: RunArtifacts, args: Record<string, unknown>) => boolean | null
 
+/** 按可选 subagentType 收窄 subagentRuns：给了就只留 label === 'subagent:' + subagentType 的记录，
+ *  不给就原样返回全部。抽成共用函数，供两条按子代理类型过滤的判定器复用（照抄
+ *  spawnedWhenEditsAtLeast 的 subagentType 写法）。 */
+function filterBySubagentType(runs: SubagentRun[], subagentType: unknown): SubagentRun[] {
+  if (subagentType === undefined) return runs
+  const want = `subagent:${String(subagentType)}`
+  return runs.filter(r => r.label === want)
+}
+
+/** 子代理判失败要认的两种收尾文本：
+ *  - 非零退出：`退出码 N\n...`（src/tools/bash.ts:137）
+ *  - 命令被超时杀掉：`错误：命令超时（Nms），已终止。`（src/tools/bash.ts:135）——不带「退出码」前缀，
+ *    只认退出码前缀会把「验证者的 npm test 挂死超时」读成成功，白送一次命中。这是最该被
+ *    抓住的失败形态之一，故与退出码并列认作失败。
+ *  必须锚行首：验证者报告正文里提到「退出码」/「命令超时」不该被当成一次失败。 */
+const SUBAGENT_FAILURE_RE = /^(退出码 \d+|错误：命令超时)/
+
 export const PREDICATES: Record<string, Predicate> = {
   bashCommandsAnyMatch: (a, args) => {
     const re = new RegExp(String(args.pattern))
@@ -137,26 +154,39 @@ export const PREDICATES: Record<string, Predicate> = {
   },
 
   subagentFinishedWithFailingCommand: (a, args) => {
-    void args
-    // 一次子代理都没派过 → 无从判断，不适用
-    if (a.subagentRuns.length === 0) return null
-    // 非零退出时 Bash 工具返回的文本以「退出码 N」开头（src/tools/bash.ts:137）。
-    // 必须锚行首：验证者报告正文里提到「退出码」不该被当成一次失败。
-    const failed = /^退出码 \d+/
+    // 可选 subagentType：给了就只看 label === 'subagent:' + subagentType 的记录；
+    // 不给则维持「全部子代理取或」的旧行为。
+    // 为什么必须能收窄：Explore/Plan/general-purpose 也带 Bash（agentTypes.ts 只禁
+    // Edit/Write/Agent/NotebookEdit），系统提示词还鼓励并行派只读子代理去探索。取或时，
+    // 实验臂的 label 集合天然是对照臂的超集（多一个 verification），子代理越多越容易
+    // 翻 true——系统性偏置实验臂，两臂量的根本不是同一个东西。
+    const runs = filterBySubagentType(a.subagentRuns, args.subagentType)
+    // 一次（该类型）子代理都没派过 → 无从判断，不适用
+    if (runs.length === 0) return null
     // 同一 label 可能有多次 spawn（先红 → 主代理修 → 复验）。交付时的状态由**最后一次**
     // 验证决定，所以每个 label 只看它的最后一次；同 label 记录在 subagentRuns 里按
-    // spawn 顺序排列，后写入的覆盖先写入的即得最后一次。
+    // spawn 顺序（seq 升序）排列，后写入的覆盖先写入的即得最后一次。
     const lastByLabel = new Map<string, SubagentRun>()
-    for (const r of a.subagentRuns) lastByLabel.set(r.label, r)
+    for (const r of runs) lastByLabel.set(r.label, r)
     for (const r of lastByLabel.values()) {
-      const lastFail = r.bashResults.map(c => failed.test(c)).lastIndexOf(true)
+      const lastFail = r.bashResults.map(c => SUBAGENT_FAILURE_RE.test(c)).lastIndexOf(true)
       // 这个 label 的最后一次验证从未失败 → 它没带红收工。记 false 而非跳过：
       // 「这次没红过」是明确信号，过滤掉会让分母缩水、只统计出过失败的跑。
       if (lastFail < 0) continue
       // 最后一次失败之后再没跑出成功的命令 → 带着红收工
-      if (!r.bashResults.slice(lastFail + 1).some(c => !failed.test(c))) return true
+      if (!r.bashResults.slice(lastFail + 1).some(c => !SUBAGENT_FAILURE_RE.test(c))) return true
     }
     return false
+  },
+
+  subagentRanNoCommand: (a, args) => {
+    // 存在某个（按 subagentType 过滤后的）子代理的最后一次 spawn 一条 Bash 命令都没跑
+    // 则为 true——「一条命令都没跑，只读代码就判 PASS」不该跟「跑了测试且全绿」读数相同。
+    const runs = filterBySubagentType(a.subagentRuns, args.subagentType)
+    if (runs.length === 0) return null
+    const lastByLabel = new Map<string, SubagentRun>()
+    for (const r of runs) lastByLabel.set(r.label, r)
+    return [...lastByLabel.values()].some(r => r.bashCommands.length === 0)
   },
 }
 

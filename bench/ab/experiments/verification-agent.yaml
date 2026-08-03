@@ -47,10 +47,25 @@ observations:
 
   # —— 这一条才是量交付质量的。它读的是子代理的执行记录（从请求侧轨迹恢复），
   #    不是主代理的命令，所以不会被「把测试搬进子代理」这个动作刷分。
-  #    ⚠️ 已知局限：请求侧轨迹记的是「发出去之前」的对话，子代理最后一轮工具调用的
-  #    结果看不到——若它跑完最后一条命令就直接收工，那条会被漏掉。
+  #    ⚠️ 已知局限：请求侧轨迹记的是「发出去之前」的对话，正常终止路径下最后一批结果
+  #    一定会进下一次请求、不会漏；只有子代理非正常终止（撞 maxTurns=30/ 被中断 / 抛
+  #    异常）时才会漏掉最后一批命令。已知伪影：撞上限的 spawn，可见的最后一条很可能是
+  #    绿的，会被读成「没带红收工」，白送一次命中。
+  #    ⚠️ 只看 subagentType: verification 这一类型：Explore/Plan/general-purpose 也带
+  #    Bash，取或会被系统提示词鼓励的并行只读子代理污染读数（终审实证）。
+  #    ⚠️ 对照臂结构上永远派不出验证者（agentsLoader.ts 按 flag 滤掉），这条观察在对照臂
+  #    分母恒为 0——是实验臂的单臂体检，不能拿它的 p 值做跨臂对比宣称。
   - id: subagent-no-red-at-finish
     desc: 验证子代理没有在失败命令之后直接收工（失败后再没跑出成功的命令）
     predicate: subagentFinishedWithFailingCommand
-    args: {}
+    args: { subagentType: verification }
+    expect: false
+
+  # —— 空心验证会白送命中：一条命令都没跑、只读代码就判 PASS，与「跑了测试且全绿」
+  #    在 subagent-no-red-at-finish 上读数相同（都是 false）。这条单独抓住前者。
+  #    同样只在实验臂有分母，是单臂体检，不能做跨臂对比。
+  - id: subagent-ran-commands
+    desc: 验证子代理的最后一次 spawn 至少跑过一条命令（不是只读代码就判 PASS）
+    predicate: subagentRanNoCommand
+    args: { subagentType: verification }
     expect: false

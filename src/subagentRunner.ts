@@ -175,7 +175,11 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       ctx: subCtx,
       maxTurns: 30,
       // 轨迹里主循环与子代理的记录本来完全同形；带上类型才能事后把子代理的执行记录摘出来。
-      traceLabel: `subagent:${type}`,
+      // 带上 agentId：Agent 工具只读、同一轮多个 Agent 调用走 loop.ts 的并发批，两个同类型
+      // 子代理并发时请求交错落盘，仅凭类型无法区分是同一次 spawn 的多轮还是两次独立 spawn；
+      // agentId 每次 spawn 唯一，把 spawn 身份直接写进标签，恢复时按完整标签分组即可，
+      // 不再需要任何长度启发式（见 bench/ab/subagentTrace.ts）。
+      traceLabel: `subagent:${type}#${agentId}`,
     })
     let step
     while (!(step = await gen.next()).done) {

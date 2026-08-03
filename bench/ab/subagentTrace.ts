@@ -5,15 +5,25 @@
 // 早就随请求体落在 req-*.json 里了——只是此前主循环与子代理的记录同形、分不开（现在靠
 // traceLabel 分得开了）。
 //
-// ⚠️ 这是事后重建，不是实时记录：轨迹记的是「发出去之前」的对话，所以子代理最后一轮
-// 工具调用的结果永远看不到——那批结果只会出现在下一次请求里，若子代理那轮之后直接收工，
-// 就没有下一次请求。本模块因此会系统性漏掉子代理的最后一批命令。
+// ⚠️ 这是事后重建，不是实时记录：轨迹记的是「发出去之前」的对话。src/loop.ts 的主循环
+// 在工具结果 push 进 messages 之后一律进下一轮再发一次请求，只有模型本轮不再调工具时才
+// 结束——所以**正常终止路径下最后一批结果一定会进下一次请求，不会漏**。真正会漏的只有
+// 子代理非正常终止：撞 maxTurns（子代理是 30）、被中断、抛异常，这些情况下最后一批命令
+// 没有再触发一次请求，读不到。已知伪影：验证者烧完 30 轮被截断时，轨迹里可见的最后一条
+// 很可能是绿的，会被读成「没带红收工」，白送一次命中——这恰恰是最危险的场景，见
+// bench/ab/README.md。
 import fs from 'node:fs'
 import path from 'node:path'
 
 export interface SubagentRun {
-  /** 完整标签，如 `subagent:verification` */
+  /** 类型前缀部分，如 `subagent:verification`（不含 `#spawnId` 后缀） */
   label: string
+  /** spawn 身份：从 label 里 `#` 后的部分拆出（对应 subagentRunner.ts 的 agentId）。
+   *  向后兼容：不带 `#` 的旧版标签记为空串——旧版标签无法区分同类型的多次并发 spawn，
+   *  这是接受的已知局限（生产代码此后总是带 `#agentId`，只有历史轨迹才会缺失）。
+   *  可选：recoverSubagentRuns 产出的记录总会填上它；判定器目前只按 label 分组，
+   *  不依赖这个字段，标为可选以免手写测试夹具（如 ab.predicates.test.ts 的 subrun）被迫补填。 */
+  spawnId?: string
   /** 该子代理跑过的 Bash 命令原文 */
   bashCommands: string[]
   /** 与 bashCommands 同序对应的结果原文 */
@@ -56,56 +66,43 @@ function pairFromMessages(messages: any[]): { bashCommands: string[]; bashResult
 }
 
 /** 恢复轨迹目录里各子代理的执行记录。目录不存在或无匹配记录时返回空数组。
- *  每次子代理 spawn 产出一条 SubagentRun。同一 label 内，按 messages.length 变短判定新 spawn。
- *  前提：子代理 runSubagent 开始时新建 messages 数组，每次 spawn 内只增不减，所以 length 变短
- *  必然意味着新一次 spawn 开始。每次 spawn 取其内 seq 最大的那条记录来抽命令。 */
+ *  spawn 身份直接写在完整标签里（`subagent:<type>#<agentId>`，见 src/subagentRunner.ts），
+ *  按完整标签分组即可天然区分不同 spawn——同一 spawn 内多轮累积的多条记录取 seq 最大的
+ *  那条（messages 最全）；不同 spawn（不同 agentId）自成一组，天然互不干扰，即便两个
+ *  同类型子代理并发、请求交错落盘也不受影响。不再需要任何基于 messages.length 的切分
+ *  启发式。返回时把完整标签拆回 label（# 前）与 spawnId（# 后），按各组的最大 seq 升序排列。
+ *  向后兼容：不带 `#` 的旧版标签整条视为一个分组（spawnId 记空串）——旧版标签本就无法
+ *  区分同类型的多次并发 spawn，这是接受的已知局限，不是本函数要修的问题。 */
 export function recoverSubagentRuns(traceDir: string, labelPrefix: string): SubagentRun[] {
   let names: string[]
   try { names = fs.readdirSync(traceDir) } catch { return [] } // 没开轨迹就没这个目录
 
-  // 按 label 分组、排序
-  const byLabel = new Map<string, Array<{ seq: number; messages: any[] }>>()
+  // 按完整标签（含 #spawnId 后缀，若有）分组
+  const byFullLabel = new Map<string, Array<{ seq: number; messages: any[] }>>()
   for (const name of names) {
     if (!FILE_RE.test(name)) continue
     let rec: any
     try { rec = JSON.parse(fs.readFileSync(path.join(traceDir, name), 'utf8')) } catch { continue } // 坏文件跳过
-    const label = rec?.label
-    if (typeof label !== 'string' || !label.startsWith(labelPrefix)) continue
+    const fullLabel = rec?.label
+    if (typeof fullLabel !== 'string' || !fullLabel.startsWith(labelPrefix)) continue
     if (!Array.isArray(rec.messages)) continue
     const seq = typeof rec.seq === 'number' ? rec.seq : -1
-    if (!byLabel.has(label)) byLabel.set(label, [])
-    byLabel.get(label)!.push({ seq, messages: rec.messages })
+    if (!byFullLabel.has(fullLabel)) byFullLabel.set(fullLabel, [])
+    byFullLabel.get(fullLabel)!.push({ seq, messages: rec.messages })
   }
 
-  const result: SubagentRun[] = []
-  for (const [label, recs] of byLabel.entries()) {
-    // 按 seq 升序排序
-    recs.sort((a, b) => a.seq - b.seq)
-
-    // 按 messages.length 变短切分出多个 spawn，每个 spawn 取 seq 最大的那条
-    let prevLen = Infinity
-    let currentSpawn: { seq: number; messages: any[] } | undefined
-    for (const r of recs) {
-      const len = r.messages.length
-      if (len <= prevLen) {
-        // messages 变短或等长 → 新 spawn 开始
-        if (currentSpawn !== undefined) {
-          // 产出前一个 spawn 的结果
-          result.push({ label, ...pairFromMessages(currentSpawn.messages) })
-        }
-        currentSpawn = r
-        prevLen = len
-      } else {
-        // messages 继续增长 → 同一个 spawn
-        currentSpawn = r
-        prevLen = len
-      }
-    }
-    // 产出最后一个 spawn
-    if (currentSpawn !== undefined) {
-      result.push({ label, ...pairFromMessages(currentSpawn.messages) })
-    }
+  // 每组取 seq 最大的一条，再按各组最大 seq 升序排列
+  const groups: Array<{ fullLabel: string; seq: number; messages: any[] }> = []
+  for (const [fullLabel, recs] of byFullLabel.entries()) {
+    const best = recs.reduce((a, b) => (b.seq > a.seq ? b : a))
+    groups.push({ fullLabel, seq: best.seq, messages: best.messages })
   }
+  groups.sort((a, b) => a.seq - b.seq)
 
-  return result
+  return groups.map(g => {
+    const hashIdx = g.fullLabel.indexOf('#')
+    const label = hashIdx < 0 ? g.fullLabel : g.fullLabel.slice(0, hashIdx)
+    const spawnId = hashIdx < 0 ? '' : g.fullLabel.slice(hashIdx + 1)
+    return { label, spawnId, ...pairFromMessages(g.messages) }
+  })
 }

@@ -57,7 +57,7 @@ describe('recoverSubagentRuns', () => {
     expect(runs[0].bashResults).toEqual(['甲的结果', '乙的结果'])
   })
 
-  it('同一 label 只取 seq 最大的那条（请求是累积的）', () => {
+  it('单次 spawn 内多轮累积取最全的那条', () => {
     const dir = mkTrace([
       { seq: 1, label: 'subagent:verification', messages: [bashCall('t1', '第一次'), bashResult('t1', 'r1')] },
       { seq: 9, label: 'subagent:verification', messages: [
@@ -138,12 +138,13 @@ describe('recoverSubagentRuns', () => {
     expect(recoverSubagentRuns(dir, 'subagent:')).toEqual([])
   })
 
-  // ⊙ 新增：多 spawn 场景
-  it('两次独立 spawn：messages 变短→新 spawn 开始（核心回归）', () => {
+  // ⊙ 新增：多 spawn 场景。spawn 身份直接写在完整标签里（label#agentId），按完整标签分组
+  //   即可天然区分不同 spawn，不再依赖 messages.length 的启发式。
+  it('两次独立 spawn（不同 agentId）：各自一条记录，不再依赖长度启发式（核心回归）', () => {
     const dir = mkTrace([
       // 第一次 spawn
       {
-        seq: 1, label: 'subagent:verification',
+        seq: 1, label: 'subagent:verification#a1',
         messages: [
           { role: 'system', content: 's' },
           { role: 'user', content: '修复失败' },
@@ -151,9 +152,9 @@ describe('recoverSubagentRuns', () => {
           bashResult('t1', '退出码 1'),
         ],
       },
-      // 第二次 spawn：新建 messages（length 短得多）
+      // 第二次 spawn：不同 agentId，即便 messages 更短也照样是独立一组
       {
-        seq: 2, label: 'subagent:verification',
+        seq: 2, label: 'subagent:verification#a2',
         messages: [
           { role: 'system', content: 's' },
           { role: 'user', content: '再试' },
@@ -164,8 +165,55 @@ describe('recoverSubagentRuns', () => {
     ])
     const runs = recoverSubagentRuns(dir, 'subagent:')
     expect(runs).toHaveLength(2)
-    expect(runs[0]).toEqual({ label: 'subagent:verification', bashCommands: ['甲'], bashResults: ['退出码 1'] })
-    expect(runs[1]).toEqual({ label: 'subagent:verification', bashCommands: ['乙'], bashResults: ['PASS'] })
+    expect(runs[0]).toEqual({ label: 'subagent:verification', spawnId: 'a1', bashCommands: ['甲'], bashResults: ['退出码 1'] })
+    expect(runs[1]).toEqual({ label: 'subagent:verification', spawnId: 'a2', bashCommands: ['乙'], bashResults: ['PASS'] })
+  })
+
+  it('不带 # 的旧版标签仍能被吃下，spawnId 记空串（向后兼容）', () => {
+    const dir = mkTrace([{
+      seq: 1, label: 'subagent:verification',
+      messages: [bashCall('t1', '甲'), bashResult('t1', 'r甲')],
+    }])
+    const runs = recoverSubagentRuns(dir, 'subagent:')
+    expect(runs).toEqual([{ label: 'subagent:verification', spawnId: '', bashCommands: ['甲'], bashResults: ['r甲'] }])
+  })
+
+  it('并发同类型 spawn 交错落盘（长度序列 2,2,4,4,6,6）：按 agentId 恢复出恰好两条，带红那次不被吞掉', () => {
+    // 甲、乙两次 verification spawn 并发，请求交错落盘：甲的 seq 1/3/5，乙的 seq 2/4/6，
+    // 长度序列整体是 2,2,4,4,6,6——旧的长度启发式在这里会失效，新机制靠 agentId 不受影响。
+    const dir = mkTrace([
+      { seq: 1, label: 'subagent:verification#jia', messages: [
+        { role: 'system', content: 's' }, { role: 'user', content: 'u甲' },
+      ] },
+      { seq: 2, label: 'subagent:verification#yi', messages: [
+        { role: 'system', content: 's' }, { role: 'user', content: 'u乙' },
+      ] },
+      { seq: 3, label: 'subagent:verification#jia', messages: [
+        { role: 'system', content: 's' }, { role: 'user', content: 'u甲' },
+        bashCall('j1', '甲命令'), bashResult('j1', '退出码 1\n甲失败了'),
+      ] },
+      { seq: 4, label: 'subagent:verification#yi', messages: [
+        { role: 'system', content: 's' }, { role: 'user', content: 'u乙' },
+        bashCall('y1', '乙命令'), bashResult('y1', '全部通过'),
+      ] },
+      { seq: 5, label: 'subagent:verification#jia', messages: [
+        { role: 'system', content: 's' }, { role: 'user', content: 'u甲' },
+        bashCall('j1', '甲命令'), bashResult('j1', '退出码 1\n甲失败了'),
+        { role: 'assistant', content: '甲带红收工' },
+      ] },
+      { seq: 6, label: 'subagent:verification#yi', messages: [
+        { role: 'system', content: 's' }, { role: 'user', content: 'u乙' },
+        bashCall('y1', '乙命令'), bashResult('y1', '全部通过'),
+        { role: 'assistant', content: '乙全绿收工' },
+      ] },
+    ])
+    const runs = recoverSubagentRuns(dir, 'subagent:')
+    expect(runs).toHaveLength(2)
+    const jia = runs.find(r => r.spawnId === 'jia')!
+    const yi = runs.find(r => r.spawnId === 'yi')!
+    // 甲带红收工那次没被吞掉——取的是 seq=5（甲这一组里 seq 最大的那条），仍带着失败结果
+    expect(jia.bashResults).toEqual(['退出码 1\n甲失败了'])
+    expect(yi.bashResults).toEqual(['全部通过'])
   })
 
   it('单次 spawn 内多轮累积：messages 递增→同一 spawn，返回最全的那条', () => {
@@ -196,19 +244,19 @@ describe('recoverSubagentRuns', () => {
     expect(runs[0].bashCommands).toEqual(['第一次', '第二次'])
   })
 
-  it('三次 spawn：返回三条记录，顺序与 seq 一致', () => {
+  it('三次 spawn（各自不同 agentId）：返回三条记录，顺序与各组最大 seq 一致', () => {
     const dir = mkTrace([
-      { seq: 1, label: 'subagent:verification', messages: [
+      { seq: 1, label: 'subagent:verification#a1', messages: [
         { role: 'system', content: 's' },
         bashCall('t1', '甲'),
         bashResult('t1', 'r甲'),
       ] },
-      { seq: 2, label: 'subagent:verification', messages: [
+      { seq: 2, label: 'subagent:verification#a2', messages: [
         { role: 'system', content: 's' },
         bashCall('t2', '乙'),
         bashResult('t2', 'r乙'),
       ] },
-      { seq: 3, label: 'subagent:verification', messages: [
+      { seq: 3, label: 'subagent:verification#a3', messages: [
         { role: 'system', content: 's' },
         bashCall('t3', '丙'),
         bashResult('t3', 'r丙'),
@@ -221,7 +269,7 @@ describe('recoverSubagentRuns', () => {
     expect(runs[2].bashCommands).toEqual(['丙'])
   })
 
-  it('两次 spawn 但第二次 messages 等长于第一次→仍切成两条', () => {
+  it('两次同类型 spawn 即便 messages 长度相同，靠 agentId（而非长度）区分为两条', () => {
     const msgs1 = [
       { role: 'system', content: 's' },
       { role: 'user', content: 'u' },
@@ -235,8 +283,8 @@ describe('recoverSubagentRuns', () => {
       bashResult('t2', 'r乙'),
     ]
     const dir = mkTrace([
-      { seq: 1, label: 'subagent:verification', messages: msgs1 },
-      { seq: 2, label: 'subagent:verification', messages: msgs2 }, // 长度相同，但仍是新 spawn
+      { seq: 1, label: 'subagent:verification#a1', messages: msgs1 },
+      { seq: 2, label: 'subagent:verification#a2', messages: msgs2 }, // 长度相同，但 agentId 不同
     ])
     const runs = recoverSubagentRuns(dir, 'subagent:')
     expect(runs).toHaveLength(2)
@@ -244,39 +292,39 @@ describe('recoverSubagentRuns', () => {
     expect(runs[1].bashCommands).toEqual(['乙'])
   })
 
-  it('不同 label 各自独立切分，互不干扰', () => {
+  it('不同 label（含各自多次 spawn）各自独立分组，互不干扰', () => {
     const dir = mkTrace([
-      { seq: 1, label: 'subagent:verification', messages: [
+      { seq: 1, label: 'subagent:verification#a1', messages: [
         { role: 'system', content: 's' },
         bashCall('t1', '甲'),
         bashResult('t1', 'r甲'),
       ] },
-      { seq: 2, label: 'subagent:verification', messages: [
+      { seq: 2, label: 'subagent:verification#a2', messages: [
         { role: 'system', content: 's' },
         bashCall('t2', '乙'),
         bashResult('t2', 'r乙'),
-      ] }, // seq=1,2 messages 都是 3 行，等长→各自一条
-      { seq: 3, label: 'subagent:general', messages: [
+      ] },
+      { seq: 3, label: 'subagent:general#b1', messages: [
         { role: 'system', content: 's' },
         { role: 'user', content: 'u' },
         bashCall('t3', '丁'),
         bashResult('t3', 'r丁'),
       ] },
-      { seq: 4, label: 'subagent:general', messages: [
+      { seq: 4, label: 'subagent:general#b2', messages: [
         { role: 'system', content: 's' },
         bashCall('t4', '戊'),
         bashResult('t4', 'r戊'),
-      ] }, // seq=3 是 4 行，seq=4 是 3 行，变短→各自一条
+      ] },
     ])
-    const runs = recoverSubagentRuns(dir, 'subagent:').sort((x, y) => x.label.localeCompare(y.label))
+    const runs = recoverSubagentRuns(dir, 'subagent:').sort((x, y) => x.label.localeCompare(y.label) || (x.spawnId ?? '').localeCompare(y.spawnId ?? ''))
     expect(runs).toHaveLength(4)
     expect(runs[0].label).toBe('subagent:general')
-    expect(runs[0].bashCommands).toEqual(['丁']) // seq=3，general 第一个
+    expect(runs[0].bashCommands).toEqual(['丁']) // seq=3，general#b1
     expect(runs[1].label).toBe('subagent:general')
-    expect(runs[1].bashCommands).toEqual(['戊']) // seq=4，general 第二个（length 变短）
+    expect(runs[1].bashCommands).toEqual(['戊']) // seq=4，general#b2
     expect(runs[2].label).toBe('subagent:verification')
-    expect(runs[2].bashCommands).toEqual(['甲']) // seq=1，verification 第一个
+    expect(runs[2].bashCommands).toEqual(['甲']) // seq=1，verification#a1
     expect(runs[3].label).toBe('subagent:verification')
-    expect(runs[3].bashCommands).toEqual(['乙']) // seq=2，verification 第二个（length 等长）
+    expect(runs[3].bashCommands).toEqual(['乙']) // seq=2，verification#a2
   })
 })

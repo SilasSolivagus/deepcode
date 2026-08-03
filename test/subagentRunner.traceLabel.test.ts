@@ -31,7 +31,8 @@ describe('子代理把自己的类型写进 traceLabel', () => {
       agentId: 'a1', agentType: 'verification',
     })
     expect(captured.length).toBeGreaterThan(0)
-    expect(captured[0].traceLabel).toBe('subagent:verification')
+    expect(captured[0].traceLabel.startsWith('subagent:verification#')).toBe(true)
+    expect(captured[0].traceLabel.split('#')[1].length).toBeGreaterThan(0)
   })
 
   it('别的子代理类型也带自己的名字（标签不是写死的）', async () => {
@@ -41,6 +42,7 @@ describe('子代理把自己的类型写进 traceLabel', () => {
       tools: [], model: 'm', ctx: ctx(), signal: new AbortController().signal,
       agentId: 'a2', agentType: 'general-purpose',
     })
-    expect(captured[0].traceLabel).toBe('subagent:general-purpose')
+    expect(captured[0].traceLabel.startsWith('subagent:general-purpose#')).toBe(true)
+    expect(captured[0].traceLabel.split('#')[1].length).toBeGreaterThan(0)
   })
 })

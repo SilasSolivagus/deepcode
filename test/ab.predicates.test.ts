@@ -305,4 +305,72 @@ describe('subagentFinishedWithFailingCommand', () => {
     ] })
     expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(true)
   })
+
+  // C1：终审实证——只派了一个带红的 Explore（没有任何验证行为）时，不给 subagentType
+  // 会把 Explore 的红也算进去、翻成 true；给了 subagentType: verification 后只看
+  // verification 这条，Explore 的红不再污染读数。
+  it('给了 subagentType：只看该类型的记录，别的类型的红不算数', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:Explore', ['退出码 1']),
+      subrun('subagent:verification', ['退出码 1', '全部通过']),
+    ] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, { subagentType: 'verification' })).toBe(false)
+  })
+
+  it('给了 subagentType：只有别的类型带红、该类型没有记录 → null（不适用）', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:Explore', ['退出码 1'])] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, { subagentType: 'verification' })).toBeNull()
+  })
+
+  it('不给 subagentType：维持旧行为，别的类型的红照样计入（取或）', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:Explore', ['退出码 1'])] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(true)
+  })
+
+  // I2：超时被杀不带「退出码」前缀（src/tools/bash.ts:135），只认退出码前缀会把它读成成功。
+  it('验证者的命令超时被杀（不带「退出码」前缀）也算带红收工', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:verification', ['错误：命令超时（120000ms），已终止。\n部分输出']),
+    ] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(true)
+  })
+
+  it('超时之后又跑出成功的命令 → false（不是永久判死）', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:verification', ['错误：命令超时（120000ms），已终止。', '全部通过']),
+    ] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(false)
+  })
+})
+
+describe('subagentRanNoCommand', () => {
+  it('最后一次 spawn 一条命令都没跑 → true', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:verification', [])] })
+    expect(PREDICATES.subagentRanNoCommand(a, {})).toBe(true)
+  })
+
+  it('跑了命令且全绿收工 → false', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:verification', ['ok', '全部通过'])] })
+    expect(PREDICATES.subagentRanNoCommand(a, {})).toBe(false)
+  })
+
+  it('同 label 多次 spawn：只看最后一次是否零命令', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:verification', ['退出码 1']),
+      subrun('subagent:verification', []),
+    ] })
+    expect(PREDICATES.subagentRanNoCommand(a, {})).toBe(true)
+  })
+
+  it('给了 subagentType：只看该类型', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:Explore', []),
+      subrun('subagent:verification', ['ok']),
+    ] })
+    expect(PREDICATES.subagentRanNoCommand(a, { subagentType: 'verification' })).toBe(false)
+  })
+
+  it('无匹配记录 → null（不适用）', () => {
+    expect(PREDICATES.subagentRanNoCommand(rich(), {})).toBeNull()
+  })
 })
