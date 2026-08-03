@@ -1,4 +1,4 @@
-// Task 9：dream prompt 换成 CC 四阶段 + 工具集接线（日志/transcript 检索 + CLAUDE.md 对账）
+// Task 9：dream prompt 换成四阶段 + 工具集接线（日志/transcript 检索 + CLAUDE.md 对账）
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path'
 import { buildConsolidationPrompt, runAutoDream } from '../src/services/memory/autoDream.js'
@@ -11,7 +11,7 @@ const p = () => buildConsolidationPrompt({
   logsDir: '/mem/logs',
 })
 
-describe('dream prompt：CC 四阶段', () => {
+describe('dream prompt：四阶段', () => {
   it('四个阶段齐全', () => {
     const t = p()
     for (const phase of ['Orient', 'Gather', 'Consolidate', 'Prune']) expect(t).toContain(phase)

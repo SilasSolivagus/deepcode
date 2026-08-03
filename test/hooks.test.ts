@@ -578,7 +578,7 @@ describe('批B Task1: MessageDisplay 声明 + displayContent', () => {
 
 describe('B5: PostToolUse 输出改写字段名', () => {
   const base = { outcome: 'success' as const, label: '', durationMs: 0 }
-  it('applyHookJson 读 CC 字段 updatedToolOutput', () => {
+  it('applyHookJson 读外部 hook 协议的字段 updatedToolOutput', () => {
     const r = applyHookJson({ hookSpecificOutput: { updatedToolOutput: 'NEW' } }, base)
     expect(r.updatedOutput).toBe('NEW')
   })

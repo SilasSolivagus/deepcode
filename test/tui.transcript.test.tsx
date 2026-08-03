@@ -13,7 +13,7 @@ describe('Transcript', () => {
       { kind: 'assistant', segments: [], pending: '**重点** 内容', messageId: 'm1', done: true },
     ]
     const { lastFrame } = render(<Transcript items={items} />)
-    expect(lastFrame()).toContain('> 你好')   // CC 用户行 `> message`
+    expect(lastFrame()).toContain('> 你好')   // 用户行 `> message`
     expect(lastFrame()).toContain('⏺ ')        // 完成 assistant 带 ⏺ 项目符号
     expect(lastFrame()).toContain('重点')   // markdown 渲染后无 ** 字面量
     expect(lastFrame()).not.toContain('**重点**')
@@ -37,7 +37,7 @@ describe('Transcript', () => {
     expect(f2).toContain('⎿  42 行')              // 结果行（两空格）
   })
 
-  it('多行预览：⎿ 首行 + 续行缩进，previewExtra>0 时追加「… +N 行」（对照 CC）', () => {
+  it('多行预览：⎿ 首行 + 续行缩进，previewExtra>0 时追加「… +N 行」', () => {
     const done: TranscriptItem[] = [{ kind: 'tool', id: 't', name: 'Write', desc: '{"file_path":"a.ts"}', running: false, ok: true, preview: '写入 817 行\nline2\nline3', previewExtra: 963, ms: 12 }]
     const f = render(<Transcript items={done} />).lastFrame()!
     expect(f).toContain('⎿  写入 817 行')   // 首行带 ⎿
@@ -62,7 +62,7 @@ describe('Transcript', () => {
     expect(f).not.toContain('第二行')   // 折叠
   })
 
-  it('usage 行 CC 式精简：本轮输出 token + 累计花费', () => {
+  it('usage 行精简：本轮输出 token + 累计花费', () => {
     const items: TranscriptItem[] = [{ kind: 'usage', in: 100, hit: 80, out: 9, totalIn: 100, totalOut: 9, cost: 0.0001 }]
     const f = render(<Transcript items={items} />).lastFrame()!
     expect(f).toContain('9 tokens')

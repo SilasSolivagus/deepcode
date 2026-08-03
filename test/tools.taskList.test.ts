@@ -68,7 +68,7 @@ describe('taskListTools hook 集成', () => {
     await taskCreateTool.call({ subject: '甲', description: 'd' }, ctxWithHook(s, async () => okOutcome, calls))
     const ev = calls.find(c => c.e === 'TaskCreated')
     expect(ev.p).toMatchObject({ task_kind: 'todo', task_id: '1', subject: '甲' })
-    expect(ev.p.task_subject).toBe('甲') // B6：CC 字段名
+    expect(ev.p.task_subject).toBe('甲') // B6：外部协议约定的字段名
   })
   it('TaskCreated 被 block → 删任务 + 返回错误', async () => {
     const s = new TaskListStore(); const calls: any[] = []

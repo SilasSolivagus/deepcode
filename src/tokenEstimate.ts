@@ -29,7 +29,7 @@ export const IMAGE_TOKEN_ESTIMATE = 1200 // 每图粗估（状态栏预算用，
 
 /** 按 deepcode 扁平 OpenAI 消息结构逐条累加 token 估算。
  *  content 永远是 string|null；assistant.tool_calls[].function 的 name+arguments 计入。
- *  无 Anthropic block 数组、无图像分支（V4 纯文本）。整体一次 ceil 避免逐条 ceil 累积偏高。 */
+ *  无多模态 block 数组、无图像分支（V4 纯文本）。整体一次 ceil 避免逐条 ceil 累积偏高。 */
 export function estimateMessagesTokens(messages: any[]): number {
   let weighted = 0
   for (const m of messages ?? []) {

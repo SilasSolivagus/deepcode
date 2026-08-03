@@ -109,7 +109,7 @@ export function FullscreenApp(props: {
 
   useInput((input, key) => {
     if (key.escape && workflowsMode) { setWorkflowsMode(false); return }
-    // 双击 Esc（≤600ms）= 回退选择器（CC rewind 入口），仅在纯空闲+输入框为空时；单 Esc 仍归 InputBox。
+    // 双击 Esc（≤600ms）= 回退选择器（回退到上一个检查点），仅在纯空闲+输入框为空时；单 Esc 仍归 InputBox。
     if (key.escape) {
       const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !state.pendingKeyEntry
         && !resumeMode && !modelPickerMode && !setupMode && !outputStyleMode && !themeMode && !rewindStep

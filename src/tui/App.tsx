@@ -95,7 +95,7 @@ export function App(props: {
   // 个别终端不识别时此分支静默不触发，可用 /plan、/accept 命令作保底。
   useInput((input, key) => {
     if (key.escape && workflowsMode) { setWorkflowsMode(false); return }
-    // 双击 Esc（≤600ms）= 回退选择器（CC 的 rewind 入口），仅在纯空闲+输入框为空时触发；
+    // 双击 Esc（≤600ms）= 回退选择器（回退到上一个检查点），仅在纯空闲+输入框为空时触发；
     // 单 Esc 仍由 InputBox 处理（清空输入 / busy 时中断），不受影响。
     if (key.escape) {
       const idle = !state.busy && !state.pendingAsk && !state.pendingPlanApproval && !state.pendingQuestion && !state.pendingKeyEntry
