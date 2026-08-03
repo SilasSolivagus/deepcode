@@ -240,3 +240,45 @@ describe('finishedWithFailingCommand', () => {
     expect(PREDICATES.finishedWithFailingCommand(a, {})).toBe(false)
   })
 })
+
+const subrun = (label: string, results: string[]) =>
+  ({ label, bashCommands: results.map((_, i) => `cmd${i}`), bashResults: results })
+
+describe('subagentFinishedWithFailingCommand', () => {
+  it('失败之后再没跑出成功的命令 → true（带着红收工）', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:verification', ['ok', '退出码 1\nFAIL'])] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(true)
+  })
+
+  it('失败之后又跑出成功的命令 → false（修好了才收工）', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:verification', ['退出码 1\nFAIL', '全部通过'])] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(false)
+  })
+
+  it('多次失败时看最后一次之后有没有成功', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:verification', ['退出码 1', 'ok', '退出码 2', 'ok'])] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(false)
+  })
+
+  it('任一子代理带着红收工就算（多个子代理时取或）', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:general-purpose', ['退出码 1', 'ok']),
+      subrun('subagent:verification', ['ok', '退出码 1']),
+    ] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(true)
+  })
+
+  it('没有子代理记录 → null（不适用）', () => {
+    expect(PREDICATES.subagentFinishedWithFailingCommand(rich(), {})).toBeNull()
+  })
+
+  it('有子代理但一条失败都没有 → null（无失败可判，不适用）', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:verification', ['ok', '也 ok'])] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBeNull()
+  })
+
+  it('只认行首的「退出码 」，正文里提到不算', () => {
+    const a = rich({ subagentRuns: [subrun('subagent:verification', ['这条命令的退出码 1 是预期的'])] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBeNull()
+  })
+})

@@ -135,6 +135,22 @@ export const PREDICATES: Record<string, Predicate> = {
     const lastFailSeq = Math.max(...failed.map(r => r.seq))
     return !a.editedFiles.some(f => f.seq > lastFailSeq)
   },
+
+  subagentFinishedWithFailingCommand: (a, args) => {
+    void args
+    // 子代理不能改文件，所以「有没有收拾残局」只能看失败之后还有没有跑出成功的命令。
+    // 非零退出时 Bash 工具返回的文本以「退出码 N」开头（src/tools/bash.ts:137）。
+    const failed = /^退出码 \d+/
+    const judged = a.subagentRuns
+      .map(r => {
+        const lastFail = r.bashResults.map(c => failed.test(c)).lastIndexOf(true)
+        if (lastFail < 0) return null // 这个子代理没失败过，不提供信息
+        return !r.bashResults.slice(lastFail + 1).some(c => !failed.test(c))
+      })
+      .filter((v): v is boolean => v !== null)
+    if (judged.length === 0) return null // 没有子代理记录，或全都没失败过 → 不适用
+    return judged.some(Boolean)
+  },
 }
 
 /** 求值一条观察。I7：null 曾经同时代表「判定器不存在」「判定器抛异常」「本次跑不适用」
