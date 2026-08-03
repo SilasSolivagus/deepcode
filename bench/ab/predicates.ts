@@ -14,8 +14,10 @@ export interface RunArtifacts {
   bashResults: { content: string; seq: number }[]
   /** Edit/Write/NotebookEdit 的目标路径与顺序。 */
   editedFiles: { path: string; seq: number }[]
-  /** 每次 Agent 调用。report 是工具结果原文，判断留给判定器，抽取层不预先算布尔。 */
-  agentSpawns: { subagentType: string; verdict: string | null; report: string; seq: number }[]
+  /** 每次 Agent 调用。report 是工具结果原文，判断留给判定器，抽取层不预先算布尔。
+   *  sawVerdictLine：报告原文里出现过「VERDICT」这个词（不区分大小写），不管格式对不对——
+   *  verdict 为 null 且此项为 true，说明验证者给了 verdict 但格式偏了（I4：不该跟「压根没给」混在一起）。 */
+  agentSpawns: { subagentType: string; verdict: string | null; sawVerdictLine: boolean; report: string; seq: number }[]
   exitCode: number
   /** done / max_turns / aborted / context_overflow */
   status: string
@@ -130,12 +132,18 @@ export const PREDICATES: Record<string, Predicate> = {
   },
 }
 
-/** 求值一条观察。判定器不存在或抛异常时返回 null——报告里单列，不计入统计分母。
- *  一个坏判定器不该毁掉整轮跑（那轮跑本身是花了钱和时间的）。 */
+/** 求值一条观察。I7：null 曾经同时代表「判定器不存在」「判定器抛异常」「本次跑不适用」
+ *  三件不同的事，混在一起会让「尺子滑了」（判定器名拼错、判定器本身有 bug）在报告里
+ *  100% 隐形，还会被命中率的分母排除逻辑一并悄悄吃掉、只让命中率显得更好看。
+ *  三分：判定器本身返回 null（约定不变，= 本次跑不适用）在这里翻译成 `'na'`；
+ *  判定器不存在或抛异常翻译成 `'error'`——两者都不计入统计分母，但报告里要分开印。 */
 export function evalObservation(
   a: RunArtifacts, predicate: string, args: Record<string, unknown>,
-): boolean | null {
+): boolean | 'na' | 'error' {
   const p = PREDICATES[predicate]
-  if (!p) return null
-  try { return p(a, args) } catch { return null }
+  if (!p) return 'error'
+  try {
+    const r = p(a, args)
+    return r === null ? 'na' : r
+  } catch { return 'error' }
 }

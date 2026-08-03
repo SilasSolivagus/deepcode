@@ -149,8 +149,8 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
   },
   {
     agentType: 'verification',
-    whenToUse: '独立验证实现是否真的能用，在报告完成前调用；非平凡改动（3 个以上文件、后端/接口、基础设施）后必用。传入原始任务、改过的文件、采用的方法；它会跑构建/测试/检查并给出 PASS/FAIL/PARTIAL 判定与证据',
-    // 与 CC 一致：验证者不能改项目文件，也不能再派子代理。Bash 保留——
+    whenToUse: '独立验证一处实现是否真的能用：跑构建/测试/针对性检查，返回 PASS/FAIL/PARTIAL 判定与证据。传入原始任务、改过的文件、采用的方法。',
+    // 验证者不能改项目文件，也不能再派子代理。Bash 保留——
     // 它靠 Bash 重定向往 /tmp 写一次性脚本，禁的是碰项目文件，不是禁止写任何文件。
     disallowedTools: ['Edit', 'Write', 'NotebookEdit', 'Agent'],
     model: 'inherit',

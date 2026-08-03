@@ -163,3 +163,47 @@ describe('extractArtifacts 新增字段', () => {
     expect(r.agentSpawns).toEqual([])
   })
 })
+
+describe('I4：VERDICT 抽取对常见格式偏差容错', () => {
+  const withVerdict = (content: string) => {
+    const t = [
+      line2({ type: 'tool_start', id: 'v', name: 'Agent', input: { subagent_type: 'verification' } }),
+      line2({ type: 'tool_result', id: 'v', ok: true, content, ms: 1 }),
+    ].join('\n')
+    return extractArtifacts({ traceJsonl: t, exitCode: 0, outputDir: '/o' }).agentSpawns[0]
+  }
+
+  it('规范格式', () => {
+    const s = withVerdict('VERDICT: PASS')
+    expect(s.verdict).toBe('PASS')
+    expect(s.sawVerdictLine).toBe(true)
+  })
+
+  it('行尾多一个空格', () => {
+    expect(withVerdict('VERDICT: PASS ').verdict).toBe('PASS')
+  })
+
+  it('被加粗（提示词明令禁止但模型常犯）', () => {
+    expect(withVerdict('**VERDICT: PASS**').verdict).toBe('PASS')
+  })
+
+  it('冒号后两个空格', () => {
+    expect(withVerdict('VERDICT:  PASS').verdict).toBe('PASS')
+  })
+
+  it('末尾带句号', () => {
+    expect(withVerdict('VERDICT: PASS.').verdict).toBe('PASS')
+  })
+
+  it('出现 VERDICT 但格式不合法 → verdict=null 且 sawVerdictLine=true', () => {
+    const s = withVerdict('我的最终 VERDICT 还没想好，容我再想想。')
+    expect(s.verdict).toBeNull()
+    expect(s.sawVerdictLine).toBe(true)
+  })
+
+  it('压根没提 VERDICT → verdict=null 且 sawVerdictLine=false（与「格式偏了」区分开）', () => {
+    const s = withVerdict('看起来都挺好的。')
+    expect(s.verdict).toBeNull()
+    expect(s.sawVerdictLine).toBe(false)
+  })
+})

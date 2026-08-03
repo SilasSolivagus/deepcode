@@ -191,7 +191,9 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
   // 合同只在 headless 注入：TUI 与 backgroundRunner 结构上拿不到（见 VERIFICATION_CONTRACT 注释）。
   const baseSystem = buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, undefined, resolveOutputStyle(settings.outputStyle, loadOutputStyles()), undefined, undefined, settings.language, globalMemdir, mem.global.maxBytes)
-  const initMsgs: any[] = [{ role: 'system', content: flag('verificationAgent', false) ? `${baseSystem}\n${VERIFICATION_CONTRACT}` : baseSystem }]
+  // 合同自成一段（# 验证），不拼进 # 环境 段末尾：拼进环境信息里会削弱遵从度，
+  // 且违反本文件自己的门控约定（实验条目不该绕过既有的段门控自成一路，见 prompt.ts）。
+  const initMsgs: any[] = [{ role: 'system', content: flag('verificationAgent', false) ? `${baseSystem}\n\n# 验证\n${VERIFICATION_CONTRACT}` : baseSystem }]
   if (settings.hooks) {
     const ss = await runHooks('SessionStart', {
       hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source: 'startup',

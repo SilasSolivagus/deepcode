@@ -121,9 +121,35 @@ describe('mergeAgents / resolveAgents', () => {
     expect(merged.find(a => a.agentType === 'my-new')).toBeTruthy()
     expect(merged.length).toBe(BUILTIN_AGENTS.length + 1)
   })
-  it('resolveAgents 空目录 → 仅 builtin', () => {
-    const home = mkdtempSync(path.join(tmpdir(), 'dc-h-'))
-    const cwd = mkdtempSync(path.join(tmpdir(), 'dc-c-'))
-    expect(resolveAgents(cwd, home).length).toBe(BUILTIN_AGENTS.length)
+  it('resolveAgents 空目录、flag 关（默认）→ builtin 减 verification', () => {
+    // C2：verification 是实验项，flag `verificationAgent` 默认关时不列出，
+    // 否则它会经 buildAgentDescription 无条件下发、污染 A/B 实验对照臂。
+    const ORIG = process.env.DEEPCODE_FLAGS
+    delete process.env.DEEPCODE_FLAGS
+    try {
+      const home = mkdtempSync(path.join(tmpdir(), 'dc-h-'))
+      const cwd = mkdtempSync(path.join(tmpdir(), 'dc-c-'))
+      const agents = resolveAgents(cwd, home)
+      expect(agents.length).toBe(BUILTIN_AGENTS.length - 1)
+      expect(agents.find(a => a.agentType === 'verification')).toBeUndefined()
+    } finally {
+      if (ORIG === undefined) delete process.env.DEEPCODE_FLAGS
+      else process.env.DEEPCODE_FLAGS = ORIG
+    }
+  })
+
+  it('resolveAgents 空目录、flag 开 → 含 verification（仅 builtin）', () => {
+    const ORIG = process.env.DEEPCODE_FLAGS
+    process.env.DEEPCODE_FLAGS = '{"verificationAgent":true}'
+    try {
+      const home = mkdtempSync(path.join(tmpdir(), 'dc-h-'))
+      const cwd = mkdtempSync(path.join(tmpdir(), 'dc-c-'))
+      const agents = resolveAgents(cwd, home)
+      expect(agents.length).toBe(BUILTIN_AGENTS.length)
+      expect(agents.find(a => a.agentType === 'verification')).toBeDefined()
+    } finally {
+      if (ORIG === undefined) delete process.env.DEEPCODE_FLAGS
+      else process.env.DEEPCODE_FLAGS = ORIG
+    }
   })
 })

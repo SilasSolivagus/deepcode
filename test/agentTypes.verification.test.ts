@@ -72,7 +72,7 @@ describe('verification 系统提示词保留了 spec §5.2 的十条机关', () 
   it('⑩ PARTIAL 只给环境限制', () => {
     expect(sp()).toContain('环境限制')
   })
-  it('要求读项目的构建/测试命令来源（CC 靠这条替代「检测测试命令」子系统）', () => {
+  it('要求读项目的构建/测试命令来源', () => {
     expect(sp()).toContain('package.json')
   })
 })

@@ -39,9 +39,12 @@ export function makeWorkflowTool(deps: WorkflowToolDeps): Tool<typeof schema> {
   // 子代理工具池：同 agent.ts 的建法（allTools + WebFetch + Agent 自身），供 resolveAgentTools 筛选。
   // Workflow 不在 allTools 里，也在 GLOBAL_SUBAGENT_DENY 中，不会进入池。
   const webFetchTool = makeWebFetchTool({ client: deps.client, onUsage: deps.onUsage })
-  const agentTool = makeAgentTool({ client: deps.client, onUsage: deps.onUsage, getModel: () => deps.sessionModel })
-  const toolPool: Tool<any>[] = [...allTools, webFetchTool, agentTool]
   const resolvedAgents = deps.agents.length ? deps.agents : BUILTIN_AGENTS
+  // 必须传 agents（= resolvedAgents，同一份已过滤的注册表）：不传会兜底到未过滤的
+  // BUILTIN_AGENTS（见 agent.ts:52），workflow 派生的子代理若递归调用 Agent 工具，
+  // 会看到未经 flag 过滤的工具描述（如关着 verificationAgent 时仍看到 verification）。
+  const agentTool = makeAgentTool({ client: deps.client, onUsage: deps.onUsage, getModel: () => deps.sessionModel, agents: resolvedAgents })
+  const toolPool: Tool<any>[] = [...allTools, webFetchTool, agentTool]
   return {
     name: 'Workflow',
     description: 'orchestrate subagents with deterministic JavaScript workflow. Use this tool for multi-step orchestration where control flow should be deterministic (loops, conditionals, fan-out) rather than model-driven.',

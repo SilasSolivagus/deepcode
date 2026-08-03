@@ -36,9 +36,11 @@ observations:
     args: {}
     expect: false
 
-  # —— 这一条才是量交付质量的。
-  - id: no-red-at-finish
-    desc: 不存在「最后一条失败命令之后再没改过文件、却仍正常收工」
-    predicate: finishedWithFailingCommand
-    args: {}
-    expect: false
+  # 已删除 no-red-at-finish（finishedWithFailingCommand）。终审实证：主轨迹只覆盖主代理
+  # 直接执行的 Bash——子代理跑的是另一个 runLoop（src/subagentRunner.ts:166），其内部事件
+  # 在 :179-181 被就地抽干，从不经 streamFromLoopEvent 落轨迹（grep 全仓库只两处命中）。
+  # 而合同恰恰要求主代理把验证工作交给子代理：treatment 臂把跑测试搬进子代理后，主轨迹
+  # 里的失败命令趋近于零，判定器早退返回 false（"没带红收工"），于是 expect:false 白送一次
+  # 命中；反方向同样成立（PASS 后的抽查重跑发生在所有编辑之后，一条红就让它翻成 true，
+  # treatment 反被扣分）。两个方向都是轨迹构成的伪影，不是真实的质量信号，这条观察在
+  # 本实验设计下不可解释——留着比没有更糟，故删除。等子代理执行能进轨迹后再考虑加回来。

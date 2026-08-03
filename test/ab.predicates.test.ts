@@ -52,13 +52,13 @@ describe('numericFromBashAtLeast', () => {
     const a = base({ bashCommands: ['node gen.js --old-size 100 * 1024 * 1024 --new-size 2048 * 1024 * 1024'] })
     expect(PREDICATES.numericFromBashAtLeast(a, { pattern: '(\\d+)\\s*\\*\\s*1024\\s*\\*\\s*1024', min: 1024 })).toBe(true)
   })
-  it('min 缺失时返回 null（通过 evalObservation 降级）', () => {
+  it('min 缺失时抛错，evalObservation 降级成 error（I7：抛异常≠不适用）', () => {
     const a = base({ bashCommands: ['gen 2048 * 1024 * 1024'] })
-    expect(evalObservation(a, 'numericFromBashAtLeast', { pattern: '(\\d+)\\s*\\*\\s*1024\\s*\\*\\s*1024' })).toBeNull()
+    expect(evalObservation(a, 'numericFromBashAtLeast', { pattern: '(\\d+)\\s*\\*\\s*1024\\s*\\*\\s*1024' })).toBe('error')
   })
-  it('min 是非数字字符串时返回 null（通过 evalObservation 降级）', () => {
+  it('min 是非数字字符串时抛错，evalObservation 降级成 error', () => {
     const a = base({ bashCommands: ['gen 2048 * 1024 * 1024'] })
-    expect(evalObservation(a, 'numericFromBashAtLeast', { pattern: '(\\d+)\\s*\\*\\s*1024\\s*\\*\\s*1024', min: 'not-a-number' })).toBeNull()
+    expect(evalObservation(a, 'numericFromBashAtLeast', { pattern: '(\\d+)\\s*\\*\\s*1024\\s*\\*\\s*1024', min: 'not-a-number' })).toBe('error')
   })
 })
 
@@ -73,13 +73,13 @@ describe('statusIs / fileExists', () => {
     expect(PREDICATES.fileExists(base({ outputDir: d }), { relPath: 'a.txt' })).toBe(true)
     expect(PREDICATES.fileExists(base({ outputDir: d }), { relPath: 'nope.txt' })).toBe(false)
   })
-  it('fileExists 含 ../ 的路径逃逸被阻止，返回 null（通过 evalObservation）', () => {
+  it('fileExists 含 ../ 的路径逃逸被阻止，抛错后 evalObservation 降级成 error', () => {
     const d = mkdtempSync(path.join(tmpdir(), 'ab-pred-'))
-    expect(evalObservation(base({ outputDir: d }), 'fileExists', { relPath: '../../etc/passwd' })).toBeNull()
+    expect(evalObservation(base({ outputDir: d }), 'fileExists', { relPath: '../../etc/passwd' })).toBe('error')
   })
-  it('fileExists 绝对路径逃逸被阻止，返回 null（通过 evalObservation）', () => {
+  it('fileExists 绝对路径逃逸被阻止，抛错后 evalObservation 降级成 error', () => {
     const d = mkdtempSync(path.join(tmpdir(), 'ab-pred-'))
-    expect(evalObservation(base({ outputDir: d }), 'fileExists', { relPath: '/etc/passwd' })).toBeNull()
+    expect(evalObservation(base({ outputDir: d }), 'fileExists', { relPath: '/etc/passwd' })).toBe('error')
   })
   it('fileExists 子目录中的正常相对路径仍然工作', () => {
     const d = mkdtempSync(path.join(tmpdir(), 'ab-pred-'))
@@ -96,12 +96,12 @@ describe('evalObservation', () => {
     const a = base({ bashCommands: ['npm test'] })
     expect(evalObservation(a, 'bashCommandsAnyMatch', { pattern: 'npm' })).toBe(true)
   })
-  it('判定器名不存在 → null（不抛出）', () => {
-    expect(evalObservation(base(), 'noSuchPredicate', {})).toBeNull()
+  it('判定器名不存在 → error（不抛出，但也不是「不适用」）', () => {
+    expect(evalObservation(base(), 'noSuchPredicate', {})).toBe('error')
   })
-  it('判定器抛异常 → null（一个坏判定器不该毁掉整轮）', () => {
+  it('判定器抛异常 → error（一个坏判定器不该毁掉整轮，但要能在报告里被数出来）', () => {
     // 非法正则会让 RegExp 构造抛出
-    expect(evalObservation(base(), 'bashCommandsAnyMatch', { pattern: '(' })).toBeNull()
+    expect(evalObservation(base(), 'bashCommandsAnyMatch', { pattern: '(' })).toBe('error')
   })
 })
 
@@ -114,13 +114,13 @@ describe('editedFileCountAtLeast', () => {
   it('一个都没改 → false', () => {
     expect(PREDICATES.editedFileCountAtLeast(rich(), { min: 1 })).toBe(false)
   })
-  it('min 非有限数字 → 抛错（由 evalObservation 降级成 null）', () => {
-    expect(evalObservation(rich(), 'editedFileCountAtLeast', {})).toBeNull()
+  it('min 非有限数字 → 抛错（由 evalObservation 降级成 error）', () => {
+    expect(evalObservation(rich(), 'editedFileCountAtLeast', {})).toBe('error')
   })
 })
 
 describe('spawnedWhenEditsAtLeast', () => {
-  const spawn = (subagentType: string) => ({ subagentType, verdict: 'PASS', report: '', seq: 9 })
+  const spawn = (subagentType: string) => ({ subagentType, verdict: 'PASS', sawVerdictLine: true, report: '', seq: 9 })
 
   it('够阈值且派过 → true', () => {
     const a = rich({
@@ -148,14 +148,14 @@ describe('spawnedWhenEditsAtLeast', () => {
     expect(PREDICATES.spawnedWhenEditsAtLeast(a, { minEdits: 3, subagentType: 'verification' })).toBe(false)
   })
 
-  it('evalObservation 原样透传 null（不当成求值失败）', () => {
+  it('evalObservation 把判定器的 null 翻译成 na（不当成求值失败 error）', () => {
     const a = rich({ editedFiles: [{ path: '/a', seq: 0 }] })
-    expect(evalObservation(a, 'spawnedWhenEditsAtLeast', { minEdits: 3, subagentType: 'verification' })).toBeNull()
+    expect(evalObservation(a, 'spawnedWhenEditsAtLeast', { minEdits: 3, subagentType: 'verification' })).toBe('na')
   })
 })
 
 const sp = (verdict: string | null, seq: number, report = '') =>
-  ({ subagentType: 'verification', verdict, report, seq })
+  ({ subagentType: 'verification', verdict, sawVerdictLine: verdict !== null, report, seq })
 
 describe('verdictSeen', () => {
   it('见过该 verdict → true', () => {

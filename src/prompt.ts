@@ -28,9 +28,8 @@ export const VERIFY_METHOD_RULE = '- 验证要能看见失败，否则等于没�
  *  刻意不放进 buildSystemPrompt：它已有 11 个位置参数，更重要的是放在 headless 里
  *  结构上保证 TUI 与 backgroundRunner 拿不到——范围因此恰好等于可测量范围（B-2 只接 headless）。
  *
- *  ⚠️ 与 CC 的一处实质差异：CC 合同写的是「FAIL 后 resume 验证者」，deepcode 的子代理
- *  只能 spawn、没有续跑通道（src/tools/agent.ts），所以这里改成「再派一个新的验证者并
- *  带上上一轮 findings」。每轮因此比 CC 贵——新验证者要重新读代码建立上下文。 */
+ *  ⚠️ 本实现只能 spawn 子代理、没有续跑通道（见 src/tools/agent.ts），所以收到 FAIL 后
+ *  要再派一个新的验证者并带上上一轮 findings。每轮因此更贵——新验证者要重新读代码建立上下文。 */
 export const VERIFICATION_CONTRACT = '- 非平凡改动完成后、报告完成前必须经过独立验证：改动涉及 3 个以上文件、或触及后端/接口、或触及基础设施时，用 Agent 工具派出 subagent_type="verification" 的子代理。判定权归验证者独占——你自己的检查、以及任何子代理的自查都不能替代它的 verdict，你不能自评 PASS 或 PARTIAL。传给它：原始用户请求、所有改动过的文件、你采用的方法；有疑虑可以说，但不要把你的测试结果告诉它、不要声称东西能用。收到 FAIL 就修，然后再派一个新的验证者（子代理无法续跑），prompt 里带上上一轮的原始 findings 和你这一轮改了什么，如此反复。收到 PASS 后抽 2-3 条它报告里的命令自己重跑对账，确认每条 PASS 都有命令块、且输出和你重跑的一致；对不上就再派一个验证者说明具体分歧。收到 PARTIAL 就报告哪些验过了、哪些因环境限制没验成。若预算耗尽或始终没拿到 PASS，必须把验证者的原始 findings 带出来、明说「未通过验证」，不得自评完成。'
 
 /** 从 cwd 向上逐层找 DEEPCODE.md/CLAUDE.md/AGENTS.md（每层取一个，DEEPCODE.md 优先），最后加全局 ~/.deepcode/DEEPCODE.md */
