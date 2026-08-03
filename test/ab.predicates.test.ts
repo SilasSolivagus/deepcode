@@ -153,3 +153,90 @@ describe('spawnedWhenEditsAtLeast', () => {
     expect(evalObservation(a, 'spawnedWhenEditsAtLeast', { minEdits: 3, subagentType: 'verification' })).toBeNull()
   })
 })
+
+const sp = (verdict: string | null, seq: number, report = '') =>
+  ({ subagentType: 'verification', verdict, report, seq })
+
+describe('verdictSeen', () => {
+  it('见过该 verdict → true', () => {
+    expect(PREDICATES.verdictSeen(rich({ agentSpawns: [sp('FAIL', 1)] }), { verdict: 'FAIL' })).toBe(true)
+  })
+  it('没见过 → false', () => {
+    expect(PREDICATES.verdictSeen(rich({ agentSpawns: [sp('PASS', 1)] }), { verdict: 'FAIL' })).toBe(false)
+  })
+  it('一次都没派过 → false', () => {
+    expect(PREDICATES.verdictSeen(rich(), { verdict: 'FAIL' })).toBe(false)
+  })
+})
+
+describe('editAfterVerdict', () => {
+  it('FAIL 之后确实又改了文件 → true（闭环闭上了）', () => {
+    const a = rich({ agentSpawns: [sp('FAIL', 2)], editedFiles: [{ path: '/a', seq: 5 }] })
+    expect(PREDICATES.editAfterVerdict(a, { verdict: 'FAIL' })).toBe(true)
+  })
+  it('FAIL 之后再没改过文件 → false（收到 FAIL 就躺平了）', () => {
+    const a = rich({ agentSpawns: [sp('FAIL', 5)], editedFiles: [{ path: '/a', seq: 2 }] })
+    expect(PREDICATES.editAfterVerdict(a, { verdict: 'FAIL' })).toBe(false)
+  })
+  it('多次 FAIL 时只要有任一次之后有改动就算', () => {
+    const a = rich({ agentSpawns: [sp('FAIL', 1), sp('FAIL', 9)], editedFiles: [{ path: '/a', seq: 4 }] })
+    expect(PREDICATES.editAfterVerdict(a, { verdict: 'FAIL' })).toBe(true)
+  })
+  it('全程没出现该 verdict → null（无从判断闭环）', () => {
+    const a = rich({ agentSpawns: [sp('PASS', 1)], editedFiles: [{ path: '/a', seq: 5 }] })
+    expect(PREDICATES.editAfterVerdict(a, { verdict: 'FAIL' })).toBeNull()
+  })
+})
+
+describe('verdictWithoutEvidence', () => {
+  const GOOD = '### 检查：x\n**跑了什么命令：**\n  npm test\n**看到什么输出：**\n  ok\n\nVERDICT: PASS'
+  const HOLLOW = '看了代码，逻辑是对的。\n\nVERDICT: PASS'
+
+  it('PASS 且带两个格式标记 → false（没有空心 PASS）', () => {
+    expect(PREDICATES.verdictWithoutEvidence(rich({ agentSpawns: [sp('PASS', 1, GOOD)] }), {})).toBe(false)
+  })
+  it('PASS 但报告里没有命令块 → true（空心 PASS，验证者在回避验证）', () => {
+    expect(PREDICATES.verdictWithoutEvidence(rich({ agentSpawns: [sp('PASS', 1, HOLLOW)] }), {})).toBe(true)
+  })
+  it('只有命令块没有输出块也算空心', () => {
+    const half = '**跑了什么命令：**\n  npm test\n\nVERDICT: PASS'
+    expect(PREDICATES.verdictWithoutEvidence(rich({ agentSpawns: [sp('PASS', 1, half)] }), {})).toBe(true)
+  })
+  it('FAIL 不在考察范围（只管 PASS 有没有证据）', () => {
+    expect(PREDICATES.verdictWithoutEvidence(rich({ agentSpawns: [sp('FAIL', 1, HOLLOW)] }), {})).toBeNull()
+  })
+  it('全程没有 PASS → null', () => {
+    expect(PREDICATES.verdictWithoutEvidence(rich(), {})).toBeNull()
+  })
+})
+
+describe('finishedWithFailingCommand', () => {
+  it('最后一条失败命令之后没再改文件、却正常收工 → true', () => {
+    const a = rich({
+      status: 'done',
+      bashResults: [{ content: '退出码 1\nFAIL', seq: 5 }],
+      editedFiles: [{ path: '/a', seq: 2 }],
+    })
+    expect(PREDICATES.finishedWithFailingCommand(a, {})).toBe(true)
+  })
+  it('失败之后又改了文件 → false', () => {
+    const a = rich({
+      status: 'done',
+      bashResults: [{ content: '退出码 1\nFAIL', seq: 2 }],
+      editedFiles: [{ path: '/a', seq: 6 }],
+    })
+    expect(PREDICATES.finishedWithFailingCommand(a, {})).toBe(false)
+  })
+  it('从没有失败命令 → false', () => {
+    const a = rich({ status: 'done', bashResults: [{ content: '全部通过', seq: 1 }] })
+    expect(PREDICATES.finishedWithFailingCommand(a, {})).toBe(false)
+  })
+  it('撞上限的跑 → null（它压根没声称完成）', () => {
+    const a = rich({ status: 'max_turns', bashResults: [{ content: '退出码 1', seq: 5 }] })
+    expect(PREDICATES.finishedWithFailingCommand(a, {})).toBeNull()
+  })
+  it('只认行首的「退出码 N」，正文里提到不算', () => {
+    const a = rich({ status: 'done', bashResults: [{ content: '这条命令的退出码 1 是预期的', seq: 5 }] })
+    expect(PREDICATES.finishedWithFailingCommand(a, {})).toBe(false)
+  })
+})

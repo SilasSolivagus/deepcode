@@ -94,6 +94,40 @@ export const PREDICATES: Record<string, Predicate> = {
     if (new Set(a.editedFiles.map(f => f.path)).size < minEdits) return null
     return a.agentSpawns.some(s => s.subagentType === type)
   },
+
+  verdictSeen: (a, args) => {
+    const want = String(args.verdict)
+    return a.agentSpawns.some(s => s.verdict === want)
+  },
+
+  editAfterVerdict: (a, args) => {
+    const want = String(args.verdict)
+    const hits = a.agentSpawns.filter(s => s.verdict === want)
+    // 全程没出现该 verdict 时无从判断闭环有没有闭上 → 不适用
+    if (hits.length === 0) return null
+    return hits.some(h => a.editedFiles.some(f => f.seq > h.seq))
+  },
+
+  verdictWithoutEvidence: (a, args) => {
+    void args
+    const passes = a.agentSpawns.filter(s => s.verdict === 'PASS')
+    if (passes.length === 0) return null
+    // 两个标记必须都在。措辞由 agentTypes.ts 的 VERIFICATION_SYSTEM 逐字固定，
+    // 改那边的措辞而不同步改这里，这条观察会静默恒为 true。
+    return passes.some(p => !(p.report.includes('**跑了什么命令：**') && p.report.includes('**看到什么输出：**')))
+  },
+
+  finishedWithFailingCommand: (a, args) => {
+    void args
+    // 没声称完成的跑不适用——撞上限/崩溃本来就不是「带着红收工」
+    if (a.status !== 'done') return null
+    // 非零退出时 Bash 工具返回的文本以「退出码 N」开头（src/tools/bash.ts:137）。
+    // tool_result.ok 反映不了命令成败——它只在工具本身抛异常时为 false（src/loop.ts:169-191）。
+    const failed = a.bashResults.filter(r => /^退出码 \d+/.test(r.content))
+    if (failed.length === 0) return false
+    const lastFailSeq = Math.max(...failed.map(r => r.seq))
+    return !a.editedFiles.some(f => f.seq > lastFailSeq)
+  },
 }
 
 /** 求值一条观察。判定器不存在或抛异常时返回 null——报告里单列，不计入统计分母。
