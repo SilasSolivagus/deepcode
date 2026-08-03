@@ -8,6 +8,11 @@ const base = (over: Partial<RunArtifacts> = {}): RunArtifacts => ({
   bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], exitCode: 0, status: 'done', turns: 10, outputDir: '/tmp', ...over,
 })
 
+const rich = (over: Partial<RunArtifacts> = {}): RunArtifacts => ({
+  bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [],
+  exitCode: 0, status: 'done', turns: 10, outputDir: '/tmp', ...over,
+})
+
 describe('bashCommandsAnyMatch / bashCommandsNoneMatch', () => {
   const a = base({ bashCommands: ['npm test', 'node dist/cli.js stats f.jsonl 2>&1 | tail -5'] })
 
@@ -97,5 +102,54 @@ describe('evalObservation', () => {
   it('判定器抛异常 → null（一个坏判定器不该毁掉整轮）', () => {
     // 非法正则会让 RegExp 构造抛出
     expect(evalObservation(base(), 'bashCommandsAnyMatch', { pattern: '(' })).toBeNull()
+  })
+})
+
+describe('editedFileCountAtLeast', () => {
+  it('去重后计数', () => {
+    const a = rich({ editedFiles: [{ path: '/a', seq: 0 }, { path: '/a', seq: 1 }, { path: '/b', seq: 2 }] })
+    expect(PREDICATES.editedFileCountAtLeast(a, { min: 2 })).toBe(true)
+    expect(PREDICATES.editedFileCountAtLeast(a, { min: 3 })).toBe(false)
+  })
+  it('一个都没改 → false', () => {
+    expect(PREDICATES.editedFileCountAtLeast(rich(), { min: 1 })).toBe(false)
+  })
+  it('min 非有限数字 → 抛错（由 evalObservation 降级成 null）', () => {
+    expect(evalObservation(rich(), 'editedFileCountAtLeast', {})).toBeNull()
+  })
+})
+
+describe('spawnedWhenEditsAtLeast', () => {
+  const spawn = (subagentType: string) => ({ subagentType, verdict: 'PASS', report: '', seq: 9 })
+
+  it('够阈值且派过 → true', () => {
+    const a = rich({
+      editedFiles: [{ path: '/a', seq: 0 }, { path: '/b', seq: 1 }, { path: '/c', seq: 2 }],
+      agentSpawns: [spawn('verification')],
+    })
+    expect(PREDICATES.spawnedWhenEditsAtLeast(a, { minEdits: 3, subagentType: 'verification' })).toBe(true)
+  })
+
+  it('够阈值但没派 → false（这就是「合同没被遵守」）', () => {
+    const a = rich({ editedFiles: [{ path: '/a', seq: 0 }, { path: '/b', seq: 1 }, { path: '/c', seq: 2 }] })
+    expect(PREDICATES.spawnedWhenEditsAtLeast(a, { minEdits: 3, subagentType: 'verification' })).toBe(false)
+  })
+
+  it('没够阈值 → null，不是 true——空真会让命中率被无信息的跑灌水', () => {
+    const a = rich({ editedFiles: [{ path: '/a', seq: 0 }] })
+    expect(PREDICATES.spawnedWhenEditsAtLeast(a, { minEdits: 3, subagentType: 'verification' })).toBeNull()
+  })
+
+  it('派的是别的类型的子代理不算数', () => {
+    const a = rich({
+      editedFiles: [{ path: '/a', seq: 0 }, { path: '/b', seq: 1 }, { path: '/c', seq: 2 }],
+      agentSpawns: [spawn('general-purpose')],
+    })
+    expect(PREDICATES.spawnedWhenEditsAtLeast(a, { minEdits: 3, subagentType: 'verification' })).toBe(false)
+  })
+
+  it('evalObservation 原样透传 null（不当成求值失败）', () => {
+    const a = rich({ editedFiles: [{ path: '/a', seq: 0 }] })
+    expect(evalObservation(a, 'spawnedWhenEditsAtLeast', { minEdits: 3, subagentType: 'verification' })).toBeNull()
   })
 })

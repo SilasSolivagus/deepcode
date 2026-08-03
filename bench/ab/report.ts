@@ -81,7 +81,7 @@ export function buildReport(input: {
     }
   }
   if (nullByObs.size > 0) {
-    L.push('', '⚠️ 以下观察存在求值为 null 的记录（判定器不存在或抛异常），已排除在分母之外：')
+    L.push('', '⚠️ 以下观察存在求值为 null 的记录（本次跑不适用，或判定器不存在/抛异常），已排除在分母之外：')
     for (const [obsId, count] of nullByObs) {
       L.push(`- \`${obsId}\`：${count} 次`)
     }

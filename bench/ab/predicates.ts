@@ -24,7 +24,10 @@ export interface RunArtifacts {
   outputDir: string
 }
 
-export type Predicate = (a: RunArtifacts, args: Record<string, unknown>) => boolean
+/** 返回 null ＝「本次跑不适用于这条观察」，与求值失败同样从统计分母里排除。
+ *  为什么需要它：像「够阈值时是否派了验证者」这种观察，在没够阈值的跑上不提供任何信息。
+ *  让它返回 true（空真）会让命中率被一堆无信息的跑灌水——看起来很好看却什么都没证明。 */
+export type Predicate = (a: RunArtifacts, args: Record<string, unknown>) => boolean | null
 
 export const PREDICATES: Record<string, Predicate> = {
   bashCommandsAnyMatch: (a, args) => {
@@ -75,6 +78,21 @@ export const PREDICATES: Record<string, Predicate> = {
     }
 
     return fs.existsSync(resolved)
+  },
+
+  editedFileCountAtLeast: (a, args) => {
+    const min = Number(args.min)
+    if (!Number.isFinite(min)) throw new Error(`editedFileCountAtLeast: min 必须是有限数字，收到：${JSON.stringify(args.min)}`)
+    return new Set(a.editedFiles.map(f => f.path)).size >= min
+  },
+
+  spawnedWhenEditsAtLeast: (a, args) => {
+    const minEdits = Number(args.minEdits)
+    if (!Number.isFinite(minEdits)) throw new Error(`spawnedWhenEditsAtLeast: minEdits 必须是有限数字，收到：${JSON.stringify(args.minEdits)}`)
+    const type = String(args.subagentType)
+    // 没够阈值的跑对「合同是否被遵守」不提供信息 → null，从分母排除（不是 true）
+    if (new Set(a.editedFiles.map(f => f.path)).size < minEdits) return null
+    return a.agentSpawns.some(s => s.subagentType === type)
   },
 }
 
