@@ -628,7 +628,7 @@ describe('execCall + hooks', () => {
     expect(content).toBe('REPLACED')
   })
 
-  it('B4: PostToolUse payload 含 CC 字段 tool_response/tool_use_id/duration_ms（保留 tool_output 别名）', async () => {
+  it('B4: PostToolUse payload 含外部协议约定的字段 tool_response/tool_use_id/duration_ms（保留 tool_output 别名）', async () => {
     const { tool } = recTool()
     const deps = makeDeps([tool])
     const dir = mkdtempSync(path.join(tmpdir(), 'dc-ptu-'))

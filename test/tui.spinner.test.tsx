@@ -1,5 +1,5 @@
 // test/tui.spinner.test.tsx
-// CC 风格工作 spinner：动画符号 + 中文动名词 + 耗时秒数 + 输出 token + esc 中断提示。
+// 工作 spinner：动画符号 + 中文动名词 + 耗时秒数 + 输出 token + esc 中断提示。
 // 断言内容均由 props 确定（固定 turnStartAt），定时器只触发重渲染，不影响断言稳定性。
 import { describe, it, expect } from 'vitest'
 import { render } from 'ink-testing-library'

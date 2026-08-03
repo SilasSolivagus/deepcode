@@ -6,7 +6,7 @@ import { parseFrontmatter, parseToolList, resolveAgentModelAlias, parseAgentFile
 import { BUILTIN_AGENTS } from '../src/tools/agentTypes.js'
 import { BUILTIN_PROVIDERS } from '../src/providers.js'
 
-const CC_FILE = `---
+const EXTERNAL_AGENT_FILE = `---
 name: code-reviewer
 description: Review code for bugs\\nand style
 tools: Read, Grep
@@ -70,8 +70,8 @@ describe('resolveAgentModelAlias', () => {
 })
 
 describe('parseAgentFile', () => {
-  it('完整 CC 文件 → AgentDefinition（进阶字段忽略不崩）', () => {
-    const def = parseAgentFile(CC_FILE)!
+  it('完整的外部格式 agent 文件 → AgentDefinition（进阶字段忽略不崩）', () => {
+    const def = parseAgentFile(EXTERNAL_AGENT_FILE)!
     expect(def.agentType).toBe('code-reviewer')
     expect(def.whenToUse).toBe('Review code for bugs\nand style') // \n 反转义
     expect(def.tools).toEqual(['Read', 'Grep'])

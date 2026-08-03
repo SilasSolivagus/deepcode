@@ -1504,7 +1504,7 @@ export function createChatCore(opts: {
     session.appendMeta({ cwd, model, thinking, effortLevel, permMode, providerId: activeProvider().id })
     // 模式切换绝不 push transcript 通知（无论 busy/idle）：Shift+Tab 可长按连发，每条 notice 增长 transcript，
     // 每帧 render 都 clone/map 整个数组 → O(N²) 分配 → 堆爆 OOM（真机冒烟两次证实，含空闲长按）。
-    // 模式已在状态栏页脚 [model | mode] 实时显示；这里只 setState 刷新页脚。照 CC（切模式不刷屏）。
+    // 模式已在状态栏页脚 [model | mode] 实时显示；这里只 setState 刷新页脚，切模式不刷屏。
     setState()
     refreshStatusLine()
   }

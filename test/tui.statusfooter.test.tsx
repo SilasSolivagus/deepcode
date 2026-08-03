@@ -22,7 +22,7 @@ const base = {
 }
 
 describe('StatusFooter', () => {
-  it('CC 格式：[模型 | 模式] | cwd git:(分支) / Context 条 / N DEEPCODE.md / ✓ 工具 ×n / 快捷键', () => {
+  it('状态栏格式：[模型 | 模式] | cwd git:(分支) / Context 条 / N DEEPCODE.md / ✓ 工具 ×n / 快捷键', () => {
     const f = render(<StatusFooter {...base} />).lastFrame()!
     expect(f).toContain('deepseek-v4-flash')
     expect(f).toContain('| default]')      // 方括号 + | 分隔的模式
@@ -32,7 +32,7 @@ describe('StatusFooter', () => {
     expect(f).toContain('28k / 100k')
     expect(f).toContain('¥0.0042')
     expect(f).toContain('2 DEEPCODE.md')
-    expect(f).toContain('Read ×4')         // × 前留空（CC 样式）
+    expect(f).toContain('Read ×4')         // × 前留空
     expect(f).toContain('Bash ×2')
     expect(f).toContain('看命令')
   })

@@ -67,7 +67,7 @@ describe('批1 Task2: 光标移动', () => {
     // 末尾 wordLeft → '你好' 词首
     const wl = wordLeft(at(v, v.length))
     expect(v.slice(wl.cursor)).toBe('你好')
-    // 从 0 wordRight → 下一词 'bar' 词首（CC nextWord 语义，含尾空格）
+    // 从 0 wordRight → 下一词 'bar' 词首（越过词尾空格停在下一词首，不停在空格上）
     const wr = wordRight(at(v, 0))
     expect(v.slice(0, wr.cursor)).toBe('foo ')
   })
