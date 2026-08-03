@@ -98,8 +98,12 @@ export function mergeAgents(builtin: AgentDefinition[], custom: AgentDefinition[
  *  唯一收口：verification 是实验项，flag `verificationAgent` 门控（默认关）时不列出它——
  *  它经 buildAgentDescription 下发进 Agent 工具描述，若关着 flag 仍出现在描述里，
  *  模型会据此自发派它（默认关变成空话），且 A/B 实验的对照臂会被这条「必用」指令污染，
- *  两臂的真实差异被压缩成「合同正文 vs 仅工具描述」。 */
+ *  两臂的真实差异被压缩成「合同正文 vs 仅工具描述」。
+ *  ** 过滤挪到 merge 之前而非之后，确保用户同名自定义 agent 仍能覆盖内建的并保留：
+ *  merge 之后滤会无差别删掉同名自定义 agent，破坏覆盖机制。 */
 export function resolveAgents(cwd: string, home?: string): AgentDefinition[] {
-  const merged = mergeAgents(BUILTIN_AGENTS, loadCustomAgents(cwd, home))
-  return flag('verificationAgent', false) ? merged : merged.filter(a => a.agentType !== 'verification')
+  const builtin = flag('verificationAgent', false)
+    ? BUILTIN_AGENTS
+    : BUILTIN_AGENTS.filter(a => a.agentType !== 'verification')
+  return mergeAgents(builtin, loadCustomAgents(cwd, home))
 }

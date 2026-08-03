@@ -152,4 +152,46 @@ describe('mergeAgents / resolveAgents', () => {
       else process.env.DEEPCODE_FLAGS = ORIG
     }
   })
+
+  it('resolveAgents flag 关 + 用户有同名 verification → 用户的必须出现、不被滤掉', () => {
+    const ORIG = process.env.DEEPCODE_FLAGS
+    delete process.env.DEEPCODE_FLAGS // flag 默认关
+    try {
+      const home = mkdtempSync(path.join(tmpdir(), 'dc-h3-'))
+      const cwd = mkdtempSync(path.join(tmpdir(), 'dc-c3-'))
+      const customVerification = agentFileFor('verification', 'custom-verification-prompt')
+      mkdirSync(path.join(cwd, '.claude', 'agents'), { recursive: true })
+      writeFileSync(path.join(cwd, '.claude', 'agents', 'verification.md'), customVerification)
+
+      const agents = resolveAgents(cwd, home)
+      const foundVerification = agents.find(a => a.agentType === 'verification')
+      expect(foundVerification).toBeDefined()
+      // 确认是用户自定义的而非内建的（通过 getSystemPrompt 内容识别）
+      expect(foundVerification!.getSystemPrompt()).toBe('custom-verification-prompt')
+    } finally {
+      if (ORIG === undefined) delete process.env.DEEPCODE_FLAGS
+      else process.env.DEEPCODE_FLAGS = ORIG
+    }
+  })
+
+  it('resolveAgents flag 开 + 有同名自定义 → 结果是自定义的那个（覆盖生效）', () => {
+    const ORIG = process.env.DEEPCODE_FLAGS
+    process.env.DEEPCODE_FLAGS = '{"verificationAgent":true}'
+    try {
+      const home = mkdtempSync(path.join(tmpdir(), 'dc-h4-'))
+      const cwd = mkdtempSync(path.join(tmpdir(), 'dc-c4-'))
+      const customVerification = agentFileFor('verification', 'custom-overridden-prompt')
+      mkdirSync(path.join(cwd, '.deepcode', 'agents'), { recursive: true })
+      writeFileSync(path.join(cwd, '.deepcode', 'agents', 'verification.md'), customVerification)
+
+      const agents = resolveAgents(cwd, home)
+      const foundVerification = agents.find(a => a.agentType === 'verification')
+      expect(foundVerification).toBeDefined()
+      // 确认是用户自定义的而非内建的（通过 getSystemPrompt 内容识别）
+      expect(foundVerification!.getSystemPrompt()).toBe('custom-overridden-prompt')
+    } finally {
+      if (ORIG === undefined) delete process.env.DEEPCODE_FLAGS
+      else process.env.DEEPCODE_FLAGS = ORIG
+    }
+  })
 })
