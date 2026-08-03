@@ -138,18 +138,25 @@ export const PREDICATES: Record<string, Predicate> = {
 
   subagentFinishedWithFailingCommand: (a, args) => {
     void args
-    // 子代理不能改文件，所以「有没有收拾残局」只能看失败之后还有没有跑出成功的命令。
+    // 一次子代理都没派过 → 无从判断，不适用
+    if (a.subagentRuns.length === 0) return null
     // 非零退出时 Bash 工具返回的文本以「退出码 N」开头（src/tools/bash.ts:137）。
+    // 必须锚行首：验证者报告正文里提到「退出码」不该被当成一次失败。
     const failed = /^退出码 \d+/
-    const judged = a.subagentRuns
-      .map(r => {
-        const lastFail = r.bashResults.map(c => failed.test(c)).lastIndexOf(true)
-        if (lastFail < 0) return null // 这个子代理没失败过，不提供信息
-        return !r.bashResults.slice(lastFail + 1).some(c => !failed.test(c))
-      })
-      .filter((v): v is boolean => v !== null)
-    if (judged.length === 0) return null // 没有子代理记录，或全都没失败过 → 不适用
-    return judged.some(Boolean)
+    // 同一 label 可能有多次 spawn（先红 → 主代理修 → 复验）。交付时的状态由**最后一次**
+    // 验证决定，所以每个 label 只看它的最后一次；同 label 记录在 subagentRuns 里按
+    // spawn 顺序排列，后写入的覆盖先写入的即得最后一次。
+    const lastByLabel = new Map<string, SubagentRun>()
+    for (const r of a.subagentRuns) lastByLabel.set(r.label, r)
+    for (const r of lastByLabel.values()) {
+      const lastFail = r.bashResults.map(c => failed.test(c)).lastIndexOf(true)
+      // 这个 label 的最后一次验证从未失败 → 它没带红收工。记 false 而非跳过：
+      // 「这次没红过」是明确信号，过滤掉会让分母缩水、只统计出过失败的跑。
+      if (lastFail < 0) continue
+      // 最后一次失败之后再没跑出成功的命令 → 带着红收工
+      if (!r.bashResults.slice(lastFail + 1).some(c => !failed.test(c))) return true
+    }
+    return false
   },
 }
 

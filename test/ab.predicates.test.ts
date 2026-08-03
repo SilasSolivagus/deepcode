@@ -272,13 +272,37 @@ describe('subagentFinishedWithFailingCommand', () => {
     expect(PREDICATES.subagentFinishedWithFailingCommand(rich(), {})).toBeNull()
   })
 
-  it('有子代理但一条失败都没有 → null（无失败可判，不适用）', () => {
+  it('有子代理但一条失败都没有 → false（无失败收工，不是空真）', () => {
     const a = rich({ subagentRuns: [subrun('subagent:verification', ['ok', '也 ok'])] })
-    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBeNull()
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(false)
   })
 
   it('只认行首的「退出码 」，正文里提到不算', () => {
     const a = rich({ subagentRuns: [subrun('subagent:verification', ['这条命令的退出码 1 是预期的'])] })
-    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBeNull()
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(false)
+  })
+
+  it('闭环成功：同 label 多次 spawn，先红后绿 → false（最后一次全绿收工）', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:verification', ['退出码 1']),
+      subrun('subagent:verification', ['全部通过']),
+    ] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(false)
+  })
+
+  it('闭环失败：同 label 多次 spawn，先绿后红 → true（最后一次带着红收工）', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:verification', ['全部通过']),
+      subrun('subagent:verification', ['退出码 1']),
+    ] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(true)
+  })
+
+  it('不同 label 各自取最后一次、再取或：A 全绿、B 带红 → true', () => {
+    const a = rich({ subagentRuns: [
+      subrun('subagent:general-purpose', ['退出码 1', 'ok']),
+      subrun('subagent:verification', ['ok', '退出码 1']),
+    ] })
+    expect(PREDICATES.subagentFinishedWithFailingCommand(a, {})).toBe(true)
   })
 })
