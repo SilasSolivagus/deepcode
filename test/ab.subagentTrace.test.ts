@@ -137,4 +137,146 @@ describe('recoverSubagentRuns', () => {
     writeFileSync(path.join(dir, '随便.txt'), 'x')
     expect(recoverSubagentRuns(dir, 'subagent:')).toEqual([])
   })
+
+  // ⊙ 新增：多 spawn 场景
+  it('两次独立 spawn：messages 变短→新 spawn 开始（核心回归）', () => {
+    const dir = mkTrace([
+      // 第一次 spawn
+      {
+        seq: 1, label: 'subagent:verification',
+        messages: [
+          { role: 'system', content: 's' },
+          { role: 'user', content: '修复失败' },
+          bashCall('t1', '甲'),
+          bashResult('t1', '退出码 1'),
+        ],
+      },
+      // 第二次 spawn：新建 messages（length 短得多）
+      {
+        seq: 2, label: 'subagent:verification',
+        messages: [
+          { role: 'system', content: 's' },
+          { role: 'user', content: '再试' },
+          bashCall('t2', '乙'),
+          bashResult('t2', 'PASS'),
+        ],
+      },
+    ])
+    const runs = recoverSubagentRuns(dir, 'subagent:')
+    expect(runs).toHaveLength(2)
+    expect(runs[0]).toEqual({ label: 'subagent:verification', bashCommands: ['甲'], bashResults: ['退出码 1'] })
+    expect(runs[1]).toEqual({ label: 'subagent:verification', bashCommands: ['乙'], bashResults: ['PASS'] })
+  })
+
+  it('单次 spawn 内多轮累积：messages 递增→同一 spawn，返回最全的那条', () => {
+    const dir = mkTrace([
+      {
+        seq: 1, label: 'subagent:verification',
+        messages: [
+          { role: 'system', content: 's' },
+          { role: 'user', content: '修复' },
+          bashCall('t1', '第一次'),
+          bashResult('t1', 'r1'),
+        ],
+      },
+      {
+        seq: 2, label: 'subagent:verification',
+        messages: [
+          { role: 'system', content: 's' },
+          { role: 'user', content: '修复' },
+          bashCall('t1', '第一次'),
+          bashResult('t1', 'r1'),
+          bashCall('t2', '第二次'),
+          bashResult('t2', 'r2'),
+        ],
+      },
+    ])
+    const runs = recoverSubagentRuns(dir, 'subagent:')
+    expect(runs).toHaveLength(1)
+    expect(runs[0].bashCommands).toEqual(['第一次', '第二次'])
+  })
+
+  it('三次 spawn：返回三条记录，顺序与 seq 一致', () => {
+    const dir = mkTrace([
+      { seq: 1, label: 'subagent:verification', messages: [
+        { role: 'system', content: 's' },
+        bashCall('t1', '甲'),
+        bashResult('t1', 'r甲'),
+      ] },
+      { seq: 2, label: 'subagent:verification', messages: [
+        { role: 'system', content: 's' },
+        bashCall('t2', '乙'),
+        bashResult('t2', 'r乙'),
+      ] },
+      { seq: 3, label: 'subagent:verification', messages: [
+        { role: 'system', content: 's' },
+        bashCall('t3', '丙'),
+        bashResult('t3', 'r丙'),
+      ] },
+    ])
+    const runs = recoverSubagentRuns(dir, 'subagent:')
+    expect(runs).toHaveLength(3)
+    expect(runs[0].bashCommands).toEqual(['甲'])
+    expect(runs[1].bashCommands).toEqual(['乙'])
+    expect(runs[2].bashCommands).toEqual(['丙'])
+  })
+
+  it('两次 spawn 但第二次 messages 等长于第一次→仍切成两条', () => {
+    const msgs1 = [
+      { role: 'system', content: 's' },
+      { role: 'user', content: 'u' },
+      bashCall('t1', '甲'),
+      bashResult('t1', 'r甲'),
+    ]
+    const msgs2 = [
+      { role: 'system', content: 's' },
+      { role: 'user', content: 'u' },
+      bashCall('t2', '乙'),
+      bashResult('t2', 'r乙'),
+    ]
+    const dir = mkTrace([
+      { seq: 1, label: 'subagent:verification', messages: msgs1 },
+      { seq: 2, label: 'subagent:verification', messages: msgs2 }, // 长度相同，但仍是新 spawn
+    ])
+    const runs = recoverSubagentRuns(dir, 'subagent:')
+    expect(runs).toHaveLength(2)
+    expect(runs[0].bashCommands).toEqual(['甲'])
+    expect(runs[1].bashCommands).toEqual(['乙'])
+  })
+
+  it('不同 label 各自独立切分，互不干扰', () => {
+    const dir = mkTrace([
+      { seq: 1, label: 'subagent:verification', messages: [
+        { role: 'system', content: 's' },
+        bashCall('t1', '甲'),
+        bashResult('t1', 'r甲'),
+      ] },
+      { seq: 2, label: 'subagent:verification', messages: [
+        { role: 'system', content: 's' },
+        bashCall('t2', '乙'),
+        bashResult('t2', 'r乙'),
+      ] }, // seq=1,2 messages 都是 3 行，等长→各自一条
+      { seq: 3, label: 'subagent:general', messages: [
+        { role: 'system', content: 's' },
+        { role: 'user', content: 'u' },
+        bashCall('t3', '丁'),
+        bashResult('t3', 'r丁'),
+      ] },
+      { seq: 4, label: 'subagent:general', messages: [
+        { role: 'system', content: 's' },
+        bashCall('t4', '戊'),
+        bashResult('t4', 'r戊'),
+      ] }, // seq=3 是 4 行，seq=4 是 3 行，变短→各自一条
+    ])
+    const runs = recoverSubagentRuns(dir, 'subagent:').sort((x, y) => x.label.localeCompare(y.label))
+    expect(runs).toHaveLength(4)
+    expect(runs[0].label).toBe('subagent:general')
+    expect(runs[0].bashCommands).toEqual(['丁']) // seq=3，general 第一个
+    expect(runs[1].label).toBe('subagent:general')
+    expect(runs[1].bashCommands).toEqual(['戊']) // seq=4，general 第二个（length 变短）
+    expect(runs[2].label).toBe('subagent:verification')
+    expect(runs[2].bashCommands).toEqual(['甲']) // seq=1，verification 第一个
+    expect(runs[3].label).toBe('subagent:verification')
+    expect(runs[3].bashCommands).toEqual(['乙']) // seq=2，verification 第二个（length 等长）
+  })
 })

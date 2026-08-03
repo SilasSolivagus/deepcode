@@ -56,12 +56,15 @@ function pairFromMessages(messages: any[]): { bashCommands: string[]; bashResult
 }
 
 /** 恢复轨迹目录里各子代理的执行记录。目录不存在或无匹配记录时返回空数组。
- *  同一 label 只取 seq 最大的那条——请求是累积的，最后一条含最全的对话。 */
+ *  每次子代理 spawn 产出一条 SubagentRun。同一 label 内，按 messages.length 变短判定新 spawn。
+ *  前提：子代理 runSubagent 开始时新建 messages 数组，每次 spawn 内只增不减，所以 length 变短
+ *  必然意味着新一次 spawn 开始。每次 spawn 取其内 seq 最大的那条记录来抽命令。 */
 export function recoverSubagentRuns(traceDir: string, labelPrefix: string): SubagentRun[] {
   let names: string[]
   try { names = fs.readdirSync(traceDir) } catch { return [] } // 没开轨迹就没这个目录
 
-  const latest = new Map<string, { seq: number; messages: any[] }>()
+  // 按 label 分组、排序
+  const byLabel = new Map<string, Array<{ seq: number; messages: any[] }>>()
   for (const name of names) {
     if (!FILE_RE.test(name)) continue
     let rec: any
@@ -70,9 +73,39 @@ export function recoverSubagentRuns(traceDir: string, labelPrefix: string): Suba
     if (typeof label !== 'string' || !label.startsWith(labelPrefix)) continue
     if (!Array.isArray(rec.messages)) continue
     const seq = typeof rec.seq === 'number' ? rec.seq : -1
-    const prev = latest.get(label)
-    if (!prev || seq > prev.seq) latest.set(label, { seq, messages: rec.messages })
+    if (!byLabel.has(label)) byLabel.set(label, [])
+    byLabel.get(label)!.push({ seq, messages: rec.messages })
   }
 
-  return [...latest.entries()].map(([label, v]) => ({ label, ...pairFromMessages(v.messages) }))
+  const result: SubagentRun[] = []
+  for (const [label, recs] of byLabel.entries()) {
+    // 按 seq 升序排序
+    recs.sort((a, b) => a.seq - b.seq)
+
+    // 按 messages.length 变短切分出多个 spawn，每个 spawn 取 seq 最大的那条
+    let prevLen = Infinity
+    let currentSpawn: { seq: number; messages: any[] } | undefined
+    for (const r of recs) {
+      const len = r.messages.length
+      if (len <= prevLen) {
+        // messages 变短或等长 → 新 spawn 开始
+        if (currentSpawn !== undefined) {
+          // 产出前一个 spawn 的结果
+          result.push({ label, ...pairFromMessages(currentSpawn.messages) })
+        }
+        currentSpawn = r
+        prevLen = len
+      } else {
+        // messages 继续增长 → 同一个 spawn
+        currentSpawn = r
+        prevLen = len
+      }
+    }
+    // 产出最后一个 spawn
+    if (currentSpawn !== undefined) {
+      result.push({ label, ...pairFromMessages(currentSpawn.messages) })
+    }
+  }
+
+  return result
 }
