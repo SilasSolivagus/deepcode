@@ -19,7 +19,7 @@ import { bgTaskListTool, taskOutputTool } from './tools/taskTools.js'
 import { taskCreateTool, taskGetTool, taskUpdateTool, taskListTool } from './tools/taskListTools.js'
 import { installTaskCleanup } from './tasks.js'
 import { enableTrace } from './requestTrace.js'
-import { buildSystemPrompt, findMemoryFiles } from './prompt.js'
+import { buildSystemPrompt, findMemoryFiles, VERIFICATION_CONTRACT } from './prompt.js'
 import { loadOutputStyles, resolveOutputStyle } from './outputStyles.js'
 import { loadLayeredSettings, strippedRulesNotice } from './settingsLayers.js'
 import { runHooks } from './hooks.js'
@@ -189,7 +189,9 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     activeFastModel: () => model,
   })
   // SessionStart：会话开始（headless 恒 startup）。await 注入 additionalContext 到初始上下文。
-  const initMsgs: any[] = [{ role: 'system', content: buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, undefined, resolveOutputStyle(settings.outputStyle, loadOutputStyles()), undefined, undefined, settings.language, globalMemdir, mem.global.maxBytes) }]
+  // 合同只在 headless 注入：TUI 与 backgroundRunner 结构上拿不到（见 VERIFICATION_CONTRACT 注释）。
+  const baseSystem = buildSystemPrompt(cwd, undefined, skills, settings.skills?.listingBudgetChars, undefined, resolveOutputStyle(settings.outputStyle, loadOutputStyles()), undefined, undefined, settings.language, globalMemdir, mem.global.maxBytes)
+  const initMsgs: any[] = [{ role: 'system', content: flag('verificationAgent', false) ? `${baseSystem}\n${VERIFICATION_CONTRACT}` : baseSystem }]
   if (settings.hooks) {
     const ss = await runHooks('SessionStart', {
       hook_event_name: 'SessionStart', cwd, session_id: ctx.sessionId?.(), source: 'startup',
