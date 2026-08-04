@@ -374,3 +374,58 @@ describe('subagentRanNoCommand', () => {
     expect(PREDICATES.subagentRanNoCommand(rich(), {})).toBeNull()
   })
 })
+
+const frz = (over: Partial<NonNullable<RunArtifacts['frozen']>> = {}) => ({
+  installed: true, built: true, scored: true, passed: 46, failed: 0, total: 46, notes: '', ...over,
+})
+
+describe('frozenBuilt', () => {
+  it('构建成功 → true', () => {
+    expect(PREDICATES.frozenBuilt(rich({ frozen: frz() }), {})).toBe(true)
+  })
+  it('构建失败 → false', () => {
+    expect(PREDICATES.frozenBuilt(rich({ frozen: frz({ built: false }) }), {})).toBe(false)
+  })
+  it('装依赖就失败 → false', () => {
+    expect(PREDICATES.frozenBuilt(rich({ frozen: frz({ installed: false, built: false }) }), {})).toBe(false)
+  })
+  it('没跑考卷 → null', () => {
+    expect(PREDICATES.frozenBuilt(rich(), {})).toBeNull()
+  })
+})
+
+describe('frozenAllPass', () => {
+  it('全过 → true', () => {
+    expect(PREDICATES.frozenAllPass(rich({ frozen: frz() }), {})).toBe(true)
+  })
+  it('有失败 → false', () => {
+    expect(PREDICATES.frozenAllPass(rich({ frozen: frz({ passed: 12, failed: 34 }) }), {})).toBe(false)
+  })
+  it('构建失败 → false 而不是 null（交付了个构建都不过的东西是明确的质量失败）', () => {
+    expect(PREDICATES.frozenAllPass(rich({ frozen: frz({ built: false, scored: false, passed: 0, failed: 0, total: 0 }) }), {})).toBe(false)
+  })
+  it('考卷没跑成（scored 为假）→ false', () => {
+    expect(PREDICATES.frozenAllPass(rich({ frozen: frz({ scored: false, passed: 0, failed: 0, total: 0 }) }), {})).toBe(false)
+  })
+  it('没跑考卷 → null', () => {
+    expect(PREDICATES.frozenAllPass(rich(), {})).toBeNull()
+  })
+})
+
+describe('frozenPassAtLeast', () => {
+  it('达到阈值 → true', () => {
+    expect(PREDICATES.frozenPassAtLeast(rich({ frozen: frz({ passed: 40, failed: 6 }) }), { min: 40 })).toBe(true)
+  })
+  it('未达阈值 → false', () => {
+    expect(PREDICATES.frozenPassAtLeast(rich({ frozen: frz({ passed: 12, failed: 34 }) }), { min: 40 })).toBe(false)
+  })
+  it('构建失败 → false', () => {
+    expect(PREDICATES.frozenPassAtLeast(rich({ frozen: frz({ built: false, scored: false, passed: 0 }) }), { min: 1 })).toBe(false)
+  })
+  it('min 非有限数字 → 抛错（由 evalObservation 降级）', () => {
+    expect(evalObservation(rich({ frozen: frz() }), 'frozenPassAtLeast', {})).toBe('error')
+  })
+  it('没跑考卷 → null', () => {
+    expect(PREDICATES.frozenPassAtLeast(rich(), { min: 1 })).toBeNull()
+  })
+})

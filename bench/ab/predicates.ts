@@ -193,6 +193,29 @@ export const PREDICATES: Record<string, Predicate> = {
     for (const r of runs) lastByLabel.set(r.label, r)
     return [...lastByLabel.values()].some(r => r.bashCommands.length === 0)
   },
+
+  frozenBuilt: (a, args) => {
+    void args
+    if (a.frozen === null) return null
+    return a.frozen.built
+  },
+
+  frozenAllPass: (a, args) => {
+    void args
+    if (a.frozen === null) return null
+    // 构建失败/考卷没跑成一律 false，不是 null——交付了个装不上或构建不过的东西，
+    // 是明确的质量失败，不该被当成「没数据」而从分母里排除。
+    if (!a.frozen.scored) return false
+    return a.frozen.failed === 0 && a.frozen.total > 0
+  },
+
+  frozenPassAtLeast: (a, args) => {
+    const min = Number(args.min)
+    if (!Number.isFinite(min)) throw new Error(`frozenPassAtLeast: min 必须是有限数字，收到：${JSON.stringify(args.min)}`)
+    if (a.frozen === null) return null
+    if (!a.frozen.scored) return false
+    return a.frozen.passed >= min
+  },
 }
 
 /** 求值一条观察。I7：null 曾经同时代表「判定器不存在」「判定器抛异常」「本次跑不适用」
