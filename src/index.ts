@@ -10,6 +10,21 @@ import { parseOutputFormat, parseMaxTurns } from './streamJson.js'
 import { resolveTraceDir } from './requestTrace.js'
 
 const argv = process.argv
+
+// --help/--version 必须在任何分支之前短路：否则 `deepcode --help` 在终端里会直接把 TUI
+// 拉起来、在管道/非 TTY 下会掉进读 stdin 的分支回一句「stdin 为空」——而敲 --help 恰恰是
+// 新用户装完之后的第一个动作。两条都写 stdout、退出码 0。
+if (argv.includes('--help') || argv.includes('-h')) {
+  const { HELP } = await import('./help.js')
+  console.log(HELP)
+  process.exit(0)
+}
+if (argv.includes('--version') || argv.includes('-v')) {
+  const { VERSION } = await import('./version.js')
+  console.log(VERSION)
+  process.exit(0)
+}
+
 const yolo = argv.includes('--yolo')
 const continueSession = argv.includes('--continue') || argv.includes('-c')
 const inlineFlag = argv.includes('--inline') || process.env.DEEPCODE_INLINE === '1'
