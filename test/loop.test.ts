@@ -17,6 +17,7 @@ vi.mock('../src/api.js', () => ({
   ),
 }))
 
+import { chatStream } from '../src/api.js'
 import { runLoop, type LoopDeps } from '../src/loop.js'
 import { readTool } from '../src/tools/read.js'
 import {
@@ -879,5 +880,23 @@ describe('runLoop 前缀稳定性（缓存守卫）', () => {
     const toolMsg = messages.find(m => m.role === 'tool')
     expect(toolMsg.content.length).toBeLessThan(5000)
     expect(toolMsg.content).toContain('已截断')
+  })
+})
+
+describe('traceLabel：轨迹记录要能分辨是谁发的请求', () => {
+  it('不传时默认 turn（既有行为逐字不变）', async () => {
+    ;(chatStream as any).mockClear()
+    script.push({ result: { content: '好', toolCalls: [], usage, finishReason: 'stop' } })
+    await drain(runLoop([{ role: 'user', content: 'hi' }], makeDeps([])))
+    const [[, opts]] = vi.mocked(chatStream).mock.calls
+    expect((opts as any).traceLabel).toBe('turn')
+  })
+
+  it('传了就透传给 chatStream', async () => {
+    ;(chatStream as any).mockClear()
+    script.push({ result: { content: '好', toolCalls: [], usage, finishReason: 'stop' } })
+    await drain(runLoop([{ role: 'user', content: 'hi' }], { ...makeDeps([]), traceLabel: 'subagent:verification' }))
+    const [[, opts]] = vi.mocked(chatStream).mock.calls
+    expect((opts as any).traceLabel).toBe('subagent:verification')
   })
 })

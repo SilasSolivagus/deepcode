@@ -106,7 +106,7 @@ async function runOnce(
   }
 
   const traceJsonl = fs.readFileSync(tracePath, 'utf8')
-  const artifacts = extractArtifacts({ traceJsonl, exitCode, outputDir: work })
+  const artifacts = extractArtifacts({ traceJsonl, exitCode, outputDir: work, traceDir })
   // I7：'na'（本次跑不适用）与 'error'（判定器不存在/抛异常）分开，别再混成一个 null。
   const observations: Record<string, boolean | 'na' | 'error'> = {}
   for (const o of decl.observations) observations[o.id] = evalObservation(artifacts, o.predicate, o.args)
