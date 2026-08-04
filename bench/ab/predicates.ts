@@ -6,6 +6,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import type { SubagentRun } from './subagentTrace.js'
+import type { FrozenResult } from './frozenHarness.js'
 
 export interface RunArtifacts {
   /** 从 stream-json 轨迹里抽出的全部 Bash 命令原文。
@@ -27,6 +28,10 @@ export interface RunArtifacts {
   /** done / max_turns / aborted / context_overflow */
   status: string
   turns: number
+  /** 冻结考卷的判分结果；未跑考卷时为 null。
+   *  这是唯一与被测机制无关的质量信号——两臂都产出一份东西、用同一套跑前冻结的考卷考，
+   *  因此两臂都有分母、可出 p 值。轨迹派生的那些观察做不到这一点。 */
+  frozen: FrozenResult | null
   /** 该次跑的产出物目录 */
   outputDir: string
 }
@@ -187,6 +192,29 @@ export const PREDICATES: Record<string, Predicate> = {
     const lastByLabel = new Map<string, SubagentRun>()
     for (const r of runs) lastByLabel.set(r.label, r)
     return [...lastByLabel.values()].some(r => r.bashCommands.length === 0)
+  },
+
+  frozenBuilt: (a, args) => {
+    void args
+    if (a.frozen === null) return null
+    return a.frozen.built
+  },
+
+  frozenAllPass: (a, args) => {
+    void args
+    if (a.frozen === null) return null
+    // 构建失败/考卷没跑成一律 false，不是 null——交付了个装不上或构建不过的东西，
+    // 是明确的质量失败，不该被当成「没数据」而从分母里排除。
+    if (!a.frozen.scored) return false
+    return a.frozen.failed === 0 && a.frozen.total > 0
+  },
+
+  frozenPassAtLeast: (a, args) => {
+    const min = Number(args.min)
+    if (!Number.isFinite(min)) throw new Error(`frozenPassAtLeast: min 必须是有限数字，收到：${JSON.stringify(args.min)}`)
+    if (a.frozen === null) return null
+    if (!a.frozen.scored) return false
+    return a.frozen.passed >= min
   },
 }
 

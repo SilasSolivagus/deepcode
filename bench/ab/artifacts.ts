@@ -6,6 +6,7 @@
 //
 // 坏行跳过而不整体失败——一次跑是花了钱和时间的，不该因为一行畸形 JSON 就全丢。
 import type { RunArtifacts } from './predicates.js'
+import type { FrozenResult } from './frozenHarness.js'
 import { recoverSubagentRuns } from './subagentTrace.js'
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
@@ -23,6 +24,8 @@ export function extractArtifacts(input: {
   outputDir: string
   /** 请求侧轨迹目录；给了就顺带恢复子代理的执行记录（子代理不进 stream-json） */
   traceDir?: string
+  /** 冻结考卷的判分结果。抽取层不负责跑考卷（它是纯函数、只解析轨迹），由调用方算好传进来 */
+  frozen?: FrozenResult
 }): RunArtifacts {
   const bashCommands: string[] = []
   const bashResults: RunArtifacts['bashResults'] = []
@@ -71,5 +74,5 @@ export function extractArtifacts(input: {
     }
   }
 
-  return { bashCommands, bashResults, editedFiles, agentSpawns, subagentRuns: input.traceDir ? recoverSubagentRuns(input.traceDir, 'subagent:') : [], exitCode: input.exitCode, status, turns, outputDir: input.outputDir }
+  return { bashCommands, bashResults, editedFiles, agentSpawns, subagentRuns: input.traceDir ? recoverSubagentRuns(input.traceDir, 'subagent:') : [], exitCode: input.exitCode, status, turns, frozen: input.frozen ?? null, outputDir: input.outputDir }
 }

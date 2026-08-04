@@ -10,6 +10,17 @@ import { parseDeclaration, declarationHash, type Declaration } from './declarati
 import { extractArtifacts } from './artifacts.js'
 import { evalObservation } from './predicates.js'
 import { buildReport, type RunRecord } from './report.js'
+import { buildArtifact, runFrozenTests, verifyFrozenManifest } from './frozenHarness.js'
+
+interface PendingRun {
+  arm: string
+  seed: number
+  runDir: string
+  work: string
+  traceDir: string
+  traceJsonl: string
+  exitCode: number
+}
 
 const AB_DIR = path.dirname(fileURLToPath(import.meta.url))
 const DEEPCODE_ENTRY = path.join(AB_DIR, '..', '..', 'src', 'index.ts')
@@ -41,7 +52,7 @@ function positiveIntArg(name: string, def: number): number {
 /** 一次跑：干净 HOME + 空工作目录 + 该臂的 DEEPCODE_FLAGS + 开着请求侧轨迹。 */
 async function runOnce(
   decl: Declaration, arm: string, seed: number, outRoot: string, taskbook: string, timeoutSec: number,
-): Promise<RunRecord> {
+): Promise<PendingRun> {
   const runDir = path.join(outRoot, `${arm}-${seed}`)
   const home = path.join(runDir, 'home')
   const work = path.join(runDir, 'work')
@@ -106,12 +117,12 @@ async function runOnce(
   }
 
   const traceJsonl = fs.readFileSync(tracePath, 'utf8')
-  const artifacts = extractArtifacts({ traceJsonl, exitCode, outputDir: work, traceDir })
-  // I7：'na'（本次跑不适用）与 'error'（判定器不存在/抛异常）分开，别再混成一个 null。
-  const observations: Record<string, boolean | 'na' | 'error'> = {}
-  for (const o of decl.observations) observations[o.id] = evalObservation(artifacts, o.predicate, o.args)
+  // 装依赖 + 构建不在这里做：buildArtifact 用 spawnSync，同步阻塞整个事件循环，
+  // 放进这个并发的 Promise.all 会让「并行」构建实际排成串行，还会推迟其它并发跑里
+  // 定时器（如超时 SIGKILL）的触发。挪到下方第二段的串行 for 循环里，那里本来就是
+  // 串行的、且已有 try/catch 兜底，抛出不会拖垮整个批次。
 
-  return { arm, seed, runDir, artifacts, observations }
+  return { arm, seed, runDir, work, traceDir, traceJsonl, exitCode }
 }
 
 async function main(): Promise<void> {
@@ -141,7 +152,8 @@ async function main(): Promise<void> {
 
   process.stderr.write(`共 ${queue.length} 次跑，并发 ${concurrency}，产出落 ${outRoot}\n`)
 
-  const records: RunRecord[] = []
+  // 第一段：并发跑主进程。装依赖/构建不在这里做（见下方第二段的注释）。
+  const pending: PendingRun[] = []
   let next = 0
   await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
     while (next < queue.length) {
@@ -149,10 +161,69 @@ async function main(): Promise<void> {
       process.stderr.write(`▶ ${job.arm}-${job.seed} 开跑\n`)
       // 失败不重跑：某次跑崩了就记状态。重跑会让「失败率」这个信息消失，
       // 而它本身可能就是被测改动的效应。
-      records.push(await runOnce(decl, job.arm, job.seed, outRoot, taskbook, timeoutSec))
+      pending.push(await runOnce(decl, job.arm, job.seed, outRoot, taskbook, timeoutSec))
       process.stderr.write(`✔ ${job.arm}-${job.seed} 收工\n`)
     }
   }))
+
+  // 第二段：串行装依赖/构建 + 跑冻结考卷。
+  // 装依赖/构建放在这里而不是第一段的并发段：buildArtifact 用 spawnSync 实现，
+  // 同步阻塞整个 Node 事件循环——构建是同步的、会阻塞跑批主循环，不与其它跑重叠。
+  // 放进 Promise.all 会让「并行」构建实际排成串行，还会推迟其它并发跑里定时器
+  // （如超时 SIGKILL）的触发。
+  // 跑考卷同样串行：多次跑共用同一个考卷目录，vitest/vite 的缓存在并发下会打架。
+  // 考卷的受冻结文件不得被写入——结果写到各次跑自己的目录里；vitest 自身的
+  // node_modules/.vite 缓存会被改写，它不在冻结清单内，不影响判分。
+  // 判分前校验一次冻结清单：本项目的全部前提是「用同一套跑前就冻结好的考卷」，
+  // 但装依赖/构建阶段会往考卷目录里留缓存（见上方注释）——万一哪次跑不小心真的
+  // 碰了受冻结文件，得在这里喊出来，不能指望人工事后去比对。
+  const manifestCheck = verifyFrozenManifest({ frozenPath: decl.task.frozen })
+  if (!manifestCheck.ok) {
+    process.stderr.write(`\n⚠️ 警告：冻结清单校验未通过——受冻结文件可能已被改动，判分结果不可信：\n${manifestCheck.output}\n`)
+    process.exitCode = 1
+  }
+
+  process.stderr.write(`\n开始构建 + 用冻结考卷判分（串行，共 ${pending.length} 次）\n`)
+  const records: RunRecord[] = []
+  for (const p of pending) {
+    try {
+      process.stderr.write(`  ${p.arm}-${p.seed} 构建交付物…\n`)
+      const build = buildArtifact({ workDir: p.work })
+      if (!build.built) process.stderr.write(`  ⚠ ${p.arm}-${p.seed} 构建未成功，考卷将记为失败\n`)
+      process.stderr.write(`  ${p.arm}-${p.seed} 判分…\n`)
+      const frozen = runFrozenTests({
+        workDir: p.work,
+        harnessDir: decl.task.harness,
+        outputFile: path.join(p.runDir, 'frozen-result.json'),
+        build,
+      })
+      if (frozen.notes) fs.writeFileSync(path.join(p.runDir, 'frozen-notes.txt'), frozen.notes)
+      process.stderr.write(
+        `  ${p.arm}-${p.seed} → ${frozen.scored ? `${frozen.passed}/${frozen.total}` : '未判分'}\n`,
+      )
+      const artifacts = extractArtifacts({
+        traceJsonl: p.traceJsonl, exitCode: p.exitCode, outputDir: p.work, traceDir: p.traceDir, frozen,
+      })
+      // I7：'na'（本次跑不适用）与 'error'（判定器不存在/抛异常）分开，别再混成一个 null。
+      const observations: Record<string, boolean | 'na' | 'error'> = {}
+      for (const o of decl.observations) observations[o.id] = evalObservation(artifacts, o.predicate, o.args)
+      records.push({ arm: p.arm, seed: p.seed, runDir: p.runDir, artifacts, observations })
+    } catch (e) {
+      // 判分阶段抛异常不能让整批作废——pending 里每一条都是真调过模型、真花过钱的，
+      // 而顶层 catch 够不着这两个局部数组，连残缺报告都抢救不出来。
+      // 记成「判分失败」继续下一条，报告照样出得来。
+      process.stderr.write(`  ⚠ ${p.arm}-${p.seed} 判分异常，记为判分失败：${String((e as Error)?.message ?? e)}\n`)
+      // 空轨迹兜底：不重新解析可能正是抛出源的那份轨迹，只产出一个合法的空 artifacts。
+      // status 显式覆写成 'scoring_error'——留着 extractArtifacts 默认的 'unknown'
+      // 会让这条记录在「每次跑」表里跟真正状态未知的跑混在一起，还会把 turns=0 悄悄
+      // 掺进「平均轮次」的分母，把它拉低而不被发现。
+      const artifacts = extractArtifacts({ traceJsonl: '', exitCode: p.exitCode, outputDir: p.work })
+      artifacts.status = 'scoring_error'
+      const observations: Record<string, boolean | 'na' | 'error'> = {}
+      for (const o of decl.observations) observations[o.id] = 'error'
+      records.push({ arm: p.arm, seed: p.seed, runDir: p.runDir, artifacts, observations })
+    }
+  }
 
   const hashAfter = declarationHash(fs.readFileSync(declPath, 'utf8'))
   // 防篡改：声明文件若在跑动中途被改（正则、expect 被悄悄改动），这里必须自己报警——

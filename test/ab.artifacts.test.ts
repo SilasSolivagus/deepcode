@@ -251,3 +251,23 @@ describe('extractArtifacts 接子代理轨迹', () => {
     expect(a.bashResults).toEqual([])
   })
 })
+
+describe('extractArtifacts 带上考卷结果', () => {
+  const FROZEN = { installed: true, built: true, scored: true, passed: 46, failed: 0, total: 46, notes: '' }
+
+  it('不传 frozen 时为 null（既有调用方不受影响）', () => {
+    expect(extractArtifacts({ traceJsonl: '', exitCode: 0, outputDir: '/o' }).frozen).toBeNull()
+  })
+
+  it('传了就原样带上', () => {
+    const a = extractArtifacts({ traceJsonl: '', exitCode: 0, outputDir: '/o', frozen: FROZEN })
+    expect(a.frozen).toEqual(FROZEN)
+  })
+
+  it('考卷结果不影响任何轨迹派生字段', () => {
+    const a = extractArtifacts({ traceJsonl: '', exitCode: 0, outputDir: '/o', frozen: FROZEN })
+    expect(a.bashCommands).toEqual([])
+    expect(a.editedFiles).toEqual([])
+    expect(a.agentSpawns).toEqual([])
+  })
+})

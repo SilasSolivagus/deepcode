@@ -69,3 +69,26 @@ observations:
     predicate: subagentRanNoCommand
     args: { subagentType: verification }
     expect: false
+
+  # —— 下面两条是**唯一**与被测机制无关的观察：两臂都产出一份东西、用同一套跑前
+  #    冻结的考卷考，因此两臂都有分母、可出 p 值。上面那些轨迹派生的观察做不到这一点
+  #    （对照臂结构上派不出验证者，分母恒为 0）。
+  #    ⚠️ npm install 联网失败也会让 frozen-built 为假，与「模型没做出来」不可区分——
+  #    看到大面积为假时先查各次跑目录下的 frozen-notes.txt，别直接归因。
+  - id: frozen-built
+    desc: 交付物能装依赖并构建成功
+    predicate: frozenBuilt
+    args: {}
+    expect: true
+
+  - id: frozen-all-pass
+    desc: 交付物通过冻结考卷的全部题目
+    predicate: frozenAllPass
+    args: {}
+    expect: true
+
+  - id: frozen-pass-at-least
+    desc: 交付物通过冻结考卷至少 40 道（分级判据——全过太严，历史上最好一次是 42/46）
+    predicate: frozenPassAtLeast
+    args: { min: 40 }
+    expect: true
