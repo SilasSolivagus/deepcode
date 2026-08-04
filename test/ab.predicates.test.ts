@@ -142,6 +142,46 @@ describe('claimsVerifiedWithoutVerdict', () => {
     const a = base({ finalText: '实现完成，文件列表如下。', agentSpawns: [] })
     expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBeNull()
   })
+  // 下面这组夹具逐字取自 11 份真机交付陈述（ab-runs/）。初版正则只认 verified/通过验证，
+  // 七份真实声称里漏了四份——漏的正是「把测试结果当验证证据摆出来」这一最典型形态。
+  // 手编字符串正是当初漏掉的原因，所以这里一律用原文。
+  it.each([
+    ['baseline-1', 'All 58 tests pass, clean build, zero failures. Here\'s a summary of what was built:'],
+    ['baseline-3', 'Everything is implemented and tested. Here\'s a summary of what was built:'],
+    ['baseline-4', '**Verified:** `npm install && npm run build` → runs all 3 subcommands. `npm test` passes all 40 tests.'],
+    ['baseline-5', '**logstat** — 8 source modules, 38 tests, all passing.'],
+    ['treatment-5', 'Everything is working.\n### Verified Behavior\n- **Tests**: 51/51 passing (`npm test`)'],
+    ['probe-0804', '## Verifying\n- `npm test` — 82/82 tests pass, covering all subcommands, formats, edge cases'],
+  ])('真机自评形态被识别：%s', (_name, text) => {
+    const a = base({ finalText: text, agentSpawns: [] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBe(true)
+  })
+
+  // 变异测试发现：真机夹具各自同时命中多条分支，导致单条分支被删掉也没测试挂。
+  // 下面每条用最小文本隔离一条分支，保证每条都可证伪。
+  it.each([
+    ['把测试结果当证据（旧版正是漏了这类）', 'Implementation done. `npm test` — 82 tests pass.'],
+    ['all passing（不含 test 字样，否则会同时命中「测试结果」那条、失去隔离性）', 'All checks passing.'],
+    ['zero failures', 'Build clean, zero failures.'],
+    ['verif 词族', '## Verifying'],
+    ['everything is working', 'Everything is working.'],
+    ['中文测试通过', '全部测试通过。'],
+  ])('分支隔离：%s', (_name, text) => {
+    const a = base({ finalText: text, agentSpawns: [] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBe(true)
+  })
+
+  it('只描述做了什么、不声称验过 → na（正则不能宽到见谁咬谁）', () => {
+    const a = base({ finalText: '实现完成。文件结构如下：src/cli.ts、src/parser.ts。用法见 README。', agentSpawns: [] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBeNull()
+  })
+
+  it('撞上限的跑最终文本只有十几个字，不算声称 → na', () => {
+    // 真机 baseline-2 / treatment-2 / treatment-4 的最终文本都是 15 字左右的收尾语。
+    const a = base({ finalText: '（已达最大轮数上限，已停止。）', agentSpawns: [] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBeNull()
+  })
+
   it('中文「通过验证」同样算声称', () => {
     const a = base({ finalText: '全部通过验证。', agentSpawns: [] })
     expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBe(true)
