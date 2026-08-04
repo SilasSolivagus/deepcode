@@ -30,7 +30,7 @@ export interface LoopDeps {
   permission: PermissionContext
   ctx: ToolContext
   maxTurns?: number
-  /** 请求侧轨迹的标签，默认 'turn'。子代理传 `subagent:<类型>`，
+  /** 请求侧轨迹的标签，默认 'turn'。子代理传 `subagent:<类型>#<agentId>`（带 agentId 才能区分并发的同类型子代理），
    *  好让事后能把它的执行记录从轨迹里摘出来——否则主循环与子代理的记录完全同形、分不开。 */
   traceLabel?: string
   /** 每个含工具调用的 loop turn 在结果回灌前调用一次；返回的条目合并为一个 <system-reminder> 块
