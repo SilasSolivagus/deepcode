@@ -6,8 +6,8 @@
 
 <p align="center">
   <a href="https://deepcode.dirctable.com"><img src="https://img.shields.io/badge/website-deepcode.dirctable.com-5b7cfa" alt="website"></a>
+  <a href="https://deepcode.dirctable.com/docs/"><img src="https://img.shields.io/badge/docs-文档站-5b7cfa" alt="docs"></a>
   <a href="https://www.npmjs.com/package/@silassolivagus/deepcode"><img src="https://img.shields.io/npm/v/@silassolivagus/deepcode?color=5b7cfa&label=npm" alt="npm"></a>
-  <a href="https://www.npmjs.com/package/@silassolivagus/deepcode"><img src="https://img.shields.io/npm/dm/@silassolivagus/deepcode?color=5b7cfa&label=downloads" alt="downloads"></a>
   <a href="https://github.com/SilasSolivagus/deepcode/stargazers"><img src="https://img.shields.io/github/stars/SilasSolivagus/deepcode?color=5b7cfa" alt="stars"></a>
   <img src="https://img.shields.io/badge/license-MIT-5b7cfa" alt="license">
   <img src="https://img.shields.io/node/v/@silassolivagus/deepcode?color=5b7cfa" alt="node">
@@ -15,14 +15,12 @@
 
 <p align="center">
   <b>直连 DeepSeek / GLM / Kimi 的终端编码 agent。</b><br>
-  国产模型的性价比，工具编排 · 权限 · 记忆 · 子代理 · 工作流全都有——<b>每一行都在你手里</b>。
+  工具编排 · 权限 · 记忆 · 子代理 · 工作流全都有——<b>每一行都在你手里</b>。
 </p>
-<p align="center">🌐 官网 · <a href="https://deepcode.dirctable.com">deepcode.dirctable.com</a></p>
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/demo.gif" width="820" alt="deepcode 终端会话：Grep/Read 工具调用 → 引用行号的实质答案 → 成本行结算">
 </p>
-<p align="center"><sub>适合想在终端用国产大模型、又要国际一线 agent 体验与完全掌控感的开发者。</sub></p>
 
 ## 30 秒上手
 
@@ -31,30 +29,21 @@ npm i -g @silassolivagus/deepcode   # 需要 Node ≥ 22.5
 deepcode                             # 首跑向导粘 key，直接用
 ```
 
-默认 `deepseek-v4-pro`。已有 key 就 `export DEEPSEEK_API_KEY=sk-...` 秒开。切 GLM / Kimi / 自建后端见下方 [配置](#配置)。
-
 ```bash
 deepcode                    # 交互式 TUI
 deepcode -p "<任务>"         # 一次性 headless 输出
-deepcode -p "<任务>" --json  # headless + JSON（text/status/turns/usage/costCNY）
+deepcode --help             # 全部参数
 ```
 
-装好后会在后台留意新版本：npm 全局安装可直接自动升级，其余安装形态只在页脚提示升级命令；`/update` 手动检查，`DEEPCODE_DISABLE_UPDATES=1` 全关。
+默认 `deepseek-v4-pro`。已有 key 就 `export DEEPSEEK_API_KEY=sk-...` 秒开。
+切 GLM / Kimi / 自建后端见 [配置文档](https://deepcode.dirctable.com/docs/config/providers)。
 
-## 实测，不是 PPT
+## 这是什么
 
-可复现的自建 eval harness（`eval/`）+ 与顶级闭源 agent 同题对打。**防污染自建场景 × 5 模型 × 3 seed 的 pass^3**（照 τ-bench 可靠性理念，专抓 flaky），程序化判分不靠主观。
+一个从头写的终端编码 agent，**为国产模型而写**，不是把别的 harness 接到国产 API 上。
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/benchmark.svg" width="840" alt="成本-可靠性 Pareto：deepseek-v4-pro 满分可靠、成本便宜 7–10×；vs 国际一线闭源 agent 四类打平">
-</p>
-
-- **Pareto 赢家 = `deepseek-v4-pro`**：deepseek-v4-pro / glm-5.2 / kimi-k3 均跑满 5/5 场景 pass^3；deepseek-v4-pro 仅 **¥0.68——便宜 7–10×**。
-- **追平国际一线闭源 agent**：Office 三件套 / 联网深度研究 / 数据分析 / 复杂求值器，四类真实任务产出全部打平。
-- **Kimi 同样全可靠**：`kimi-k3` 跑满 5/5（含最难的求值器），适合 Kimi 生态或 1M 上下文场景，代价是成本最高（¥6.56）。
-- **pass^N 抓 flaky**：deepseek-flash 求值器仅 1/3——单跑会误判 OK，多 seed 才照出不可靠，这正是可靠性度量的价值。
-
-> 诚实边界：最烧脑的深推理（微妙算法 bug / 超大代码库 / 深架构）上，国际一线闭源 agent 可能仍领先——主要是**模型能力**差距、非 harness。完整报告见 [`eval/RESULTS-2026-07-17.md`](eval/RESULTS-2026-07-17.md)。
+系统提示词与工具描述按 DeepSeek / GLM / Kimi 的实际行为逐字调过；thinking 三态、缓存命中、
+usage 字段这些各厂方言由 adapter 统一，切厂无感。MIT，没有黑盒，你不喜欢哪行就改哪行。
 
 ## 为什么不直接用兼容接口跑闭源 agent？
 
@@ -68,134 +57,43 @@ DeepSeek 提供 [兼容接口](https://api-docs.deepseek.com/zh-cn/guides/anthro
 | 多 provider | 单一 | DeepSeek / GLM / Kimi / 自建，运行时切 |
 | 可改性 | 不可改 | 每一行都是你的 |
 
-## 差异化亮点
+## 实测，不是 PPT
 
-<table>
-<tr>
-<td width="50%" valign="top">
+自建 eval harness（`eval/`，可复现）：防污染场景 × 5 模型 × 3 seed 的 **pass^3**，程序化判分不靠主观。
+`deepseek-v4-pro` / `glm-5.2` / `kimi-k3` 均跑满 5/5 场景，其中 `deepseek-v4-pro` 成本最低。
 
-**🔀 原生多 provider，运行时切换**
+📊 **完整跑分与成本-可靠性 Pareto 图** → [官网跑分节](https://deepcode.dirctable.com/#bench) · [原始报告](eval/RESULTS-2026-07-17.md)
 
-一套 harness 通吃 DeepSeek / GLM / Kimi / 自建后端；方言 adapter 统一各厂 usage、缓存命中、thinking 三态字段，切厂无感（含 Kimi 仅思考模式的 k2.7-code/k3，自动规避报错）。
+> 诚实边界：最烧脑的深推理（微妙算法 bug / 超大代码库 / 深架构）上，国际一线闭源 agent 可能仍领先——
+> 主要是**模型能力**差距、非 harness。
 
-</td>
-<td width="50%" valign="top">
+## 文档
 
-**💰 国产 thinking 模型的成本控制**
+| | |
+|---|---|
+| 🚀 [快速开始](https://deepcode.dirctable.com/docs/guide/quickstart) | 装好之后的第一个任务 |
+| ⚙️ [配置](https://deepcode.dirctable.com/docs/config/settings) · [多 provider](https://deepcode.dirctable.com/docs/config/providers) | 切 GLM · Kimi · 自建后端 |
+| 💻 [TUI 用法](https://deepcode.dirctable.com/docs/usage/tui) · [斜杠命令](https://deepcode.dirctable.com/docs/usage/commands) | 交互式怎么用 |
+| 🤖 [headless / CI](https://deepcode.dirctable.com/docs/usage/headless) | `-p` · JSON · stream-json · 请求轨迹 |
+| 🛡️ [权限模型](https://deepcode.dirctable.com/docs/usage/permissions) | allow/ask/deny · auto 模式 · 分层 settings |
+| 🧩 [工具与扩展](https://deepcode.dirctable.com/docs/tools/overview) · [MCP](https://deepcode.dirctable.com/docs/tools/mcp) · [Hooks](https://deepcode.dirctable.com/docs/tools/hooks) | 生态怎么接 |
 
-显式关思考默认省 ~39× 输出 token；并修复国产 thinking 模型短回答/门控场景 content 被 reasoning 击穿的坑——直连闭源 agent 遇不到的问题。
+## 参与进来
 
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
+项目还很年轻，**现在提的每一条 issue 都会被认真对待**。
 
-**🧠 自带记忆系统**
+- 🐛 **遇到 bug** → [提 issue](https://github.com/SilasSolivagus/deepcode/issues/new/choose)，带上 `deepcode --version` 和复现步骤
+- 💡 **想要某个功能** → [提 issue](https://github.com/SilasSolivagus/deepcode/issues/new/choose)，说说你的场景——场景比功能本身更有用
+- 🗣️ **想聊聊** → [Discussions](https://github.com/SilasSolivagus/deepcode/discussions)
+- 🔧 **想动手** → 先读 [CONTRIBUTING.md](CONTRIBUTING.md)，`npm test` 跑得起来就能开工
+- ⭐ **只是觉得有用** → 点个 star，这是目前最有帮助的事
 
-per-project + 跨项目全局抽屉 + dream 后台归纳 + `SearchMemory` 全文检索（node:sqlite FTS5，零依赖）；信号门控只在有持久信息时提取，无感主动召回、跨项目连续记忆。
+变更记录见 [CHANGELOG.md](CHANGELOG.md)。安全问题请按 [SECURITY.md](SECURITY.md) 私下报告，别开公开 issue。
 
-</td>
-<td width="50%" valign="top">
-
-**📊 可复现 eval harness**
-
-防污染场景 × 多模型 × N seeds × 程序化判分，一键出 pass^N 可靠性 + 成本-Pareto 回归报告，把「便宜模型的可靠性/元」做成一等指标。
-
-</td>
-</tr>
-<tr>
-<td width="50%" valign="top">
-
-**🖼️ 国产多模态**
-
-GLM-4.6v 视觉透传 + GLM-OCR 文档输入，模型无关地注入主循环。
-
-</td>
-<td width="50%" valign="top">
-
-**🛡️ 权限与安全**
-
-allow/ask/deny 三桶 + auto 模式分类器 + 分层 settings + SSRF 防护 + git worktree 隔离子代理——放手干活，边界你说了算。
-
-</td>
-</tr>
-</table>
-
-<a id="配置"></a>
-<details>
-<summary><b>配置</b>（env / 向导 / settings.json，切 GLM · Kimi · 自建）</summary>
-
-三选一（优先级 env > settings）：
-- 首次运行 `deepcode`，按向导粘贴 key（写入 `~/.deepcode/settings.json`，权限 600）
-- 或 `export DEEPSEEK_API_KEY=sk-...`
-- 或手写 `~/.deepcode/settings.json`
-
-**切 provider**：
-
-```jsonc
-{
-  "provider": "kimi",                       // deepseek(默认) | glm | kimi | custom
-  "providers": { "kimi": { "apiKey": "..." } }
-}
-```
-
-- **GLM·智谱**：`provider: "glm"` + `providers.glm.apiKey`（或 env `ZHIPUAI_API_KEY`）。
-- **Kimi·Moonshot**：内置 `kimi-k3` / `kimi-k2.7-code` / `k2.6` / `k2.5`，默认 smart=`kimi-k2.7-code`（代码专用）、fast=`kimi-k2.5`；env `MOONSHOT_API_KEY` 亦可。
-- **custom**：任意 OpenAI 兼容后端，填 `baseURL` / `models` / `apiKeyEnv`。
-- 网络需代理时设 `https_proxy`，deepcode 自动经它请求。
-
-</details>
-
-<details>
-<summary><b>用法 & 命令</b></summary>
+## 本地开发
 
 ```bash
-deepcode                                  # 交互式 TUI
-deepcode -p "<任务>"                       # 一次性 headless 输出（纯文本）
-deepcode -p "<任务>" --json                # 最终结果一行 JSON（text/status/turns/usage/costCNY）
-deepcode -p "<任务>" --output-format stream-json  # 逐行 JSONL 事件流，工具参数与结果不截断
-echo "<任务>" | deepcode                   # 管道喂入走 headless
-```
-
-`--output-format` 三档：`text`（默认）/ `json`（`--json` 是它的别名）/ `stream-json`。stream-json 逐事件打到 stdout，每行可直接 `jq` 解析，适合脚本与 CI 消费；该模式下 stderr 的人读轨迹静默。
-
-`--trace <dir>` 或环境变量 `DEEPCODE_TRACE_DIR=<dir>`，**仅在 `-p` 与管道喂入这两个 headless 入口生效**，把经 `chatStream` 发给模型的每一个请求原样落盘为 `<dir>/req-NNNNN.json`（5 位零填充）。交互式 TUI 与 `--background-run` 后台任务目前不支持（TUI 下给了会在 stderr 提示不生效，不静默吞掉）。stream-json 给的是模型说了什么；请求侧轨迹给的是我们说了什么——包括系统提示词、被注入的提醒、压缩后的历史、hook 输出这些在输出流里看不见的内容。典型用法是比对相邻两轮，看这一轮多塞了什么：
-
-```bash
-deepcode -p "任务" --trace ./trace --yolo
-diff ./trace/req-00007.json ./trace/req-00008.json
-```
-
-每条记录带 `label` 区分场景：`turn`（正常轮次）/ `compact`（历史压缩）/ `recap`（会话摘要）/ `goal`（目标提取）/ `hook`（hook 内的模型调用）/ `classify`（auto 模式权限分类器）/ `memorySignal`（记忆信号门控）/ `memoryIndex`（记忆索引整合）。⚠️ **落盘内容包含发给模型的完整上下文，其中会有 agent 读过的全部文件原文，可能含密钥与私有代码。** 目录以 `0700` 创建。这是本地诊断工具，不是日志——不要在共享环境常开，用完请自行删除。
-
-覆盖范围：记的是**所有有诊断价值的出站请求**，不是进程发出的全部请求。有两处刻意不记——图片描述（发的是图片，不是「deepcode 自己说的话」）与 key 校验探活（内容零诊断价值，且落盘反而多一份敏感面）。
-
-- `@文件` 引用文件、`!命令` 直跑 shell、`/` 浮出命令菜单
-- 常用命令：`/model`（切模型/provider）、`/think`、`/accept`、`/plan`、`/cost`、`/compact`、`/resume`、`/rewind`、`/memory`、`/permissions`、`/update`、`/init`、`/help`、`/exit`（auto 模式用 Shift+Tab 切）
-- Esc 中断当前轮（可中途转向），Ctrl+C×2 退出
-
-</details>
-
-<details>
-<summary><b>能力</b>（工具 / 权限 / 子代理 / 长任务 / 生态 / TUI）</summary>
-
-- **工具**：Read / Glob / Grep / Bash / Edit / Write / NotebookEdit / WebFetch / WebSearch / SearchMemory …
-- **权限**：allow/ask/deny 三桶 + dontAsk + auto 模式（分类器判 run/ask/block）+ 分层 settings（user<project<local<flag）+ SSRF 防护
-- **子代理与编排**：类型化子代理（general-purpose/Explore/Plan）+ 可写 subagent + git worktree 隔离 + 后台任务 + 多 agent 工作流 DSL + FleetView
-- **长任务**：上下文 compact（microcompact + 自动触发 + 熔断）、steering 中途转向、plan 模式
-- **生态**：MCP（stdio + 资源工具）、Skills、Hooks 生命周期、自定义 slash 命令
-- **TUI**：ink 全屏可滚 + 补全菜单 + 主题 + statusline
-
-</details>
-
-<details>
-<summary><b>评测复现 & 开发</b></summary>
-
-```bash
-# 复现成本-可靠性 Pareto
-node eval/run.mjs --models deepseek-v4-pro,deepseek-v4-flash,glm-5-turbo,glm-5.2 --seeds 3
-
-# 开发
+git clone https://github.com/SilasSolivagus/deepcode && cd deepcode && npm i
 npm test           # vitest
 npm run typecheck  # tsc --noEmit
 npm run build      # tsc -p tsconfig.build.json
@@ -203,10 +101,8 @@ npm run build      # tsc -p tsconfig.build.json
 
 设计原则：控制流姓代码、智能姓模型；重试只包 API 建流、工具执行不重放；报错写给模型看；工具结果是不可信输入。
 
-</details>
-
 ---
 
 <p align="center">
-  觉得有用？点个 <a href="https://github.com/SilasSolivagus/deepcode">⭐</a> 是最大的鼓励 · Issues / PR 都欢迎 · MIT
+  MIT · Issues / PR 都欢迎 · 觉得有用点个 <a href="https://github.com/SilasSolivagus/deepcode">⭐</a>
 </p>

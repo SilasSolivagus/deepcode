@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 提问 / 闲聊 / 分享用法
+    url: https://github.com/SilasSolivagus/deepcode/discussions
+    about: 不确定算不算 bug，或者只是想聊聊，来这里
+  - name: 📖 文档
+    url: https://deepcode.dirctable.com/docs/
+    about: 配置、用法、权限模型、生态扩展
+  - name: 🔒 报告安全问题
+    url: https://github.com/SilasSolivagus/deepcode/security/advisories/new
+    about: 请勿开公开 issue

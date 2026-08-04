@@ -1,0 +1,28 @@
+name: 提一个想法
+description: 希望它能做某件事
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **先说场景，再说功能。** 「我在做 X 的时候卡在 Y」比「建议增加 Z」有用得多——
+        场景能让人想出比你提的方案更好的做法，方案不能。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你在什么场景下遇到了什么问题
+      description: 你当时在干什么？现在你怎么绕过去的？
+    validations: { required: true }
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: 你觉得可以怎么做（可选）
+      description: 没想好也没关系，上面那栏才是关键。
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: 和哪个 provider 相关
+      options: [都相关 / 不特定, DeepSeek, GLM（智谱）, Kimi（Moonshot）, 自建 / OpenAI 兼容后端]

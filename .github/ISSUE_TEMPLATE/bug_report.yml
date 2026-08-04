@@ -1,0 +1,60 @@
+name: 报告一个 bug
+description: 有东西没按预期工作
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        谢谢你花时间报告。**能复现的 bug 报告是这个项目最稀缺的东西。**
+        安全问题请不要用这个模板，见 [SECURITY.md](https://github.com/SilasSolivagus/deepcode/blob/main/SECURITY.md)。
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 跑 `deepcode --version` 贴过来
+      placeholder: "0.13.0"
+    validations: { required: true }
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: 用的哪个 provider
+      options: [DeepSeek, GLM（智谱）, Kimi（Moonshot）, 自建 / OpenAI 兼容后端, 不确定]
+    validations: { required: true }
+
+  - type: input
+    id: model
+    attributes:
+      label: 具体模型
+      placeholder: "deepseek-v4-pro"
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 怎么复现
+      description: 敲了什么命令、在什么项目里、点了什么。越具体越好。
+      placeholder: |
+        1. deepcode -p "..."
+        2. ...
+    validations: { required: true }
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望什么 / 实际得到什么
+    validations: { required: true }
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 报错信息或相关输出
+      description: 会自动按代码块格式化，不用加反引号。⚠️ 贴之前请自己确认里面没有 API key 或私有代码。
+      render: shell
+
+  - type: input
+    id: env
+    attributes:
+      label: 系统与 Node 版本
+      placeholder: "macOS 15.2 / Node 22.5.0"
+    validations: { required: true }
