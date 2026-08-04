@@ -8,6 +8,7 @@ import { hasApiKey } from './config.js'
 import { setFlagSettingsPath } from './settingsLayers.js'
 import { parseOutputFormat, parseMaxTurns } from './streamJson.js'
 import { parseModelFlag } from './providers.js'
+import { parsePermissionMode } from './permissions.js'
 import { resolveTraceDir } from './requestTrace.js'
 
 const argv = process.argv
@@ -40,8 +41,15 @@ const resumeIdx = argv.indexOf('--resume')
 const resumeFile = resumeIdx >= 0 ? argv[resumeIdx + 1] : undefined
 const jobIdx = argv.indexOf('--job')
 const jobShort = jobIdx >= 0 ? argv[jobIdx + 1] : undefined
-const permIdx = argv.indexOf('--permission-mode')
-const permMode = permIdx >= 0 ? argv[permIdx + 1] : undefined
+// 严格解析：非六态之一当场抛错。此前是裸取 argv[i+1] 再 `as any`，拼错一个字母会让
+// checkPermission 里所有 mode === '…' 分支全不命中、静默退化成 default——写 --permission-mode
+// yolo 少打一个字母就变成全程拒绝，用户只会以为工具坏了。
+const permMode = parsePermissionMode(argv)
+// --yolo 与一个不是 yolo 的 --permission-mode 同时给出：意图冲突，报错而不是让 yolo 静默胜出。
+// 此前是 `opts.yolo ? 'yolo' : permMode`，用户以为自己设了 plan，实际全程放行——方向危险。
+if (yolo && permMode && permMode !== 'yolo') {
+  throw new Error(`--yolo 与 --permission-mode ${permMode} 冲突：--yolo 等价于 --permission-mode yolo，请只给一个`)
+}
 // 严格解析：取值缺失/以 - 开头当场抛错。此前是裸取 argv[i+1]，`--model -p "任务"` 会把 -p
 // 当模型名读走，一路走到白名单钳制才回落，告警指向一个用户从没写过的「模型名」。
 const modelFlag = parseModelFlag(argv)
@@ -70,7 +78,7 @@ try {
     const outputFormat = parseOutputFormat(argv)
     const maxTurns = parseMaxTurns(argv)
     const { runHeadless } = await import('./headless.js')
-    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, outputFormat, traceDir, maxTurns, model: modelFlag })
+    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, outputFormat, traceDir, maxTurns, model: modelFlag, permissionMode: permMode })
     if (outputFormat === 'json') {
       console.log(JSON.stringify({ text: r.text, status: r.status, turns: r.turns, usage: r.usage, costCNY: r.costCNY }))
     } else if (outputFormat === 'text') {
@@ -87,7 +95,7 @@ try {
     if (!hasApiKey()) throw new Error(NO_KEY_MSG)
     const client = createClient(flagSettingsPath)
     const { runHeadless } = await import('./headless.js')
-    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, traceDir, model: modelFlag })
+    const r = await runHeadless({ client, prompt, yolo, flagSettingsPath, traceDir, model: modelFlag, permissionMode: permMode })
     console.log(r.text)
     process.exitCode = r.status === 'done' ? 0 : 1
   } else {
@@ -104,7 +112,7 @@ try {
     const resumeFileArg = resumeIdx >= 0 && !bgRun ? resumeFile : undefined
     const justSwitched = process.env.DEEPCODE_TUI_JUST_SWITCHED
     if (justSwitched) delete process.env.DEEPCODE_TUI_JUST_SWITCHED
-    await startTui({ client, yolo, continueSession, inlineFlag, resumeFile: resumeFileArg, justSwitched, flagSettingsPath, model: modelFlag })
+    await startTui({ client, yolo, continueSession, inlineFlag, resumeFile: resumeFileArg, justSwitched, flagSettingsPath, model: modelFlag, permissionMode: permMode })
     process.exit(0) // ink 卸载后 stdin raw 监听可能残留；显式退出兜底
   }
 } catch (e: any) {

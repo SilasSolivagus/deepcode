@@ -1,9 +1,9 @@
 // src/help.ts
 // `deepcode --help` 的正文。
 //
-// ⚠️ 只列真正在用户可达路径上生效的参数。`--permission-mode` 目前仍只被 `--background-run`
-// （TUI 的 /background 拉起的内部子进程）消费，在 `-p` 与交互式下是静默忽略的——写进帮助
-// 就是骗人，故刻意不列。等它真接上去再加。（`--model` 已于 2026-08-04 接到全部三条路径。）
+// ⚠️ 只列真正在用户可达路径上生效的参数。曾有两个 flag（`--model` / `--permission-mode`）
+// 只被 `--background-run` 消费、在 `-p` 与交互式下静默忽略——那种情况下写进帮助就是骗人。
+// 两者均已于 2026-08-04 接到全部三条路径。将来再加 flag 前先确认它真的在每条路径上生效。
 import { VERSION } from './version.js'
 
 export const HELP = `deepcode ${VERSION} — 直连 DeepSeek / GLM / Kimi 的终端编码 agent
@@ -29,6 +29,9 @@ headless 参数（配合 -p 或管道使用）：
 通用：
   --model <name>                  本次启动用哪个模型，优先于 settings.model
                                   仍受 availableModels 白名单钳制，被推翻会告警
+  --permission-mode <mode>        default | acceptEdits | plan | auto | dontAsk | yolo
+                                  优先于 settings 里的默认模式；与 --yolo 同时给出会报错
+                                  ⚠️ auto 每次工具调用会多一次分类器模型调用（约 3 秒 + 少量费用）
   --settings <path>               改用指定的 settings.json
   -h, --help                      显示本帮助
   -v, --version                   显示版本号

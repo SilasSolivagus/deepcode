@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { parseModelFlag } from '../src/providers.js'
 
 const script: Array<{ result?: any }> = []
@@ -41,6 +42,7 @@ vi.mock('../src/settingsLayers.js', async (orig) => {
 
 import { runHeadless } from '../src/headless.js'
 import { chatStream } from '../src/api.js'
+import { createChatCore } from '../src/tui/useChat.js'
 
 const usage = { prompt_tokens: 1, completion_tokens: 1, prompt_cache_hit_tokens: 0 }
 const done = { result: { content: '好了', toolCalls: [], usage, finishReason: 'stop' } }
@@ -113,6 +115,20 @@ describe('runHeadless 认 --model', () => {
     expect(msgs).toContain('settings.model=')
     expect(msgs).not.toContain('--model=')
     err.mockRestore()
+  })
+})
+
+describe('createChatCore 真的用了传进来的 model', () => {
+  // 与 permissionMode 同一课：源码文本断言只验「线接上了」，验不出「接到的东西被用了」。
+  const mk = (extra: any) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'modelflag-'))
+    return createChatCore({ client: {} as any, cwd: dir, sessionDir: dir, home: dir, onState: () => {}, yolo: true, ...extra })
+  }
+  it('传了 model 就用它，而不是 settings.model', () => {
+    expect(mk({ model: 'deepseek-v4-pro' }).model()).toBe('deepseek-v4-pro')
+  })
+  it('没传时仍走 settings.model，行为不变', () => {
+    expect(mk({}).model()).toBe('deepseek-v4-flash')
   })
 })
 

@@ -18,6 +18,7 @@ import { resolveRenderer } from './viewMode.js'
 import { cleanupOldJobs, reconcileJobs } from '../backgroundSession.js'
 import { cleanupOldSessions } from '../session.js'
 import type OpenAI from 'openai'
+import type { PermissionMode } from '../permissions.js'
 
 export async function startTui(opts: {
   client: OpenAI
@@ -28,6 +29,7 @@ export async function startTui(opts: {
   justSwitched?: string      // Task6：DEEPCODE_TUI_JUST_SWITCHED（'inline'|'fullscreen'）
   flagSettingsPath?: string
   model?: string             // --model <name>：优先于 settings.model 决定启动模型
+  permissionMode?: PermissionMode  // --permission-mode <mode>：优先于 settings.permissions.defaultMode
 }): Promise<void> {
   // 后台任务：退出时 kill running 任务（追加监听，不抢占下方 altscreen 清理）+ 清理超龄旧日志。
   installTaskCleanup()
@@ -92,6 +94,7 @@ export async function startTui(opts: {
           continueSession={opts.continueSession}
           flagSettingsPath={opts.flagSettingsPath}
           model={opts.model}
+          permissionMode={opts.permissionMode}
           resumeFile={opts.resumeFile}
           justSwitched={opts.justSwitched}
           unmount={unmount}

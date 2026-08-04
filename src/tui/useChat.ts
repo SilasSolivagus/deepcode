@@ -474,6 +474,7 @@ export function createChatCore(opts: {
   flagSettingsPath?: string
   resumeFile?: string  // Task6：--resume <文件> 精确恢复（交互路径 + /tui 切换后回带）
   model?: string       // --model <name>：优先于 settings.model 决定启动模型
+  permissionMode?: PermissionMode  // --permission-mode <mode>：优先于 settings.permissions.defaultMode
   justSwitched?: string // Task6：DEEPCODE_TUI_JUST_SWITCHED（'inline'|'fullscreen'）→ 首帧横幅 notice
   unmount?: () => void  // Task6：ink instance.unmount，供 /tui 切换 spawnSync 前卸载
   onState: (s: ChatState) => void
@@ -529,7 +530,12 @@ export function createChatCore(opts: {
   let budgetUsed = 0                     // 2.1 本次 send 累计输出 token（状态栏 budget 段分子）
   let thinking = false
   let effortLevel: 'low' | 'medium' | 'high' = 'medium'
+  // 优先级：--yolo > --permission-mode > settings.permissions.defaultMode。
+  // --yolo 与不一致的 --permission-mode 同时给出时 index.ts 已当场报错，这里不再兜底猜意图。
+  // 注意 --permission-mode auto 不受 disableAutoMode 影响：那个开关是给「默认就进 auto」兜底的，
+  // 用户这一次显式点名要 auto，不该被一个默认值设置悄悄改成别的。
   let permMode: PermissionMode = opts.yolo ? 'yolo'
+    : opts.permissionMode ? opts.permissionMode
     : settings.permissions.defaultMode === 'dontAsk' ? 'dontAsk'
     : (settings.permissions.defaultMode === 'auto' && !settings.disableAutoMode) ? 'auto'
     : 'default'
