@@ -40,6 +40,7 @@ export function FullscreenApp(props: {
   continueSession?: boolean
   sessionDir?: string
   flagSettingsPath?: string
+  model?: string            // --model <name>：优先于 settings.model 决定启动模型
   resumeFile?: string       // Task6：--resume <文件> 精确恢复
   justSwitched?: string     // Task6：/tui 切换后的首帧横幅（'inline'|'fullscreen'）
   unmount?: () => void      // Task6：ink 卸载回调（/tui 切换 spawnSync 前）
@@ -55,6 +56,7 @@ export function FullscreenApp(props: {
     continueSession: props.continueSession,
     sessionDir: props.sessionDir,
     flagSettingsPath: props.flagSettingsPath,
+    model: props.model,
     resumeFile: props.resumeFile,
     justSwitched: props.justSwitched,
     unmount: props.unmount,

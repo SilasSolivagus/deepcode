@@ -1,9 +1,9 @@
 // src/help.ts
 // `deepcode --help` 的正文。
 //
-// ⚠️ 只列真正在用户可达路径上生效的参数。`--model` 与 `--permission-mode` 目前只被
-// `--background-run`（TUI 的 /background 拉起的内部子进程）消费，在 `-p` 与交互式下
-// 是静默忽略的——写进帮助就是骗人，故刻意不列。等它们真接上去再加。
+// ⚠️ 只列真正在用户可达路径上生效的参数。`--permission-mode` 目前仍只被 `--background-run`
+// （TUI 的 /background 拉起的内部子进程）消费，在 `-p` 与交互式下是静默忽略的——写进帮助
+// 就是骗人，故刻意不列。等它真接上去再加。（`--model` 已于 2026-08-04 接到全部三条路径。）
 import { VERSION } from './version.js'
 
 export const HELP = `deepcode ${VERSION} — 直连 DeepSeek / GLM / Kimi 的终端编码 agent
@@ -27,6 +27,8 @@ headless 参数（配合 -p 或管道使用）：
   --inline                        用内联模式而非全屏（等价于 DEEPCODE_INLINE=1）
 
 通用：
+  --model <name>                  本次启动用哪个模型，优先于 settings.model
+                                  仍受 availableModels 白名单钳制，被推翻会告警
   --settings <path>               改用指定的 settings.json
   -h, --help                      显示本帮助
   -v, --version                   显示版本号

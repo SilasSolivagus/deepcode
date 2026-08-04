@@ -79,7 +79,7 @@ export function buildHeadlessToolset(d: {
 }
 
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
-export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string; home?: string; outputFormat?: 'text' | 'json' | 'stream-json'; write?: (s: string) => void; traceDir?: string; maxTurns?: number }): Promise<HeadlessResult> {
+export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string; home?: string; outputFormat?: 'text' | 'json' | 'stream-json'; write?: (s: string) => void; traceDir?: string; maxTurns?: number; model?: string }): Promise<HeadlessResult> {
   installTaskCleanup() // 退出时 kill 仍 running 的后台任务
   // 轨迹要在任何 chatStream 之前开启，否则前几个请求会漏记。
   if (opts.traceDir) enableTrace(opts.traceDir)
@@ -92,11 +92,15 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
   const globalMemdir = mem.enabled && mem.global.enabled ? globalMemdirFor(home) : undefined
   // activeProvider() 不带 flagPath，与 createClient(flagSettingsPath) 会分叉；用手里的 layered settings 解析
   const activePreset = resolveActiveProvider(settings)
-  const model = resolveStartupModel(settings.model, activePreset, availablePresets(settings), settings.availableModels)
-  const modelFallback = modelFallbackReason(settings.model, model, activePreset, settings.availableModels)
+  // --model 优先于 settings.model（照 backgroundRunner 的 opts.model ?? … 次序）。此前 headless
+  // 压根不收这个入参，`deepcode --model X -p "任务"` 会静默按 settings 里的模型跑完并按那个模型计费——
+  // 与本文件下面那句「绝不静默失效」自相矛盾。解析与白名单钳制仍走同一条路，不给 flag 开后门。
+  const requestedModel = opts.model ?? settings.model
+  const model = resolveStartupModel(requestedModel, activePreset, availablePresets(settings), settings.availableModels)
+  const modelFallback = modelFallbackReason(requestedModel, model, activePreset, settings.availableModels)
   if (modelFallback) {
     // 绝不静默失效：配置被推翻必须说出来（stderr，不污染 stdout 结果通道）
-    console.error(`[deepcode] settings.model=${modelFallback}`)
+    console.error(`[deepcode] ${opts.model ? '--model' : 'settings.model'}=${modelFallback}`)
   }
   const strippedNotice = strippedRulesNotice(layered.strippedDangerousRules)
   if (strippedNotice) {
