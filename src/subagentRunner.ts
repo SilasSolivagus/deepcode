@@ -31,6 +31,9 @@ export function __resetMemorySemaphoreForTest(): void {
   memWaiters.length = 0
 }
 
+/** 子代理默认轮次预算。 */
+export const DEFAULT_SUBAGENT_MAX_TURNS = 30
+
 export interface RunSubagentOpts {
   client: OpenAI
   onUsage: (u: Usage, model: string) => void
@@ -45,11 +48,20 @@ export interface RunSubagentOpts {
   agentType: string
   /** worktree 路径。设置后子代理 cwd 锚定此 worktree，系统提示追加隔离说明。 */
   worktreePath?: string
+  /** 子循环轮次预算。省略 = DEFAULT_SUBAGENT_MAX_TURNS。 */
+  maxTurns?: number
   /** 推理开关。默认 false（保持现有所有调用者行为不变）。Workflow agent({effort}) 用。 */
   thinking?: boolean
   /** 推理档位（thinking=true 时透传 api reasoning_effort）。 */
   effortLevel?: 'low' | 'medium' | 'high'
 }
+
+/** 子代理烧穿轮次预算被截断时，包在返回内容最前面的警示。
+ *  措辞要点：①点明这是中间状态不是结论；②直接堵掉「据此声称已完成/已验证」这条路；
+ *  ③给出下一步（重派一个并带上已知信息），否则父代理只会原地卡住或干脆无视。 */
+export const TRUNCATED_NOTICE =
+  '⚠️ 子代理未跑完就撞上了轮次预算上限，下面是被截断的中间状态，**不是结论**。' +
+  '不得据此声称任务已完成或已验证；若仍需结论，请带上已知信息重新派一个（可缩小范围或让它把独立检查并成一轮批量执行）。'
 
 /** worktree 子代理隔离提示（追加在 agent 系统提示后）。 */
 export function worktreeSubagentPrompt(parentCwd: string, worktreePath: string): string {
@@ -173,7 +185,7 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       // 继承父级安全约束（deny/ask/rules/mode/classify），围栏根固定为 fenceRoot，不随 cd 漂移。
       permission: buildSubagentPermission(parentPerm, fenceRoot, ctx.askUp, { agentId, agentType: type }),
       ctx: subCtx,
-      maxTurns: 30,
+      maxTurns: opts.maxTurns ?? DEFAULT_SUBAGENT_MAX_TURNS,
       // 轨迹里主循环与子代理的记录本来完全同形；带上类型才能事后把子代理的执行记录摘出来。
       // 带上 agentId：Agent 工具只读、同一轮多个 Agent 调用走 loop.ts 的并发批，两个同类型
       // 子代理并发时请求交错落盘，仅凭类型无法区分是同一次 spawn 的多轮还是两次独立 spawn；
@@ -185,6 +197,12 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
     while (!(step = await gen.next()).done) {
       if (step.value.type === 'turn_end') opts.onUsage(step.value.usage, opts.model)
     }
+    // runLoop 的返回值（'done' | 'max_turns' | 'aborted' | …）此前被整个丢掉。撞上限时它给
+    // messages 封的是一句中性的「（已达最大轮数上限，已停止。）」，父代理拿到手与「正常收工但
+    // 没多说什么」无从分辨——实测后果：验证子代理烧穿预算被截断，父代理照常收工并在交付陈述里
+    // 写下「Verified Behavior」，而那次验证从未返回任何 verdict。**有这套机制反而比没有更糟**：
+    // 没机制时交付物只是「没验过」，这样失效时它挂着一个没人挣来的「已验证」标题。
+    const loopStatus = step.value as unknown as string
     const final = [...messages].reverse().find(m => m.role === 'assistant' && typeof m.content === 'string' && m.content)
     // L-044 强约束：声明了 schema 但本轮还没拿到校验对象 → 注入提醒续跑（≤MAX 次；独立于 subStopFired 配额）。
     if (opts.outputSchema && captured === undefined) {
@@ -196,7 +214,10 @@ export async function runSubagent(opts: RunSubagentOpts): Promise<string | undef
       // 超限：fail-safe 兜底返回末条文本（不死循环）。
     }
     // L-044：结构化对象优先于自由文本（声明 schema 且已捕获→返回校验 JSON，否则末条文本）。
-    const result = captured !== undefined ? JSON.stringify(captured) : final?.content
+    let result = captured !== undefined ? JSON.stringify(captured) : final?.content
+    if (loopStatus === 'max_turns') {
+      result = `${TRUNCATED_NOTICE}\n\n${result ?? '（子代理未产出任何文本。）'}`
+    }
     if (ctx.hookDispatch && !signal.aborted) {
       const stopOut = await ctx.hookDispatch('SubagentStop', {
         hook_event_name: 'SubagentStop', agent_id: agentId, agent_type: type, cwd: ctx.cwd(),

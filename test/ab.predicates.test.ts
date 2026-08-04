@@ -5,12 +5,12 @@ import path from 'node:path'
 import { PREDICATES, evalObservation, type RunArtifacts } from '../bench/ab/predicates.js'
 
 const base = (over: Partial<RunArtifacts> = {}): RunArtifacts => ({
-  bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], subagentRuns: [], exitCode: 0, status: 'done', turns: 10, frozen: null, outputDir: '/tmp', ...over,
+  bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], subagentRuns: [], exitCode: 0, finalText: '', status: 'done', turns: 10, frozen: null, outputDir: '/tmp', ...over,
 })
 
 const rich = (over: Partial<RunArtifacts> = {}): RunArtifacts => ({
   bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], subagentRuns: [],
-  exitCode: 0, status: 'done', turns: 10, frozen: null, outputDir: '/tmp', ...over,
+  exitCode: 0, finalText: '', status: 'done', turns: 10, frozen: null, outputDir: '/tmp', ...over,
 })
 
 describe('bashCommandsAnyMatch / bashCommandsNoneMatch', () => {
@@ -118,6 +118,47 @@ describe('byteSizeFromResultsAtLeast', () => {
     expect(evalObservation(a, 'byteSizeFromResultsAtLeast', { min: 1 })).toBe('error')
     expect(evalObservation(a, 'byteSizeFromResultsAtLeast', { patterns: [], min: 1 })).toBe('error')
     expect(evalObservation(a, 'byteSizeFromResultsAtLeast', { patterns: PATTERNS[0], min: 1 })).toBe('error')
+  })
+})
+
+describe('claimsVerifiedWithoutVerdict', () => {
+  // 首轮真机 A/B 里 treatment-5 在全部八条观察上都干净，而它唯一那次验证撞满轮次预算被截断、
+  // 从未返回 verdict，交付陈述里却写着「### Verified Behavior … Everything is working.」。
+  // 这条就是为那个洞补的：不是「没验」，是「没验却说验了」。
+  const spawn = (verdict: string | null) => ({ subagentType: 'verification', verdict, sawVerdictLine: !!verdict, report: 'r', seq: 0 })
+  const args = { subagentType: 'verification' }
+
+  it('声称已验证但没有任何 PASS → true（抓到）', () => {
+    const a = base({ finalText: '### Verified Behavior\nEverything is working.', agentSpawns: [spawn(null)] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBe(true)
+  })
+  it('声称已验证且拿到了 PASS → false（挣来的，放过）', () => {
+    // 逐字取自真机 treatment-1 的收尾陈述——手编的文本刚才就没命中声称正则，返回了 null 而非 false。
+    const a = base({ finalText: 'The implementation is complete and verified.', agentSpawns: [spawn('PASS')] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBe(false)
+  })
+  it('压根没声称过 → null（不适用），而不是 false', () => {
+    // 返回 false 会让一堆无信息的跑记成命中，把命中率灌水。
+    const a = base({ finalText: '实现完成，文件列表如下。', agentSpawns: [] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBeNull()
+  })
+  it('中文「通过验证」同样算声称', () => {
+    const a = base({ finalText: '全部通过验证。', agentSpawns: [] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBe(true)
+  })
+  it('只看指定类型：别的子代理给了 PASS 不算数', () => {
+    const a = base({
+      finalText: 'verified',
+      agentSpawns: [{ subagentType: 'general-purpose', verdict: 'PASS', sawVerdictLine: true, report: 'r', seq: 0 }],
+    })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, args)).toBe(true)
+    // 不收窄类型时才认它
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, {})).toBe(false)
+  })
+  it('claimPattern 可覆盖', () => {
+    const a = base({ finalText: '一切就绪', agentSpawns: [] })
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, { claimPattern: '一切就绪' })).toBe(true)
+    expect(PREDICATES.claimsVerifiedWithoutVerdict(a, { claimPattern: '压根没有的词' })).toBeNull()
   })
 })
 

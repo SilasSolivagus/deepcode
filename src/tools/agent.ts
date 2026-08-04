@@ -119,7 +119,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
             const final = await runSubagent({
               client: deps.client, onUsage: deps.onUsage,
               systemPrompt: def.getSystemPrompt(), userPrompt: input.prompt,
-              tools, model: subModel, outputSchema: def.outputSchema,
+              tools, model: subModel, outputSchema: def.outputSchema, maxTurns: def.maxTurns,
               ctx, signal: ac.signal, agentId: id, agentType: type,
               worktreePath: wt?.worktreePath,
             })
@@ -152,7 +152,7 @@ export function makeAgentTool(deps: { client: OpenAI; onUsage: (u: Usage, model:
         final = await runSubagent({
           client: deps.client, onUsage: deps.onUsage,
           systemPrompt: def.getSystemPrompt(), userPrompt: input.prompt,
-          tools, model: subModel, outputSchema: def.outputSchema,
+          tools, model: subModel, outputSchema: def.outputSchema, maxTurns: def.maxTurns,
           ctx, signal: ctx.signal, agentId: fgId, agentType: type,
           worktreePath: wt?.worktreePath,
         })

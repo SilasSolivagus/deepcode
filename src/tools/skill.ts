@@ -51,7 +51,7 @@ export function makeSkillTool(
         const result = await runSubagent({
           client: deps.client, onUsage: deps.onUsage,
           systemPrompt: filled, userPrompt: input.args ?? '（无参数）',
-          tools, model, ctx, signal: ctx.signal,
+          tools, model, ctx, signal: ctx.signal, maxTurns: effectiveDef.maxTurns,
           agentId: generateTaskId('local_agent'), agentType: type,
         })
         return result ?? '（技能子代理无输出）'

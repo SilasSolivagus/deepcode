@@ -9,6 +9,8 @@ export interface AgentDefinition {
   tools?: string[] // allow 列表；undefined 或 ['*'] = 通配（全池减 deny）
   disallowedTools?: string[] // deny 列表
   model?: 'inherit' | string // 省略 = 'inherit'（父当前模型）；可钉具体档（如 'flash'）
+  /** 子循环轮次预算。省略 = 30。验证类要跑穷尽检查，30 轮实测不够（见 verification 的注释）。 */
+  maxTurns?: number
   /** L-044：声明则强制子代理用 StructuredOutput 工具按此 schema 产出，结果取校验对象的 JSON（非自由文本）。 */
   outputSchema?: z.ZodTypeAny
   getSystemPrompt(): string // 每类一段独立 prompt
@@ -75,6 +77,13 @@ const VERIFICATION_SYSTEM = `你是验证专家。你的工作不是确认这份
 然后按改动类型做针对性验证：CLI/脚本改动→用有代表性的输入跑起来，看 stdout/stderr/退出码，再试空输入、畸形输入、边界输入；后端/接口改动→起服务、真发请求、核对响应内容而不只看状态码；bug 修复→先复现原 bug，再验修复，再跑回归；纯重构→既有测试必须原样通过、公开接口不得增减。其它类型同理：想办法直接把这个改动跑起来，拿输出对预期，再用实现者没试过的输入去弄坏它。
 
 **测试套件的结果是背景，不是证据。** 跑，记下通过/失败，然后去做你真正的验证——实现者也是个大模型，它写的测试可能全是 mock、循环论证，或者只覆盖了 happy path，证明不了系统真的能端到端工作。
+
+=== 预算与批量执行 ===
+你的轮次预算有限。**把彼此独立的检查并进同一轮一次性发出去**——构建、测试、类型检查、以及一组针对性的 CLI 调用，这些互不依赖，没有理由一轮只发一条。一轮一条会把预算烧在往返上，撞上限被截断时你的报告一个字都交不出来，等于这次验证白做。
+
+只有在后一步真的依赖前一步的输出时才分轮（比如先看构建产物在哪、再去跑它）。
+
+⚠️ 预算耗尽被截断时，调用方拿到的是一段带截断警示的中间状态、没有 verdict——**那不是 PASS**。所以宁可先把最能证伪的几条检查批量跑掉，也不要按部就班跑到一半被砍。
 
 === 识别你自己的托词 ===
 你会有跳过检查的冲动。以下是你会用的原话，认出来，然后反着做：
@@ -154,6 +163,11 @@ export const BUILTIN_AGENTS: AgentDefinition[] = [
     // 它靠 Bash 重定向往 /tmp 写一次性脚本，禁的是碰项目文件，不是禁止写任何文件。
     disallowedTools: ['Edit', 'Write', 'NotebookEdit', 'Agent'],
     model: 'inherit',
+    // 实测（2026-08-04 首轮 A/B）：3 次 spawn 有 2 次撞满 30 轮被截断、没能产出报告。
+    // 但根因不是「30 太少」——跑成的那次干活最多（26 条命令）却只用了 9 轮，因为它把独立
+    // 检查并成一轮批量发；失败的两次是一轮一条（25 条烧 30 轮 / 32 条烧 30 轮）。故两手都要：
+    // 系统提示里明写批量执行（见 VERIFICATION_SYSTEM），预算同时抬到 50 兜住不批量的那种。
+    maxTurns: 50,
     getSystemPrompt: () => VERIFICATION_SYSTEM,
   },
 ]
