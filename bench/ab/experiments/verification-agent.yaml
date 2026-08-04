@@ -86,3 +86,9 @@ observations:
     predicate: frozenAllPass
     args: {}
     expect: true
+
+  - id: frozen-pass-at-least
+    desc: 交付物通过冻结考卷至少 40 道（分级判据——全过太严，历史上最好一次是 42/46）
+    predicate: frozenPassAtLeast
+    args: { min: 40 }
+    expect: true

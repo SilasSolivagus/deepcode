@@ -114,9 +114,15 @@ export function buildReport(input: {
     L.push(`| ${arm} | ${rs.length} | ${hitLimit} | ${avgTurns} | ${nonZero} |`)
   }
 
-  L.push('', '## 每次跑', '', '| 臂 | seed | 状态 | 轮次 | 退出码 | 目录 |', '|---|---|---|---|---|---|')
+  // I7：考卷分数此前只落在 frozen-result.json 里、report.md 一个数字都不印——拿到报告的人
+  // 看到主判据表里 `frozen-all-pass 0/5 vs 0/5`，无从分辨那是「12 分 vs 42 分」还是「45 分 vs
+  // 45 分」。四种取值：没跑考卷（frozen 为 null）、构建失败（未到跑考卷这步）、跑了但没判出分、
+  // 判出分数——分开印，别把「构建失败」和「判分失败」都塞进同一个「—」。
+  L.push('', '## 每次跑', '', '| 臂 | seed | 状态 | 轮次 | 退出码 | 考卷 | 目录 |', '|---|---|---|---|---|---|---|')
   for (const r of [...records].sort((x, y) => x.arm.localeCompare(y.arm) || x.seed - y.seed)) {
-    L.push(`| ${r.arm} | ${r.seed} | ${r.artifacts.status} | ${r.artifacts.turns} | ${r.artifacts.exitCode} | \`${r.runDir}\` |`)
+    const f = r.artifacts.frozen
+    const frozenCell = f === null ? '—' : f.scored ? `${f.passed}/${f.total}` : f.built ? '未判分' : '构建失败'
+    L.push(`| ${r.arm} | ${r.seed} | ${r.artifacts.status} | ${r.artifacts.turns} | ${r.artifacts.exitCode} | ${frozenCell} | \`${r.runDir}\` |`)
   }
 
   L.push('', '## 局限', '',

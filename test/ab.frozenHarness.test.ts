@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-  parseFrozenReport, buildArtifact, runFrozenTests,
+  parseFrozenReport, buildArtifact, runFrozenTests, verifyFrozenManifest,
   type CommandRunner, type BuildResult,
 } from '../bench/ab/frozenHarness.js'
 
@@ -122,6 +122,26 @@ describe('runFrozenTests', () => {
     expect(r.scored).toBe(false)
   })
 
+  it('I2：结果文件可读但 JSON 畸形 → scored 为假，且 notes 非空（不能悄悄走成功路径）', () => {
+    const { run } = fakeRunner([{ ok: true, output: '' }])
+    const r = runFrozenTests({
+      workDir: '/w', harnessDir: '/h', outputFile: '/o.json', build: OK, run,
+      readFile: () => '{不是合法 JSON',
+    })
+    expect(r.scored).toBe(false)
+    expect(r.notes.length).toBeGreaterThan(0)
+  })
+
+  it('I2：结果文件可读但缺字段 → scored 为假，且 notes 携带原文供人事后看', () => {
+    const { run } = fakeRunner([{ ok: true, output: '' }])
+    const r = runFrozenTests({
+      workDir: '/w', harnessDir: '/h', outputFile: '/o.json', build: OK, run,
+      readFile: () => '{"foo":1}',
+    })
+    expect(r.scored).toBe(false)
+    expect(r.notes).toContain('foo')
+  })
+
   it('把构建阶段的 installed/built 原样带出来', () => {
     const { run } = fakeRunner([{ ok: true, output: '' }])
     const r = runFrozenTests({
@@ -129,5 +149,60 @@ describe('runFrozenTests', () => {
       readFile: () => REPORT(46, 0, 46),
     })
     expect(r).toMatchObject({ installed: true, built: true })
+  })
+})
+
+describe('I6：verifyFrozenManifest', () => {
+  const FROZEN = [
+    '冻结时间: 2026-07-31T16:44:21Z',
+    '分层条数: L1=12 L2=25 L3=6 L4=3（合计 46）',
+    '备注: 某某说明',
+    '---',
+    'aaa  TASKBOOK.md',
+    'bbb  harness/run-cli.ts',
+    '',
+  ].join('\n')
+
+  it('把 "---" 之前的中文说明切掉，只把分隔行之后的内容喂给 shasum 的 stdin', () => {
+    const calls: Array<{ cmd: string; args: string[]; cwd: string; input: string }> = []
+    const run = (cmd: string, args: string[], opts: { cwd: string; input: string; timeoutSec: number }) => {
+      calls.push({ cmd, args, cwd: opts.cwd, input: opts.input })
+      return { ok: true, output: 'TASKBOOK.md: OK\nharness/run-cli.ts: OK\n' }
+    }
+    const r = verifyFrozenManifest({ frozenPath: '/eval-6/FROZEN.txt', readFile: () => FROZEN, run })
+    expect(r.ok).toBe(true)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].cmd).toBe('shasum')
+    expect(calls[0].cwd).toBe('/eval-6')
+    expect(calls[0].input).not.toContain('冻结时间')
+    expect(calls[0].input).toContain('aaa  TASKBOOK.md')
+  })
+
+  it('清单未被改（shasum -c 全 OK）→ ok 为真', () => {
+    const run = () => ({ ok: true, output: 'TASKBOOK.md: OK\n' })
+    expect(verifyFrozenManifest({ frozenPath: '/eval-6/FROZEN.txt', readFile: () => FROZEN, run }).ok).toBe(true)
+  })
+
+  it('清单被改（某文件哈希对不上，shasum 退出码非零）→ ok 为假，output 带诊断', () => {
+    const run = () => ({ ok: false, output: 'TASKBOOK.md: FAILED\nshasum: WARNING: 1 computed checksum did NOT match\n' })
+    const r = verifyFrozenManifest({ frozenPath: '/eval-6/FROZEN.txt', readFile: () => FROZEN, run })
+    expect(r.ok).toBe(false)
+    expect(r.output).toContain('FAILED')
+  })
+
+  it('FROZEN.txt 里找不到 "---" 分隔行 → ok 为假，不抛出，不调用 run', () => {
+    let called = false
+    const run = () => { called = true; return { ok: true, output: '' } }
+    const r = verifyFrozenManifest({ frozenPath: '/eval-6/FROZEN.txt', readFile: () => '没有分隔行的内容', run })
+    expect(r.ok).toBe(false)
+    expect(called).toBe(false)
+  })
+
+  it('清单文件读不到 → ok 为假，不抛出', () => {
+    const r = verifyFrozenManifest({
+      frozenPath: '/eval-6/FROZEN.txt',
+      readFile: () => { throw new Error('ENOENT') },
+    })
+    expect(r.ok).toBe(false)
   })
 })

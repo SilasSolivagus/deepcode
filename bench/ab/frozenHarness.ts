@@ -6,10 +6,13 @@
 //
 // 三条纪律：
 // ① 绝不走考卷自带的 npm test 脚本——它把 --outputFile 写死，并发跑会互相覆盖。
-// ② 考卷目录只读；结果写到各次跑自己的目录。
-// ③ 装依赖与构建各跑之间互不相干、可并行；跑考卷共用同一个考卷目录，必须串行。
+// ② 考卷的受冻结文件不得被写入；vitest 自身的 node_modules/.vite 缓存会被改写，
+//    它不在冻结清单内，不影响判分——结果另外写到各次跑自己的目录。
+// ③ 构建（装依赖 + npm run build）与跑考卷都用 spawnSync 实现，同步阻塞整个 Node
+//    事件循环——两者都不与其它跑重叠，必须串行调用（调用方：run.ts 第二段的 for 循环）。
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import path from 'node:path'
 
 export interface BuildResult {
   installed: boolean
@@ -40,7 +43,10 @@ const realRun: CommandRunner = (cmd, args, opts) => {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
   })
-  const output = `${r.stdout ?? ''}${r.stderr ?? ''}`
+  // spawnSync 拿不到可执行文件（如 npm 不在 PATH）时 stdout/stderr 都是 null，
+  // 错误只在 r.error 里；被信号杀掉（如超时）时 r.signal 有值而 stdout/stderr 可能也是空的。
+  // 两者都不带出来，notes 就会是空字符串——诊断在最该有用的时候归零。
+  const output = `${r.stdout ?? ''}${r.stderr ?? ''}${r.error ? `\n[spawn 失败] ${r.error.message}` : ''}${r.signal ? `\n[被信号终止] ${r.signal}（可能是超时）` : ''}`
   return { ok: r.status === 0, output }
 }
 
@@ -62,7 +68,9 @@ export function parseFrozenReport(raw: string): { scored: boolean; passed: numbe
   return { scored: true, passed, failed, total }
 }
 
-/** 阶段一二：装依赖 + 构建。各次跑互不相干，可并行调用。
+/** 阶段一二：装依赖 + 构建。用 spawnSync 实现，同步阻塞整个 Node 事件循环——
+ *  调用方不得把它放进并发段（会让「并行」构建实际排成串行，还会推迟其它并发跑里
+ *  定时器的触发），必须在串行阶段逐个调用。
  *  构建方式由任务书硬性规定（eval-6/TASKBOOK.md:5-6：npm install && npm run build → dist/cli.js），
  *  不随产出物变，因此可以写死。 */
 export function buildArtifact(input: {
@@ -107,5 +115,55 @@ export function runFrozenTests(input: {
     return { ...base, notes: `${input.build.notes}考卷结果读不到：\n${tail(r.output)}` }
   }
   const parsed = parseFrozenReport(raw)
+  // 读到了文件但解析不出计数（JSON 畸形/缺字段/字段类型不对）：不能悄悄走成功路径——
+  // notes 沿用 input.build.notes（构建成功时是空串），下游 run.ts 靠 notes 非空才落盘
+  // frozen-notes.txt，诊断会在最需要的时候消失，还把这次明确的判分失败误记成「没数据」。
+  if (!parsed.scored) {
+    return { ...input.build, ...parsed, notes: `${input.build.notes}考卷结果解析不出计数：\n${tail(raw, 500)}\n${tail(r.output)}` }
+  }
   return { ...input.build, ...parsed }
+}
+
+/** 校验冻结清单（FROZEN.txt）列出的文件哈希是否与磁盘一致。跑批器在串行判分开始前调一次。
+ *
+ *  FROZEN.txt 开头三行是中文说明（冻结时间/分层条数/备注），真正的「哈希  路径」记录从
+ *  `---` 分隔行之后才开始——不能把整份文件直接喂给 `shasum -c`，得先按 `---` 切开。
+ *  这与 eval-6/verify-frozen.sh 的做法一致：
+ *  `sed -n '/^---$/,$p' FROZEN.txt | tail -n +2 | shasum -a 256 -c -`。
+ *  路径是相对 FROZEN.txt 所在目录写的，cwd 因此取该目录。 */
+export function verifyFrozenManifest(input: {
+  frozenPath: string
+  readFile?: (p: string) => string
+  /** 注入点：真实实现起 `shasum -a 256 -c -`，把清单正文喂进 stdin。 */
+  run?: (cmd: string, args: string[], opts: { cwd: string; input: string; timeoutSec: number }) => { ok: boolean; output: string }
+}): { ok: boolean; output: string } {
+  const readFile = input.readFile ?? ((p: string) => fs.readFileSync(p, 'utf8'))
+  const run = input.run ?? ((cmd, args, opts) => {
+    const r = spawnSync(cmd, args, {
+      cwd: opts.cwd,
+      input: opts.input,
+      encoding: 'utf8',
+      timeout: opts.timeoutSec * 1000,
+      maxBuffer: 32 * 1024 * 1024,
+    })
+    const output = `${r.stdout ?? ''}${r.stderr ?? ''}${r.error ? `\n[spawn 失败] ${r.error.message}` : ''}`
+    return { ok: r.status === 0, output }
+  })
+
+  let raw: string
+  try { raw = readFile(input.frozenPath) } catch (e) {
+    return { ok: false, output: `冻结清单读不到：${input.frozenPath}\n${String((e as Error)?.message ?? e)}` }
+  }
+  const lines = raw.split('\n')
+  const sepIndex = lines.findIndex(l => l === '---')
+  if (sepIndex < 0) {
+    return { ok: false, output: `冻结清单格式不对：找不到 "---" 分隔行，无法定位哈希记录起点\n${tail(raw, 500)}` }
+  }
+  const manifestBody = lines.slice(sepIndex + 1).join('\n')
+  const r = run('shasum', ['-a', '256', '-c', '-'], {
+    cwd: path.dirname(input.frozenPath),
+    input: manifestBody,
+    timeoutSec: 60,
+  })
+  return { ok: r.ok, output: r.output }
 }

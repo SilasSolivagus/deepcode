@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { buildReport, type RunRecord } from '../bench/ab/report.js'
 import type { Declaration } from '../bench/ab/declaration.js'
 import type { RunArtifacts } from '../bench/ab/predicates.js'
+import type { FrozenResult } from '../bench/ab/frozenHarness.js'
 
 const artifacts = (over: Partial<RunArtifacts> = {}): RunArtifacts => ({
   bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], subagentRuns: [],
@@ -73,5 +74,33 @@ describe('I7：na 与 error 在报告里分两行印，都不计入分母', () =
     const md = buildReport({ decl: d, records, hashBefore: 'h', hashAfter: 'h', outRoot: '/out' })
     // treatment：1 条命中、有效分母只数真正求出布尔值的那一条（1/1），na/error 各 1 次被排除
     expect(md).toContain('**1/1**')
+  })
+})
+
+describe('I7：「每次跑」表的考卷列', () => {
+  const d = decl([{ id: 'x', desc: 'y', predicate: 'statusIs', args: {}, expect: true }])
+
+  it('四种取值：未跑考卷 / 构建失败 / 跑了没判出分 / 判出分数', () => {
+    const notRun: RunRecord = { arm: 'baseline', seed: 1, runDir: '/tmp/a', artifacts: artifacts({ frozen: null }), observations: { x: true } }
+    const buildFailed: RunRecord = {
+      arm: 'baseline', seed: 2, runDir: '/tmp/b',
+      artifacts: artifacts({ frozen: { installed: true, built: false, notes: 'tsc error', scored: false, passed: 0, failed: 0, total: 0 } as FrozenResult }),
+      observations: { x: true },
+    }
+    const unscored: RunRecord = {
+      arm: 'treatment', seed: 1, runDir: '/tmp/c',
+      artifacts: artifacts({ frozen: { installed: true, built: true, notes: '考卷结果解析不出计数：\n...', scored: false, passed: 0, failed: 0, total: 0 } as FrozenResult }),
+      observations: { x: true },
+    }
+    const scored: RunRecord = {
+      arm: 'treatment', seed: 2, runDir: '/tmp/d',
+      artifacts: artifacts({ frozen: { installed: true, built: true, notes: '', scored: true, passed: 42, failed: 4, total: 46 } as FrozenResult }),
+      observations: { x: true },
+    }
+    const md = buildReport({ decl: d, records: [notRun, buildFailed, unscored, scored], hashBefore: 'h', hashAfter: 'h', outRoot: '/out' })
+    expect(md).toMatch(/\|\s*baseline\s*\|\s*1\s*\|.*\|\s*—\s*\|\s*`\/tmp\/a`\s*\|/)
+    expect(md).toMatch(/\|\s*baseline\s*\|\s*2\s*\|.*\|\s*构建失败\s*\|\s*`\/tmp\/b`\s*\|/)
+    expect(md).toMatch(/\|\s*treatment\s*\|\s*1\s*\|.*\|\s*未判分\s*\|\s*`\/tmp\/c`\s*\|/)
+    expect(md).toMatch(/\|\s*treatment\s*\|\s*2\s*\|.*\|\s*42\/46\s*\|\s*`\/tmp\/d`\s*\|/)
   })
 })
