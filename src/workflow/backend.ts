@@ -73,7 +73,7 @@ export function makeInProcessBackend(deps: InProcessBackendDeps): WorkflowBacken
         const raw = await deps.runSubagent({
           client: deps.client, onUsage: deps.onUsage, systemPrompt, userPrompt: spec.prompt,
           tools: resolvedTools, model, outputSchema, ctx: deps.ctx, signal: deps.signal,
-          agentId: spec.agentId, agentType,
+          agentId: spec.agentId, agentType, maxTurns: def?.maxTurns,
           worktreePath: wt?.worktreePath,
           thinking: effortLevel !== undefined, effortLevel,
         })

@@ -46,6 +46,7 @@
 | `finishedWithFailingCommand` | 最后一条失败命令之后没再改文件却正常收工 | `status !== 'done'` |
 | `subagentFinishedWithFailingCommand` | （可选按 `subagentType` 收窄后）任一子代理在最后一条失败命令之后再没跑出成功的命令 | 无（该类型）子代理记录 |
 | `subagentRanNoCommand` | （可选按 `subagentType` 收窄后）任一子代理的最后一次 spawn 一条 Bash 命令都没跑 | 无（该类型）子代理记录 |
+| `claimsVerifiedWithoutVerdict` | 交付陈述声称已验证，却没拿到过任何 PASS verdict | 交付陈述里没声称过 |
 | `frozenBuilt` | 交付物装依赖并构建成功 | 未跑考卷 |
 | `frozenAllPass` | 冻结考卷全过（构建失败或没跑成记 false，不是 null） | 未跑考卷 |
 | `frozenPassAtLeast` | 冻结考卷通过数 ≥ `min` | 未跑考卷 |

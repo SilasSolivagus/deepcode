@@ -32,6 +32,7 @@ export function extractArtifacts(input: {
   const editedFiles: RunArtifacts['editedFiles'] = []
   const agentSpawns: RunArtifacts['agentSpawns'] = []
   let status = 'unknown'
+  let finalText = ''
   let turns = 0
   let seq = 0
   const pending = new Map<string, { name: string; seq: number; subagentType: string }>()
@@ -71,8 +72,11 @@ export function extractArtifacts(input: {
     } else if (o.type === 'result') {
       if (typeof o.status === 'string') status = o.status
       if (typeof o.turns === 'number') turns = o.turns
+      // 最终交付陈述。判「声称验过但没有任何 verdict」必须读它——那句声称写在这里，
+      // 不在任何工具调用里，其余字段一个都看不见它。
+      if (typeof o.text === 'string') finalText = o.text
     }
   }
 
-  return { bashCommands, bashResults, editedFiles, agentSpawns, subagentRuns: input.traceDir ? recoverSubagentRuns(input.traceDir, 'subagent:') : [], exitCode: input.exitCode, status, turns, frozen: input.frozen ?? null, outputDir: input.outputDir }
+  return { bashCommands, bashResults, editedFiles, agentSpawns, subagentRuns: input.traceDir ? recoverSubagentRuns(input.traceDir, 'subagent:') : [], exitCode: input.exitCode, status, turns, finalText, frozen: input.frozen ?? null, outputDir: input.outputDir }
 }
