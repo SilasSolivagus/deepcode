@@ -89,6 +89,48 @@ export const PREDICATES: Record<string, Predicate> = {
     return max >= min
   },
 
+  /** 从命令**结果**里抽出报告过的最大字节数，与 min（字节）比较。
+   *
+   *  与 numericFromBashAtLeast 的差别是量的对象：那条量的是命令原文里的写法，这条量的是
+   *  命令真实报出来的量。量写法会把「模型有没有用某个惯用写法」误当成「数据量够不够」——
+   *  实测 R1 造了 90MB、R4 造了 11.4MB，但两次都没写 `N * 1024 * 1024`，于是那条读数
+   *  与真实量级完全脱钩。
+   *
+   *  patterns 收数组而不是单个：`wc -c` 与 `ls -lh` 的输出形状不同，一条正则覆盖不了两种，
+   *  硬凑一条宽松的反而会把行里别的数字（如时间戳 `01:57` 的 `57`）读成体积。每条正则对应
+   *  一种写法，捕获组 1 是数字，可选的捕获组 2 是单位后缀（K/M/G/T，按 1024 进制换算；
+   *  缺省视作字节）。正则以 'gm' 编译，故可用 `^` 锚行首把 `wc -c` 那种行首数字与行中数字分开。
+   *
+   *  ⚠️ 已知局限：这条量的是**结果里报出来的**体积。跑批时若模型自始至终没打印过生成文件的
+   *  大小，读数为 false——「没量到」与「量到了但不够」在这条上不可区分。选择 false 而非 null
+   *  与 numericFromBashAtLeast 一致：没拿出证据不该算达标。 */
+  byteSizeFromResultsAtLeast: (a, args) => {
+    const min = Number(args.min)
+    if (!Number.isFinite(min)) throw new Error(`byteSizeFromResultsAtLeast: min 必须是有限数字，收到：${JSON.stringify(args.min)}`)
+
+    const patterns = args.patterns
+    if (!Array.isArray(patterns) || patterns.length === 0) {
+      throw new Error(`byteSizeFromResultsAtLeast: patterns 必须是非空数组，收到：${JSON.stringify(patterns)}`)
+    }
+
+    const SCALE: Record<string, number> = { K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4 }
+    let max = -Infinity
+    for (const b of a.bashResults) {
+      for (const p of patterns) {
+        // 每条结果、每条正则都重建实例，避免 lastIndex 状态污染。
+        const re = new RegExp(String(p), 'gm')
+        let m
+        while ((m = re.exec(b.content)) !== null) {
+          if (m[1] === undefined) continue
+          const n = Number(m[1])
+          if (!Number.isFinite(n)) continue
+          max = Math.max(max, n * (SCALE[(m[2] ?? '').toUpperCase()] ?? 1))
+        }
+      }
+    }
+    return max >= min
+  },
+
   statusIs: (a, args) => a.status === String(args.status),
 
   fileExists: (a, args) => {
