@@ -39,6 +39,7 @@ export function App(props: {
   sessionDir?: string  // 测试注入：隔离 session 落盘目录
   flagSettingsPath?: string
   model?: string            // --model <name>：优先于 settings.model 决定启动模型
+  permissionMode?: import('../permissions.js').PermissionMode  // --permission-mode：优先于 settings.permissions.defaultMode
   resumeFile?: string       // Task6：--resume <文件> 精确恢复
   justSwitched?: string     // Task6：/tui 切换后的首帧横幅（'inline'|'fullscreen'）
   unmount?: () => void      // Task6：ink 卸载回调（/tui 切换 spawnSync 前）
@@ -54,6 +55,7 @@ export function App(props: {
     sessionDir: props.sessionDir,
     flagSettingsPath: props.flagSettingsPath,
     model: props.model,
+    permissionMode: props.permissionMode,
     resumeFile: props.resumeFile,
     justSwitched: props.justSwitched,
     unmount: props.unmount,

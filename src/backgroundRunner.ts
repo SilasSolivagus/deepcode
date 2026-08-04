@@ -16,6 +16,8 @@ import { loadSkills } from './skillsLoader.js'
 import { TaskListStore } from './taskList.js'
 import { resolveDenyList, buildDenySourceMap } from './deny.js'
 import { availablePresets, modelFallbackReason, resolveActiveProvider, resolveStartupModel } from './providers.js'
+import type { PermissionMode } from './permissions.js'
+import { classify } from './autoMode.js'
 import { loadSession, openSession, sessionIdFromFile } from './session.js'
 import { createActivityWriter } from './memdir/activityLog.js'
 import { memdirFor, globalMemdirFor } from './memdir/paths.js'
@@ -27,7 +29,7 @@ import type { Usage } from './api.js'
 
 export async function runBackgroundSession(opts: {
   client: OpenAI; resumeFile: string; jobShort: string
-  seed?: string; yolo?: boolean; permMode?: string; model?: string; flagSettingsPath?: string
+  seed?: string; yolo?: boolean; permMode?: PermissionMode; model?: string; flagSettingsPath?: string
   home?: string  // 测试注入：隔离活动日志落盘根目录，避免污染 ~/.deepcode
 }): Promise<void> {
   process.env.DEEPCODE_SESSION_KIND = 'bg'
@@ -106,7 +108,11 @@ export async function runBackgroundSession(opts: {
     setCwd: d => { cwd = d },
     denyPatterns: () => resolveDenyList(settings.permissions.deny),
     parentPermission: () => ({
-      mode: opts.yolo ? 'yolo' : ((opts.permMode as any) || 'default'),
+      mode: opts.yolo ? 'yolo' : (opts.permMode ?? 'default'),
+      // auto 模式必须带分类器，否则 checkPermission 的 auto 分支被整段跳过、静默退化成 default。
+      // /background 会把 TUI 当前模式经 buildBackgroundArgv 传进来——此前不接分类器，导致
+      // 「在 auto 模式下开的后台任务」实际跑在 default 下，需要权限的工具全被拒且无任何提示。
+      classify: (t: string, d: string, sib: string) => classify(t, d, sib, { onUsage: u => addUsage(u) }),
       rules: settings.permissions.allow,
       deny: resolveDenyList(settings.permissions.deny),
       ruleSources: layered.permissionSources.allow,
@@ -159,7 +165,8 @@ export async function runBackgroundSession(opts: {
     maxToolResultChars: settings.maxToolResultChars,
     ctx,
     permission: {
-      mode: opts.yolo ? 'yolo' : (opts.permMode as any) || 'default',
+      mode: opts.yolo ? 'yolo' : (opts.permMode ?? 'default'),
+      classify: (t: string, d: string, sib: string) => classify(t, d, sib, { onUsage: u => addUsage(u) }),
       rules: settings.permissions.allow,
       deny: resolveDenyList(settings.permissions.deny),
       cwd: roundCwd, // 与 ctx.parentPermission().cwd 同一份快照，二者必须同源

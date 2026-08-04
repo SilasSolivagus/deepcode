@@ -32,6 +32,8 @@ import { makeSkillTool } from './tools/skill.js'
 import { TaskListStore } from './taskList.js'
 import { costCNY } from './pricing.js'
 import { resolveDenyList, buildDenySourceMap } from './deny.js'
+import type { PermissionMode } from './permissions.js'
+import { classify } from './autoMode.js'
 import { streamInit, streamFromLoopEvent, streamResult } from './streamJson.js'
 import { flag } from './flags.js'
 import { globalMemdirFor, sessionMemoryPathFor } from './memdir/paths.js'
@@ -79,7 +81,7 @@ export function buildHeadlessToolset(d: {
 }
 
 /** 单 prompt 跑完整个 loop。工具事件打到 stderr（stdout 留给最终结果，方便脚本消费）。 */
-export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string; home?: string; outputFormat?: 'text' | 'json' | 'stream-json'; write?: (s: string) => void; traceDir?: string; maxTurns?: number; model?: string }): Promise<HeadlessResult> {
+export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: boolean; flagSettingsPath?: string; home?: string; outputFormat?: 'text' | 'json' | 'stream-json'; write?: (s: string) => void; traceDir?: string; maxTurns?: number; model?: string; permissionMode?: PermissionMode }): Promise<HeadlessResult> {
   installTaskCleanup() // 退出时 kill 仍 running 的后台任务
   // 轨迹要在任何 chatStream 之前开启，否则前几个请求会漏记。
   if (opts.traceDir) enableTrace(opts.traceDir)
@@ -102,6 +104,10 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     // 绝不静默失效：配置被推翻必须说出来（stderr，不污染 stdout 结果通道）
     console.error(`[deepcode] ${opts.model ? '--model' : 'settings.model'}=${modelFallback}`)
   }
+  // --permission-mode 优先于 --yolo 之外的一切；两者同时给出且不一致时 index.ts 已当场报错，
+  // 这里不再兜底猜意图。未传时沿用原行为（yolo ? 'yolo' : 'default'）。
+  const permMode: PermissionMode = opts.yolo ? 'yolo' : (opts.permissionMode ?? 'default')
+
   const strippedNotice = strippedRulesNotice(layered.strippedDangerousRules)
   if (strippedNotice) {
     // 绝不静默失效：always/plan 批准存下的规则若被剥，产品不能只在用户手动敲 /config 时才说。
@@ -124,7 +130,11 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
     setCwd: d => { cwd = d },
     denyPatterns: () => resolveDenyList(settings.permissions.deny),
     parentPermission: () => ({
-      mode: opts.yolo ? 'yolo' : 'default',
+      mode: permMode,
+      // auto 模式必须带分类器：checkPermission 的 auto 分支要求 pc.classify 为真，否则整段被跳过、
+      // 行为静默退化成 default。此前 headless 与后台都没提供它——于是「在 auto 模式下开的后台任务」
+      // 实际跑在 default 下，需要权限的工具全被拒（askUp 恒 'no'），且没有任何提示。
+      classify: (t: string, d: string, sib: string) => classify(t, d, sib, { onUsage: u => addUsage(u) }),
       rules: settings.permissions.allow,
       deny: resolveDenyList(settings.permissions.deny),
       ruleSources: layered.permissionSources.allow,
@@ -265,7 +275,8 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       },
       ctx,
       permission: {
-        mode: opts.yolo ? 'yolo' : 'default',
+        mode: permMode,
+        classify: (t: string, d: string, sib: string) => classify(t, d, sib, { onUsage: u => addUsage(u) }),
         rules: settings.permissions.allow,
         deny: resolveDenyList(settings.permissions.deny),
         cwd: roundCwd, // 与 ctx.parentPermission().cwd 同一份快照，二者必须同源

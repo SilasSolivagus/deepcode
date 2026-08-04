@@ -83,6 +83,25 @@ export function splitBashCommand(command: string): { tooComplex: boolean; comman
 export type PermissionMode = 'default' | 'acceptEdits' | 'yolo' | 'plan' | 'auto' | 'dontAsk'
 export type Decision = 'yes' | 'no' | 'always'
 
+export const PERMISSION_MODES: readonly PermissionMode[] = ['default', 'acceptEdits', 'yolo', 'plan', 'auto', 'dontAsk']
+
+/** 解析 `--permission-mode <mode>`：未传返回 undefined，非六态之一当场抛错。
+ *
+ *  此前完全没有这层校验（backgroundRunner 是 `(opts.permMode as any) || 'default'`）：拼错一个
+ *  字母，下方 checkPermission 里所有 `mode === '…'` 分支全不命中，行为静默退化成 default。
+ *  方向上偏保守（会多问/多拒而非多放行），但用户拿不到任何提示——写 `--permission-mode yolo`
+ *  少打一个字母就变成全程拒绝，还以为是工具坏了。 */
+export function parsePermissionMode(argv: string[]): PermissionMode | undefined {
+  const i = argv.indexOf('--permission-mode')
+  if (i < 0) return undefined
+  const v = argv[i + 1]
+  if (v === undefined || v.length === 0 || v.startsWith('-')) throw new Error('--permission-mode 需要一个取值')
+  if (!(PERMISSION_MODES as readonly string[]).includes(v)) {
+    throw new Error(`--permission-mode 只支持 ${PERMISSION_MODES.join('|')}，收到：${v}`)
+  }
+  return v as PermissionMode
+}
+
 export type PermissionRuleSource = 'builtin' | 'user' | 'project' | 'local' | 'flag'
 
 export interface PermissionRule {
