@@ -5,12 +5,12 @@ import path from 'node:path'
 import { PREDICATES, evalObservation, type RunArtifacts } from '../bench/ab/predicates.js'
 
 const base = (over: Partial<RunArtifacts> = {}): RunArtifacts => ({
-  bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], subagentRuns: [], exitCode: 0, status: 'done', turns: 10, outputDir: '/tmp', ...over,
+  bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], subagentRuns: [], exitCode: 0, status: 'done', turns: 10, frozen: null, outputDir: '/tmp', ...over,
 })
 
 const rich = (over: Partial<RunArtifacts> = {}): RunArtifacts => ({
   bashCommands: [], bashResults: [], editedFiles: [], agentSpawns: [], subagentRuns: [],
-  exitCode: 0, status: 'done', turns: 10, outputDir: '/tmp', ...over,
+  exitCode: 0, status: 'done', turns: 10, frozen: null, outputDir: '/tmp', ...over,
 })
 
 describe('bashCommandsAnyMatch / bashCommandsNoneMatch', () => {
