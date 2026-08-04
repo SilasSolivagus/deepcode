@@ -5,7 +5,7 @@
 
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## 未发布
+## 0.14.0 — 2026-08-04
 
 ### 新增
 - `deepcode --help` / `-h` 与 `deepcode --version` / `-v`。此前敲 `--help` 会直接把 TUI 拉起来，
