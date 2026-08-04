@@ -1,6 +1,3 @@
-# 收款入口。取消注释并填上真实地址后，GitHub 会在仓库页面显示「Sponsor」按钮。
-#
-# ⚠️ 现在全部注释掉是刻意的：仓库还没有实际用户基数，挂打赏链接为时过早。
-#    等有人真的在用、真的提 issue 之后再点亮。
-#
-# custom: ["https://afdian.com/a/你的用户名"]
+# GitHub 的 Sponsor 按钮只接受链接，接受不了二维码图片，故 custom 指回 README 的赞赏一节。
+# 那一节里是微信赞赏码（目前唯一的收款方式）。
+custom: ["https://github.com/SilasSolivagus/deepcode#支持这个项目"]

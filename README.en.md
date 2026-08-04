@@ -101,6 +101,17 @@ The project is young — **every issue filed right now gets real attention.**
 Changes are tracked in [CHANGELOG.md](CHANGELOG.md). For security issues, please follow
 [SECURITY.md](SECURITY.md) rather than opening a public issue.
 
+## Supporting This Project
+
+deepcode is a one-person side project, MIT-licensed, with no paid tier and no plans for one.
+
+If it saved you time, you're welcome to buy me a coffee — **but please don't feel you should**.
+A star, a reproducible bug report, or a note about what you're using it for helps this project
+more than money does at its current stage.
+
+The tip jar is a WeChat Pay QR code (the payment method available to me), shown in the
+[Chinese README](README.md#支持这个项目).
+
 ## Local Development
 
 ```bash
