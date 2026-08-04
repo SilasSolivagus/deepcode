@@ -64,6 +64,10 @@ export interface LoopDeps {
    *  {continue:false} → 放行停止。无 activeGoal / judge 故障 / 达成 / 不可达 / 迭代上限均返回 continue:false（fail-safe 放行）。
    *  仅主会话传入；子代理子循环不传。 */
   goalGate?: (messages: any[]) => Promise<{ continue: true; inject: string } | { continue: false }>
+  /** 收工前验证自检门（flag `verificationAgent` 门控，只在 headless 接）。形状同 goalGate。
+   *  与 goalGate 的区别：它自带催促次数上限（见 src/verifyGate.ts），到顶就放行——
+   *  合同允许在没拿到 PASS 时收工（只要明说「未通过验证」），硬拦会与合同自相矛盾。 */
+  verifyGate?: (messages: any[]) => Promise<{ continue: true; inject: string } | { continue: false }>
   /** 每轮请求发出前调用一次，允许调用方原地改写 messages（压缩/回收）。
    *  语义是「发送前」而非「轮末」——只有确定马上要发请求时才触发，故最后一轮之后
    *  不会调用，不会去压缩一个再也不发给 API 的数组（turn_end 事件做不到这点：它在
@@ -345,6 +349,12 @@ export async function* runLoop(
       if (deps.goalGate) {
         const g = await deps.goalGate(messages)
         if (g.continue) { messages.push({ role: 'user', content: g.inject }); continue }
+      }
+      // 验证自检门：排在 goalGate 之后、真正停止之前。/goal 是用户显式定的目标，优先级高于
+      // 这条流程约束；两个门都会续跑，先后不影响最终收敛，只影响先被问哪一件事。
+      if (deps.verifyGate) {
+        const v = await deps.verifyGate(messages)
+        if (v.continue) { messages.push({ role: 'user', content: v.inject }); continue }
       }
       return 'done'
     }

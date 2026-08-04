@@ -36,6 +36,7 @@ import type { PermissionMode } from './permissions.js'
 import { classify } from './autoMode.js'
 import { streamInit, streamFromLoopEvent, streamResult } from './streamJson.js'
 import { flag } from './flags.js'
+import { makeVerifyGate } from './verifyGate.js'
 import { globalMemdirFor, sessionMemoryPathFor } from './memdir/paths.js'
 import { DEFAULT_MEMORY_CONFIG } from './memdir/memoryConfig.js'
 import { availablePresets, modelFallbackReason, resolveActiveProvider, resolveStartupModel, resolveSubModel } from './providers.js'
@@ -264,6 +265,10 @@ export async function runHeadless(opts: { client: OpenAI; prompt: string; yolo: 
       // 参考实验的结论是自动化路径「关了思考跑难题」是 flaky 的一个来源，但是否划算须 A/B 验，
       // 故给开关不改默认——默认改了就没有干净基线可比。
       thinking: settings.headlessThinking ?? false,
+      // 收工前验证自检门：与验证合同同一个 flag 门控（合同只在 headless 注入，门也只在这里接）。
+      // 合同此前是纯说服，真机实测在跑完的三次里被违反过一次——机制侧毫无问题、轮次还剩一半，
+      // 模型改了 19 个文件直接收工并自评「## Verifying … tests pass」。这个门在它真要走的那一刻拦一下。
+      verifyGate: flag('verificationAgent', false) ? makeVerifyGate() : undefined,
       // 撞 headlessMaxTurns 会被直接 seal 退出（无收尾降级），长任务评测可调高；不传＝沿用 loop.ts 的 80。
       maxTurns: maxTurnsOverride ?? effectiveMaxTurns,
       maxToolResultChars: settings.maxToolResultChars,
