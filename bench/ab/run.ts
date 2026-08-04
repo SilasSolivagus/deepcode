@@ -10,6 +10,18 @@ import { parseDeclaration, declarationHash, type Declaration } from './declarati
 import { extractArtifacts } from './artifacts.js'
 import { evalObservation } from './predicates.js'
 import { buildReport, type RunRecord } from './report.js'
+import { buildArtifact, runFrozenTests, type BuildResult, type FrozenResult } from './frozenHarness.js'
+
+interface PendingRun {
+  arm: string
+  seed: number
+  runDir: string
+  work: string
+  traceDir: string
+  traceJsonl: string
+  exitCode: number
+  build: BuildResult
+}
 
 const AB_DIR = path.dirname(fileURLToPath(import.meta.url))
 const DEEPCODE_ENTRY = path.join(AB_DIR, '..', '..', 'src', 'index.ts')
@@ -41,7 +53,7 @@ function positiveIntArg(name: string, def: number): number {
 /** 一次跑：干净 HOME + 空工作目录 + 该臂的 DEEPCODE_FLAGS + 开着请求侧轨迹。 */
 async function runOnce(
   decl: Declaration, arm: string, seed: number, outRoot: string, taskbook: string, timeoutSec: number,
-): Promise<RunRecord> {
+): Promise<PendingRun> {
   const runDir = path.join(outRoot, `${arm}-${seed}`)
   const home = path.join(runDir, 'home')
   const work = path.join(runDir, 'work')
@@ -106,12 +118,13 @@ async function runOnce(
   }
 
   const traceJsonl = fs.readFileSync(tracePath, 'utf8')
-  const artifacts = extractArtifacts({ traceJsonl, exitCode, outputDir: work, traceDir })
-  // I7：'na'（本次跑不适用）与 'error'（判定器不存在/抛异常）分开，别再混成一个 null。
-  const observations: Record<string, boolean | 'na' | 'error'> = {}
-  for (const o of decl.observations) observations[o.id] = evalObservation(artifacts, o.predicate, o.args)
+  // 装依赖 + 构建就地做：各次跑互不相干，跟着跑批的并发一起并行。
+  // 跑考卷不在这里——那要共用同一个只读考卷目录，必须串行（见下方第二段）。
+  process.stderr.write(`  ${arm}-${seed} 构建交付物…\n`)
+  const build = buildArtifact({ workDir: work })
+  if (!build.built) process.stderr.write(`  ⚠ ${arm}-${seed} 构建未成功，考卷将记为失败\n`)
 
-  return { arm, seed, runDir, artifacts, observations }
+  return { arm, seed, runDir, work, traceDir, traceJsonl, exitCode, build }
 }
 
 async function main(): Promise<void> {
@@ -141,7 +154,8 @@ async function main(): Promise<void> {
 
   process.stderr.write(`共 ${queue.length} 次跑，并发 ${concurrency}，产出落 ${outRoot}\n`)
 
-  const records: RunRecord[] = []
+  // 第一段：并发跑，每次跑完就地装依赖 + 构建
+  const pending: PendingRun[] = []
   let next = 0
   await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
     while (next < queue.length) {
@@ -149,10 +163,35 @@ async function main(): Promise<void> {
       process.stderr.write(`▶ ${job.arm}-${job.seed} 开跑\n`)
       // 失败不重跑：某次跑崩了就记状态。重跑会让「失败率」这个信息消失，
       // 而它本身可能就是被测改动的效应。
-      records.push(await runOnce(decl, job.arm, job.seed, outRoot, taskbook, timeoutSec))
+      pending.push(await runOnce(decl, job.arm, job.seed, outRoot, taskbook, timeoutSec))
       process.stderr.write(`✔ ${job.arm}-${job.seed} 收工\n`)
     }
   }))
+
+  // 第二段：串行跑冻结考卷。多次跑共用同一个考卷目录，vitest/vite 的缓存在并发下会打架。
+  // 考卷目录只读——结果写到各次跑自己的目录里。
+  process.stderr.write(`\n开始用冻结考卷判分（串行，共 ${pending.length} 次）\n`)
+  const records: RunRecord[] = []
+  for (const p of pending) {
+    process.stderr.write(`  ${p.arm}-${p.seed} 判分…\n`)
+    const frozen = runFrozenTests({
+      workDir: p.work,
+      harnessDir: decl.task.harness,
+      outputFile: path.join(p.runDir, 'frozen-result.json'),
+      build: p.build,
+    })
+    if (frozen.notes) fs.writeFileSync(path.join(p.runDir, 'frozen-notes.txt'), frozen.notes)
+    process.stderr.write(
+      `  ${p.arm}-${p.seed} → ${frozen.scored ? `${frozen.passed}/${frozen.total}` : '未判分'}\n`,
+    )
+    const artifacts = extractArtifacts({
+      traceJsonl: p.traceJsonl, exitCode: p.exitCode, outputDir: p.work, traceDir: p.traceDir, frozen,
+    })
+    // I7：'na'（本次跑不适用）与 'error'（判定器不存在/抛异常）分开，别再混成一个 null。
+    const observations: Record<string, boolean | 'na' | 'error'> = {}
+    for (const o of decl.observations) observations[o.id] = evalObservation(artifacts, o.predicate, o.args)
+    records.push({ arm: p.arm, seed: p.seed, runDir: p.runDir, artifacts, observations })
+  }
 
   const hashAfter = declarationHash(fs.readFileSync(declPath, 'utf8'))
   // 防篡改：声明文件若在跑动中途被改（正则、expect 被悄悄改动），这里必须自己报警——
