@@ -173,24 +173,36 @@ async function main(): Promise<void> {
   process.stderr.write(`\n开始用冻结考卷判分（串行，共 ${pending.length} 次）\n`)
   const records: RunRecord[] = []
   for (const p of pending) {
-    process.stderr.write(`  ${p.arm}-${p.seed} 判分…\n`)
-    const frozen = runFrozenTests({
-      workDir: p.work,
-      harnessDir: decl.task.harness,
-      outputFile: path.join(p.runDir, 'frozen-result.json'),
-      build: p.build,
-    })
-    if (frozen.notes) fs.writeFileSync(path.join(p.runDir, 'frozen-notes.txt'), frozen.notes)
-    process.stderr.write(
-      `  ${p.arm}-${p.seed} → ${frozen.scored ? `${frozen.passed}/${frozen.total}` : '未判分'}\n`,
-    )
-    const artifacts = extractArtifacts({
-      traceJsonl: p.traceJsonl, exitCode: p.exitCode, outputDir: p.work, traceDir: p.traceDir, frozen,
-    })
-    // I7：'na'（本次跑不适用）与 'error'（判定器不存在/抛异常）分开，别再混成一个 null。
-    const observations: Record<string, boolean | 'na' | 'error'> = {}
-    for (const o of decl.observations) observations[o.id] = evalObservation(artifacts, o.predicate, o.args)
-    records.push({ arm: p.arm, seed: p.seed, runDir: p.runDir, artifacts, observations })
+    try {
+      process.stderr.write(`  ${p.arm}-${p.seed} 判分…\n`)
+      const frozen = runFrozenTests({
+        workDir: p.work,
+        harnessDir: decl.task.harness,
+        outputFile: path.join(p.runDir, 'frozen-result.json'),
+        build: p.build,
+      })
+      if (frozen.notes) fs.writeFileSync(path.join(p.runDir, 'frozen-notes.txt'), frozen.notes)
+      process.stderr.write(
+        `  ${p.arm}-${p.seed} → ${frozen.scored ? `${frozen.passed}/${frozen.total}` : '未判分'}\n`,
+      )
+      const artifacts = extractArtifacts({
+        traceJsonl: p.traceJsonl, exitCode: p.exitCode, outputDir: p.work, traceDir: p.traceDir, frozen,
+      })
+      // I7：'na'（本次跑不适用）与 'error'（判定器不存在/抛异常）分开，别再混成一个 null。
+      const observations: Record<string, boolean | 'na' | 'error'> = {}
+      for (const o of decl.observations) observations[o.id] = evalObservation(artifacts, o.predicate, o.args)
+      records.push({ arm: p.arm, seed: p.seed, runDir: p.runDir, artifacts, observations })
+    } catch (e) {
+      // 判分阶段抛异常不能让整批作废——pending 里每一条都是真调过模型、真花过钱的，
+      // 而顶层 catch 够不着这两个局部数组，连残缺报告都抢救不出来。
+      // 记成「判分失败」继续下一条，报告照样出得来。
+      process.stderr.write(`  ⚠ ${p.arm}-${p.seed} 判分异常，记为判分失败：${String((e as Error)?.message ?? e)}\n`)
+      // 空轨迹兜底：不重新解析可能正是抛出源的那份轨迹，只产出一个合法的空 artifacts
+      const artifacts = extractArtifacts({ traceJsonl: '', exitCode: p.exitCode, outputDir: p.work })
+      const observations: Record<string, boolean | 'na' | 'error'> = {}
+      for (const o of decl.observations) observations[o.id] = 'error'
+      records.push({ arm: p.arm, seed: p.seed, runDir: p.runDir, artifacts, observations })
+    }
   }
 
   const hashAfter = declarationHash(fs.readFileSync(declPath, 'utf8'))
