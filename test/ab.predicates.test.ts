@@ -62,6 +62,65 @@ describe('numericFromBashAtLeast', () => {
   })
 })
 
+describe('byteSizeFromResultsAtLeast', () => {
+  // 夹具是 R1/R4 真机轨迹里的结果原文，逐字抄自 eval-6/traces/{r1,r4}.stream.jsonl。
+  // 手编的字符串证明不了正则能读真实输出——旧版 perf-at-scale 正是栽在这里。
+  const WC = ' 11939201 /tmp/logstat-perf-test.log\n                   0  voluntary context switches'
+  const LS = 'Generated test file\n-rw-r--r--@ 1 silas  wheel    90M  8月  1 01:57 /tmp/test_logstat_big.log\n'
+  const PATTERNS = ['^\\s*(\\d+)\\s+\\S*\\.(?:log|jsonl)\\b',
+                    '([\\d.]+)([KMGT])\\s+\\S+\\s+\\S+\\s+\\S+\\s+\\S*\\.(?:log|jsonl)\\b']
+  const at = (content: string, min: number) =>
+    PREDICATES.byteSizeFromResultsAtLeast(base({ bashResults: [{ content, seq: 0 }] }), { patterns: PATTERNS, min })
+
+  it('读 wc -c 的裸字节数（R4 真机原文：11939201）', () => {
+    expect(at(WC, 11_939_201)).toBe(true)
+    expect(at(WC, 11_939_202)).toBe(false)
+  })
+  it('读 ls -lh 的数字+单位并按 1024 进制换算（R1 真机原文：90M）', () => {
+    expect(at(LS, 90 * 1024 ** 2)).toBe(true)
+    expect(at(LS, 90 * 1024 ** 2 + 1)).toBe(false)
+  })
+  it('两份真机原文在 1GB 门槛下都不达标——这是真实结论，不是尺子坏了', () => {
+    expect(at(WC, 1073741824)).toBe(false)
+    expect(at(LS, 1073741824)).toBe(false)
+  })
+  it('尺子有区分度：50MB 门槛下 R1 达标而 R4 不达标', () => {
+    expect(at(LS, 50 * 1024 ** 2)).toBe(true)
+    expect(at(WC, 50 * 1024 ** 2)).toBe(false)
+  })
+  it('行首锚点挡掉行中数字：ls 那行的时间戳 57 不会被当成 57 字节', () => {
+    // 若第一条正则丢了 ^，`01:57 /tmp/....log` 会命中并读出 57。
+    const loose = ['\\s*(\\d+)\\s+\\S*\\.(?:log|jsonl)\\b']
+    const a = base({ bashResults: [{ content: LS, seq: 0 }] })
+    expect(PREDICATES.byteSizeFromResultsAtLeast(a, { patterns: loose, min: 57 })).toBe(true)
+    expect(PREDICATES.byteSizeFromResultsAtLeast(a, { patterns: [PATTERNS[0]], min: 1 })).toBe(false)
+  })
+  it('m 标志：wc -c 不在结果第一行时照样读得到', () => {
+    // 少了 m，`^` 只锚整串开头；`node -e "…生成" && wc -c f.log` 这种把 wc 输出
+    // 推到第二行的写法就会整条读不到——真机 R4 恰好在第一行，测不出这个洞。
+    expect(at('Generated test file\n 11939201 /tmp/logstat-perf-test.log\n', 11_939_201)).toBe(true)
+  })
+  it('取全部结果里的最大值', () => {
+    const a = base({ bashResults: [{ content: WC, seq: 0 }, { content: LS, seq: 1 }] })
+    expect(PREDICATES.byteSizeFromResultsAtLeast(a, { patterns: PATTERNS, min: 90 * 1024 ** 2 })).toBe(true)
+  })
+  it('一处都没抽到 → false（不是 true）：没量到不算达标', () => {
+    expect(at('npm test 全绿，没打印过文件大小', 1)).toBe(false)
+    expect(PREDICATES.byteSizeFromResultsAtLeast(base(), { patterns: PATTERNS, min: 1 })).toBe(false)
+  })
+  it('min 缺失或非数字时抛错，evalObservation 降级成 error', () => {
+    const a = base({ bashResults: [{ content: WC, seq: 0 }] })
+    expect(evalObservation(a, 'byteSizeFromResultsAtLeast', { patterns: PATTERNS })).toBe('error')
+    expect(evalObservation(a, 'byteSizeFromResultsAtLeast', { patterns: PATTERNS, min: '一个 G' })).toBe('error')
+  })
+  it('patterns 不是非空数组时抛错，而非静默读成没命中', () => {
+    const a = base({ bashResults: [{ content: WC, seq: 0 }] })
+    expect(evalObservation(a, 'byteSizeFromResultsAtLeast', { min: 1 })).toBe('error')
+    expect(evalObservation(a, 'byteSizeFromResultsAtLeast', { patterns: [], min: 1 })).toBe('error')
+    expect(evalObservation(a, 'byteSizeFromResultsAtLeast', { patterns: PATTERNS[0], min: 1 })).toBe('error')
+  })
+})
+
 describe('statusIs / fileExists', () => {
   it('statusIs 比对终止状态', () => {
     expect(PREDICATES.statusIs(base({ status: 'max_turns' }), { status: 'max_turns' })).toBe(true)
