@@ -51,14 +51,14 @@ describe('deepcode --help / --version', () => {
 describe('HELP 正文与真实参数一致', () => {
   it('列出了所有在用户可达路径上生效的参数', () => {
     for (const f of ['--output-format', '--json', '--max-turns', '--trace', '--yolo',
-                     '--continue', '--resume', '--inline', '--settings', '--help', '--version']) {
+                     '--continue', '--resume', '--inline', '--model', '--settings', '--help', '--version']) {
       expect(HELP, `HELP 漏了 ${f}`).toContain(f)
     }
   })
 
-  it('刻意不列 --model 与 --permission-mode——它们只被 --background-run 消费，在 -p 与交互式下静默忽略', () => {
-    // 这两个写进帮助就是骗人。等它们真接到用户可达路径上时，这条断言会提醒把帮助一起改。
-    expect(HELP).not.toContain('--model')
+  it('刻意不列 --permission-mode——它仍只被 --background-run 消费，在 -p 与交互式下静默忽略', () => {
+    // 写进帮助就是骗人。等它真接到用户可达路径上时，这条断言会提醒把帮助一起改。
+    // （--model 曾与它同病，2026-08-04 已接到全部三条路径，故已列入帮助。）
     expect(HELP).not.toContain('--permission-mode')
   })
 

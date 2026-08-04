@@ -473,6 +473,7 @@ export function createChatCore(opts: {
   home?: string        // 测试注入：隔离 memdir 系（活动日志/召回/session-memory）落盘根目录，避免污染 ~/.deepcode
   flagSettingsPath?: string
   resumeFile?: string  // Task6：--resume <文件> 精确恢复（交互路径 + /tui 切换后回带）
+  model?: string       // --model <name>：优先于 settings.model 决定启动模型
   justSwitched?: string // Task6：DEEPCODE_TUI_JUST_SWITCHED（'inline'|'fullscreen'）→ 首帧横幅 notice
   unmount?: () => void  // Task6：ink instance.unmount，供 /tui 切换 spawnSync 前卸载
   onState: (s: ChatState) => void
@@ -511,10 +512,14 @@ export function createChatCore(opts: {
   // activeProvider() 走 loadSettings()（不带 flagPath），与 createClient(flagSettingsPath) 会分叉；
   // 本闭包手里就有 layered settings，一律用它解析 preset，否则 --settings 里的 provider 会被判成"外来"。
   const activePreset = resolveActiveProvider(settings)
-  const foreignStartupModel = settings.model
-    ? foreignProviderOf(activePreset, settings.model, availablePresets(settings))
+  // --model 优先于 settings.model（照 backgroundRunner 的 opts.model ?? … 次序）。解析与白名单
+  // 钳制仍走同一条路，不给 flag 开后门；下方两处告警的措辞据此区分来源，否则用户会去翻一个
+  // 自己根本没写过的 settings.model。
+  const requestedStartupModel = opts.model ?? settings.model
+  const foreignStartupModel = requestedStartupModel
+    ? foreignProviderOf(activePreset, requestedStartupModel, availablePresets(settings))
     : undefined
-  let model = resolveStartupModel(settings.model, activePreset, availablePresets(settings), settings.availableModels)
+  let model = resolveStartupModel(requestedStartupModel, activePreset, availablePresets(settings), settings.availableModels)
   // Task6 focus 视图：由 settings.viewMode 初始化；locked（viewMode:focus）时 /focus 不可关
   const initialFocus = resolveInitialFocus(settings)
   let focusMode = initialFocus.focusMode
@@ -840,11 +845,11 @@ export function createChatCore(opts: {
   let recovered: { file: string } | undefined
   if (foreignStartupModel) {
     // 跨 provider 回落有更详细的专属文案（带出具体是哪个 provider），不走 modelFallbackReason 共享判定
-    notice('warn', `settings.model=${settings.model} 属于 ${foreignStartupModel} provider，当前 provider 是 ${activePreset.id}，已回落到 ${model}`)
+    notice('warn', `${opts.model ? '--model' : 'settings.model'}=${requestedStartupModel} 属于 ${foreignStartupModel} provider，当前 provider 是 ${activePreset.id}，已回落到 ${model}`)
   } else {
     // 绝不静默失效：白名单钳制拦掉一个模型时也要可观测（同 headless/backgroundRunner 共用同一判定与措辞）
-    const modelFallback = modelFallbackReason(settings.model, model, activePreset, settings.availableModels)
-    if (modelFallback) notice('warn', `settings.model=${modelFallback}`)
+    const modelFallback = modelFallbackReason(requestedStartupModel, model, activePreset, settings.availableModels)
+    if (modelFallback) notice('warn', `${opts.model ? '--model' : 'settings.model'}=${modelFallback}`)
   }
   // 绝不静默失效：always/plan 批准存下的规则若被剥，不能只在用户手动敲 /config 时才说出来
   // （同 headless/backgroundRunner 共用同一判定与措辞）。

@@ -178,6 +178,22 @@ export function foreignProviderOf(
   return undefined
 }
 
+/** 解析 `--model <name>`：未传返回 undefined。
+ *
+ *  取值缺失或以 `-` 开头一律抛错，不静默吞掉——此前没有这层校验，
+ *  `deepcode --model -p "任务"` 会把 `-p` 当成模型名读走，一路走到白名单钳制才回落到默认档，
+ *  给出的告警指向一个用户从没写过的「模型名」。照 parseMaxTurns 的严格写法。
+ *
+ *  这里只管取值形态，不管模型是否存在——是否合法交给 resolveStartupModel 的白名单钳制与
+ *  跨 provider 判定，与 settings.model 走完全同一条路，避免两处规则分叉。 */
+export function parseModelFlag(argv: string[]): string | undefined {
+  const i = argv.indexOf('--model')
+  if (i < 0) return undefined
+  const v = argv[i + 1]
+  if (v === undefined || v.length === 0 || v.startsWith('-')) throw new Error('--model 需要一个模型名取值')
+  return v
+}
+
 /** 启动期 model 解析：配置的 model 属于别家 provider 时回落 active fast（防错投），其余原样。 */
 export function resolveStartupModel(
   configured: string | undefined,

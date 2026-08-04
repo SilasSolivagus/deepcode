@@ -11,9 +11,17 @@
 - `deepcode --help` / `-h` 与 `deepcode --version` / `-v`。此前敲 `--help` 会直接把 TUI 拉起来，
   在管道里则回一句「stdin 为空」——而这恰恰是装完之后第一个动作。
 
+### 修复
+- **`--model` 此前在 headless 与交互式下被静默忽略**，只对 `--background-run` 内部路径生效。
+  `deepcode --model glm-5.2 -p "任务"` 会按 settings 里的模型跑完、按那个模型计费、一声不吭。
+  自仓库第一个 commit 起就是如此。现已接到全部三条路径，仍受 `availableModels` 白名单钳制，
+  被推翻时告警会指明来源是 `--model` 而非 `settings.model`。
+- `--model` 取值缺失或以 `-` 开头现在当场报错。此前 `deepcode --model -p "任务"` 会把 `-p`
+  当成模型名读走，再给出一句指向用户从没写过的「模型名」的告警。
+
 ### 已知问题
-- `--model` 与 `--permission-mode` 目前只对 `--background-run` 内部路径生效，
-  `deepcode --model glm-5.2 -p "任务"` 里的 `--model` 会被静默忽略。故未列入 `--help`。
+- `--permission-mode` 目前仍只对 `--background-run` 内部路径生效，在 `-p` 与交互式下被静默忽略。
+  故未列入 `--help`。
 
 ## 0.13.0 — 2026-08-04
 

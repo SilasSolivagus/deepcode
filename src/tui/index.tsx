@@ -27,6 +27,7 @@ export async function startTui(opts: {
   resumeFile?: string        // Task6：--resume <文件> 精确恢复（交互路径 + /tui 切换回带）
   justSwitched?: string      // Task6：DEEPCODE_TUI_JUST_SWITCHED（'inline'|'fullscreen'）
   flagSettingsPath?: string
+  model?: string             // --model <name>：优先于 settings.model 决定启动模型
 }): Promise<void> {
   // 后台任务：退出时 kill running 任务（追加监听，不抢占下方 altscreen 清理）+ 清理超龄旧日志。
   installTaskCleanup()
@@ -90,6 +91,7 @@ export async function startTui(opts: {
           cwd={process.cwd()}
           continueSession={opts.continueSession}
           flagSettingsPath={opts.flagSettingsPath}
+          model={opts.model}
           resumeFile={opts.resumeFile}
           justSwitched={opts.justSwitched}
           unmount={unmount}
