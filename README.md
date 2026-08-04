@@ -98,7 +98,7 @@ deepcode 是我一个人在业余时间写的，MIT 开源，不做任何收费�
 或者告诉我你在什么场景下用它，对现在这个阶段的项目帮助更大。
 
 <p align="center">
-  <img src="assets/wechat-pay.jpg" width="300" alt="微信赞赏码">
+  <img src="assets/wechat-pay.jpg" width="200" alt="微信赞赏码">
 </p>
 
 ## 本地开发
