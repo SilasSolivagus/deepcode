@@ -59,12 +59,26 @@ DeepSeek 提供 [兼容接口](https://api-docs.deepseek.com/zh-cn/guides/anthro
 
 ## 实测，不是 PPT
 
-自建 eval harness（`eval/`，可复现）：防污染场景 × 5 模型 × 3 seed 的 **pass^3**，程序化判分不靠主观。
-`deepseek-v4-pro` / `glm-5.2` / `kimi-k3` 均跑满 5/5 场景，其中 `deepseek-v4-pro` 成本最低。
+**SWE-bench Verified** —— 行业标准题集，官方 Docker 判分、跑隐藏测试，不是自己给自己打分。
+`deepseek-v4-pro` 上 100 题 × 3 seed：
 
-📊 **完整跑分与成本-可靠性 Pareto 图** → [官网跑分节](https://deepcode.dirctable.com/#bench) · [原始报告](eval/RESULTS-2026-07-17.md)
+| | |
+|---|---|
+| pass@1 | **62.7%**（188/300） |
+| pass^3（三次全中，可靠性） | **52/100** |
 
-> 诚实边界：最烧脑的深推理（微妙算法 bug / 超大代码库 / 深架构）上，国际一线闭源 agent 可能仍领先——
+同题、同模型、同判分下，与一个商业 harness **统计打平**——25 道有差异的题里各赢一半，
+符号检验 p=1.0。**不宣称胜负**，这是个有统计分量的平局。
+
+自建 eval（`eval/`）另测可靠性：防污染场景 × 5 模型 × 3 seed 的 pass^3，
+`deepseek-v4-pro` / `glm-5.2` / `kimi-k3` 均跑满 5/5。
+
+📊 完整方法、公平性锚点与原始数据 → [deepcode-arena](https://github.com/SilasSolivagus/deepcode-arena)（clone 下来能自己复现）
+· [成本-可靠性 Pareto](https://deepcode.dirctable.com/#bench) · [自建 eval 报告](eval/RESULTS-2026-07-17.md)
+
+> 诚实边界：
+> ① SWE-bench Verified 是**公开集，可能已被训练污染**——要挤掉这部分水分，得加跑未污染集。
+> ② 最烧脑的深推理（微妙算法 bug / 超大代码库 / 深架构）上，国际一线闭源 agent 可能仍领先，
 > 主要是**模型能力**差距、非 harness。
 
 ## 文档

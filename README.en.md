@@ -66,16 +66,31 @@ a different model, and the compatibility layer drops fields. deepcode is **ownin
 
 ## Real Benchmarks, Not Slides
 
-A reproducible, self-built eval harness (`eval/`): anti-contamination scenarios × 5 models ×
-3 seeds of **pass^3**, scored programmatically rather than by subjective judgment.
-`deepseek-v4-pro` / `glm-5.2` / `kimi-k3` each pass 5/5 scenarios; `deepseek-v4-pro` is the cheapest.
+**SWE-bench Verified** — the industry-standard set, judged by the official Docker harness against
+hidden tests. Not self-scored. On `deepseek-v4-pro`, 100 instances × 3 seeds:
 
-📊 **Full results and the cost-reliability Pareto chart** →
-[benchmark section](https://deepcode.dirctable.com/#bench) · [raw report](eval/RESULTS-2026-07-17.md)
+| | |
+|---|---|
+| pass@1 | **62.7%** (188/300) |
+| pass^3 (all three seeds, reliability) | **52/100** |
 
-> Honest caveat: on the hardest deep-reasoning work (subtle algorithmic bugs / huge codebases /
-> deep architecture decisions), top-tier closed-source agents may still lead — mostly a gap in
-> **model capability**, not the harness.
+Same instances, same model, same judge: a **statistical tie** with a commercial harness — of the
+25 instances where the two differed, each won about half; sign test p=1.0. **No victory claimed.**
+This is a tie with statistical weight behind it.
+
+A separate self-built eval (`eval/`) measures reliability: anti-contamination scenarios × 5 models
+× 3 seeds of pass^3; `deepseek-v4-pro` / `glm-5.2` / `kimi-k3` each pass 5/5.
+
+📊 Full method, fairness anchors and raw data →
+[deepcode-arena](https://github.com/SilasSolivagus/deepcode-arena) (clone it and reproduce)
+· [cost-reliability Pareto](https://deepcode.dirctable.com/#bench) · [self-built eval report](eval/RESULTS-2026-07-17.md)
+
+> Honest caveats:
+> 1. SWE-bench Verified is a **public set and may already be contaminated** by training data —
+>    squeezing that out requires running an uncontaminated set as well.
+> 2. On the hardest deep-reasoning work (subtle algorithmic bugs / huge codebases / deep
+>    architecture decisions), top-tier closed-source agents may still lead — mostly a gap in
+>    **model capability**, not the harness.
 
 ## Documentation
 
