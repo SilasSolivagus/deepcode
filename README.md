@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/demo.gif" width="820" alt="deepcode 终端会话：Grep/Read 工具调用 → 引用行号的实质答案 → 成本行结算">
+  <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/demo.gif" width="820" alt="deepcode 演示：一句话需求「写个 mdtoc 命令行工具」→ 它读文件、写代码、跑起来、自己发现问题再改 → 目录出现在 README 里">
 </p>
 
 ## 30 秒上手

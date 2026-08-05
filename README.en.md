@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/demo.gif" width="820" alt="deepcode terminal session: Grep/Read tool calls → a substantive answer citing line numbers → cost line settled">
+  <img src="https://raw.githubusercontent.com/SilasSolivagus/deepcode/main/assets/demo.gif" width="820" alt="deepcode demo: one-line request to build an mdtoc CLI → it reads, writes, runs, catches its own bug and fixes it → the table of contents lands in README">
 </p>
 
 ## 30-Second Quickstart
