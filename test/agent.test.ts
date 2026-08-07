@@ -69,10 +69,15 @@ beforeEach(() => { script.length = 0; vi.clearAllMocks(); clearAllTasks(); drain
 
 /** 让脱钩的后台 async 跑完：轮询直到任务进入终态（或超时）。 */
 async function waitForDone(id: string): Promise<void> {
-  for (let i = 0; i < 200; i++) {
+  // ⚠️ 预算必须按**墙钟**算，不能按 tick 数。原来是 200 次 setTimeout(r, 0)——Node 会把 0
+  // 钳到约 1ms，于是实际预算只有约 200ms，而这里等的是一次真实的 git worktree 创建
+  // （init + add + commit + worktree add）。全量并发跑时 git 轻松超过 200ms，表现为与本用例
+  // 逻辑无关的偶发超时。实测 6 次全量里挂 3 次，这是其中一种。
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
     const t = getTask(id)
     if (t && t.status !== 'running') return
-    await new Promise(r => setTimeout(r, 0))
+    await new Promise(r => setTimeout(r, 5))
   }
   throw new Error('timeout waiting for task done')
 }

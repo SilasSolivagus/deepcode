@@ -24,16 +24,18 @@ describe('SelectList', () => {
   it('↑↓ 移动选中，Enter 回调，Esc 取消', async () => {
     const onPick = vi.fn(); const onCancel = vi.fn()
     const r = render(<SelectList items={['会话A', '会话B']} onPick={onPick} onCancel={onCancel} />)
-    await delay()
+    // ⚠️ 挂载与按键之间的等待没法条件化（帧从第一帧起就非空），故保留显式让出事件循环、
+    // 且多让几次以抗并发负载；最终断言改成条件轮询。原来 delay() 默认只让 1 个 tick，
+    // 全量并发下不够，键打在还没监听的组件上——实测 6 次全量挂 3 次，这是其中一种。
+    const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0)) }
+    await settle()
     r.stdin.write('\x1b[B')
-    await delay()
+    await settle()
     r.stdin.write('\r')
-    await delay()
-    expect(onPick).toHaveBeenCalledWith(1)
+    await vi.waitFor(() => expect(onPick).toHaveBeenCalledWith(1))
     const r2 = render(<SelectList items={['x']} onPick={onPick} onCancel={onCancel} />)
-    await delay()
+    await settle()
     r2.stdin.write('\x1b')
-    await delay()
-    expect(onCancel).toHaveBeenCalled()
+    await vi.waitFor(() => expect(onCancel).toHaveBeenCalled())
   })
 })
